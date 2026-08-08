@@ -5,7 +5,7 @@
 - [x] **Stage 1** — Create new repository, copy structure
 - [x] **Stage 2** — Swap HAL submodule (`stm32h7xx` → `stm32h5xx`)
 - [x] **Stage 3** — Add CMSIS H5 device headers
-- [ ] **Stage 4** — New linker script (flat SRAM layout)
+- [x] **Stage 4** — New linker script (flat SRAM layout)
 - [ ] **Stage 5** — New startup file (H563 vector table)
 - [ ] **Stage 6** — `stm32h5xx_hal_conf.h`
 - [ ] **Stage 7** — Clock & power init (`main.c` rewrite, `HSE_BYPASS`)

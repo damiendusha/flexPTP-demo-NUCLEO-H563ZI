@@ -114,3 +114,14 @@ This section will provide a detailed comparison of:
 - Removed H7 device headers (`STM32H7xx/Include/stm32h735xx.h`, `stm32h743xx.h`, `stm32h7xx.h`, `system_stm32h7xx.h`)
 - Replaced `Src/system_stm32h7xx.c` with `Src/system_stm32h5xx.c` (from cmsis_device_h5 templates)
 - Updated `Drivers/CMSIS/CMakeLists.txt` include path: `STM32H7xx` → `STM32H5xx`
+
+### Stage 4 — New linker script
+- Created `stm32h563zitx_FLASH.ld` with flat SRAM layout
+- Memory regions: FLASH (2MB), SRAM1 (256K), SRAM2 (64K), SRAM3 (320K)
+- Removed H7-specific regions: ITCMRAM, DTCMRAM, RAM_D1, RAM_D2, RAM_D3
+- `.data`, `.bss`, stack, heap, FreeRTOS heap → SRAM1
+- Ethernet DMA buffers (`.ETHBufferSection`, `.ETHStateAndDecripSection`) → SRAM3
+- lwIP heap → SRAM3
+- Removed SAI section (not used in this port)
+- Added DCACHE coherency note for SRAM3 Ethernet region
+- H7 linker script (`stm32h735igkx_FLASH.ld`) was not copied to this repo
