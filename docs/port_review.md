@@ -64,7 +64,7 @@ Not done: no compilation (the tree does not yet configure — see [F10](#f10)), 
 | F23 | No stage owned README / build.sh / launch.json | Process | plan **Stage 17** 🆕 |
 | F24 | FreeRTOS `GIT_TAG main` is a floating dependency | Process | plan Stage 8, decisions, risks |
 | F25 | TZEN option byte is a boot precondition | Precondition | plan Stage 18 |
-| F26 | PPS pin undecided; H743 configures two | Precondition | plan decisions + Open Items |
+| F26 | PPS pin undecided; H743 configures two | Resolved | **PG8 chosen** — plan decisions, Stages 11 & 13 |
 | F27 | ETH DMA reach into SRAM3 unverified | Precondition | plan Open Items, Stage 16 |
 | F28 | SRAM2 (64 KB) unallocated | Minor | plan Stage 4 note |
 | F29 | `.ETHLibPool` has no linker placement | Minor | plan Stage 4 note, Stage 16 |
@@ -210,10 +210,11 @@ be caused by an upstream commit.
 disabled (factory default). A board previously provisioned with TZEN = 1 will not boot this
 image.
 
-**F26 — PPS pin.** The H743 project drives PPS from **PG8**, configured by the flexPTP port
-file, while `mac_drv.c` *separately* configures PB5 as ETH AF11. The plan's table recorded
-only PB5. The H563 port should pick one pin, verify it against the datasheet and the Nucleo
-headers, and configure it in exactly one place.
+**F26 — PPS pin. ✅ Resolved: PG8.** The H743 project drives PPS from **PG8**, configured by
+the flexPTP port file, while `mac_drv.c` *separately* configures PB5 as ETH AF11. The plan's
+table recorded only PB5, which was the wrong one of the two. The H563 port keeps PG8 and
+drops the PB5 configuration, leaving PPS GPIO setup in exactly one place (the flexPTP
+hardware port, Stage 13). Verified on hardware by Stage 18's oscilloscope check.
 
 **F27 — ETH DMA and SRAM3.** SRAM1/2/3 are all on the AHB matrix and `HAL_Init()` leaves
 DCACHE off, so no cache maintenance is expected for the Ethernet buffers in SRAM3. Confirm

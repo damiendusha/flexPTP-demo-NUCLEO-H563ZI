@@ -111,14 +111,21 @@ exception that is easy to miss because everything else lines up.
 | RMII_TXD0 | PG13 | PG13 |
 | **RMII_TXD1** | **PB13** | **PB15** |
 | RMII_RXER | PG2 | dropped (see below) |
+| PPS_OUT | PG8 | PG8 |
 
 All pins use `GPIO_AF11_ETH` on both parts.
 
 **Consequence for the port:** `ETHHW_InitClocks()` in `Drivers/EthDrv/mac_drv.c` groups
-PB5 and PB13 into a single `HAL_GPIO_Init(GPIOB, ...)` call. On the H563 that must become
-PB15 (plus whichever pin is chosen for PPS_OUT). Leaving PB13 configured as AF11 and PB15
-unconfigured produces a link that negotiates and receives normally but never transmits —
-a failure mode that looks like a PHY or DMA problem rather than a pin-map problem.
+PB5 and PB13 into a single `HAL_GPIO_Init(GPIOB, ...)` call. On the H563 that call reduces
+to **PB15 alone**. Leaving PB13 configured as AF11 and PB15 unconfigured produces a link
+that negotiates and receives normally but never transmits — a failure mode that looks like
+a PHY or DMA problem rather than a pin-map problem.
+
+**On PPS and PB5:** the H743 project configures PB5 as ETH AF11 in `mac_drv.c` *and*
+separately configures PG8 as ETH AF11 in the flexPTP hardware port. PG8 is the pin that
+actually carries the pulse; the PB5 setup is vestigial. This port keeps **PG8** and drops
+PB5, so PPS GPIO is configured in exactly one place — the flexPTP hardware port. If PPS is
+ever moved, that port file is the only file to change.
 
 ---
 

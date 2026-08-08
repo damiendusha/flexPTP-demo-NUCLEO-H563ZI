@@ -55,7 +55,7 @@ build at each of these points and do not proceed until it passes:
 | **RXER Pin (PG2)** | Dropped from GPIO init. Design doc will note this. |
 | **ETH_TXD1 Pin** | **PB15** (AF11) on NUCLEO-H563ZI — *differs* from the H743 board, which uses PB13. Confirmed against board documentation. |
 | **mac_drv.c Strategy** | Register-level port. Register audit already done during review: every ETH register and descriptor bit the driver touches exists on the H563 with identical names — see Stage 11. |
-| **PPS Output Pin** | Needs datasheet verification. Note the H743 project drives PPS from **PG8** (set up by the flexPTP port file); `mac_drv.c` *additionally* configures PB5 as ETH AF11. Decide which pin the H563 port uses and configure exactly one. |
+| **PPS Output Pin** | **PG8** (AF11), same as the H743 project. Configured by the flexPTP hardware port (Stage 13), *not* by `mac_drv.c`. The H743 driver's stray PB5 configuration is dropped — see Stage 11. |
 | **FreeRTOS kernel version** | Pin `FetchContent` to a release tag. `GIT_TAG main` is a floating dependency on a port being actively changed. |
 | **MCU compiler flags** | Live in `cmake/vscode_generated.cmake`, which is headed "shall not be touched by user". Decide in Stage 7 whether to edit it in place or move the flags into `CMakeLists.txt`. |
 
@@ -76,7 +76,7 @@ build at each of these points and do not proceed until it passes:
 | **USART3 VCP** | PD8 TX / PD9 RX | PD8 TX / PD9 RX ✅ same |
 | **ETH RMII Pins** | PA1/PA2/PA7/**PB13**/PC1/PC4/PC5/PG11/PG13 | PA1/PA2/PA7/**PB15**/PC1/PC4/PC5/PG11/PG13 ⚠️ TXD1 moved |
 | **ETH_TXD1** | PB13 (AF11) | **PB15** (AF11) — must be changed in `mac_drv.c` |
-| **PPS Pin** | PG8 (AF11, set by flexPTP port); PB5 also configured in `mac_drv.c` | TBD — needs datasheet verification |
+| **PPS Pin** | PG8 (AF11, set by flexPTP port); PB5 also configured in `mac_drv.c` | **PG8** (AF11), set by the flexPTP port only — PB5 dropped |
 | **RXER Pin** | PG2 (AF11) | **Dropped** — not connected on H563 Nucleo |
 | **ETH PTP clock** | HCLK (240 MHz) | HCLK (250 MHz) — **no `ETHPTPCLKSEL` mux on this device** |
 | **DMA Architecture** | DMA1/DMA2 (stream-based) | GPDMA (channel-based, linked-list) |
@@ -307,7 +307,12 @@ driver touches — `MACTSCR`, `MACSSIR`, `MACSTSR/NR`, `MACSTSUR/NUR`, `MACTSAR`
 Synopsys QoS core. The real work is peripheral plumbing, not registers:
 
 - GPIO: remove PG2 (RXER), move ETH_TXD1 **PB13 → PB15**, update the pin-map comment block
-- GPIO: decide the PPS pin (see decisions table) and configure exactly one
+- GPIO: **drop PB5.** PPS is on PG8 and is configured by the flexPTP port (Stage 13), so
+  `mac_drv.c` should not touch a PPS pin at all. The GPIOB init reduces to PB15 alone:
+  ```c
+  GPIO_InitStructure.Pin = GPIO_PIN_15;          /* was GPIO_PIN_5 | GPIO_PIN_13 */
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStructure);
+  ```
 - Clock enables: `ETH1MAC`/`ETH1TX`/`ETH1RX` → `ETH`/`ETHTX`/`ETHRX`
 - SYSCFG → SBS: `__HAL_RCC_SBS_CLK_ENABLE()`,
   `HAL_SYSCFG_ETHInterfaceSelect(SYSCFG_ETH_RMII)` → `HAL_SBS_ETHInterfaceSelect(SBS_ETH_RMII)`
@@ -349,7 +354,9 @@ stage.
 - Create the port implementing `ptphw_init()`, `ptphw_gettime()`, `ptphw_set_pps_freq()`,
   `ptphw_restart_pps()` and the `ptp pps` CLI command — derive from
   `ptp_port_stm32h743_lwip.c`
-- Change the include to `stm32h5xx_hal.h`; configure the chosen PPS pin (H743 uses PG8)
+- Change the include to `stm32h5xx_hal.h`; keep the PPS pin setup on **PG8 / AF11**
+  (`__HAL_RCC_GPIOG_CLK_ENABLE()` + `GPIO_PIN_8`), unchanged from the H743 port — this is
+  the only place PPS GPIO is configured
 - Wire it up in `Modules/CMakeLists.txt`: currently `FLEXPTP_HWPORT` is `H743_LWIP`
   / `H743_ETHERLIB`. flexPTP supports project-local ports — populate `FLEXPTP_HWPORT_SRC`
   and leave `FLEXPTP_HWPORT` unset
@@ -474,7 +481,6 @@ graph TD
 
 | Item | Stage | Notes |
 |---|---|---|
-| PPS output pin not chosen | 11, 13 | H743 uses PG8 via the flexPTP port *and* configures PB5 in `mac_drv.c`. Verify H563 availability and header accessibility; configure one. |
 | CMSIS Core version | 15 | `Drivers/CMSIS/Include` is CMSIS Core 5.6, carried over from the H7 project. CMSIS device pack is 1.7.0. Expected to work with `core_cm33.h`, but a version bump is the first thing to try if odd core-header errors appear. |
 | `vscode_generated.cmake` ownership | 7 | Marked machine-generated. If the STM32 VS Code extension regenerates it, the MCU flags revert. Consider moving them into `CMakeLists.txt`. |
 | ETH DMA reach into SRAM3 | 15, 18 | SRAM1/2/3 are all on the AHB matrix, and DCACHE is off, so no coherency handling is expected. Confirm empirically on hardware before assuming. |
