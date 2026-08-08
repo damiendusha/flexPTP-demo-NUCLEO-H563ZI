@@ -1,6 +1,6 @@
 target_include_directories(
     ${CMAKE_PROJECT_NAME} PUBLIC
-    Device/ST/STM32H7xx/Include/
+    Device/ST/STM32H5xx/Include/
     Include
     CMSIS_RTOS_V2)
 

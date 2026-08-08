@@ -103,3 +103,14 @@ This section will provide a detailed comparison of:
 - Copied Modules/blocking_io/ and Modules/lwip_port/ as regular directories
 - NOT copied: stm32h7xx-hal-driver submodule, H7 linker script, H7 startup file, H7 HAL conf
 - Note: `Src/system_stm32h7xx.c` and `Middlewares/CMakeLists.txt` still reference H7 — will be updated in later stages
+
+### Stage 2 — Swap HAL submodule
+- Added `Drivers/stm32h5xx-hal-driver` submodule from STMicroelectronics GitHub
+- H5 HAL includes ETH driver (`stm32h5xx_hal_eth.c/h`) — confirmed present
+
+### Stage 3 — Add CMSIS H5 device headers
+- Sourced device headers from `STMicroelectronics/cmsis_device_h5` GitHub repo
+- Added `stm32h563xx.h`, `stm32h5xx.h`, `system_stm32h5xx.h` to `Drivers/CMSIS/Device/ST/STM32H5xx/Include/`
+- Removed H7 device headers (`STM32H7xx/Include/stm32h735xx.h`, `stm32h743xx.h`, `stm32h7xx.h`, `system_stm32h7xx.h`)
+- Replaced `Src/system_stm32h7xx.c` with `Src/system_stm32h5xx.c` (from cmsis_device_h5 templates)
+- Updated `Drivers/CMSIS/CMakeLists.txt` include path: `STM32H7xx` → `STM32H5xx`
