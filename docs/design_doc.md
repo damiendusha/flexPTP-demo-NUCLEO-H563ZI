@@ -7,12 +7,17 @@ NUCLEO-H563ZI (STM32H563, Cortex-M33).
 ## Table of Contents
 
 - [Port Overview](#port-overview)
-- [PTP Clock Optimization Guide](#ptp-clock-optimization-guide)
+- [PTP Clock](#ptp-clock) — full derivation in [ptp_clock.md](ptp_clock.md)
 - [EtherLib Porting Guide](#etherlib-porting-guide)
 - [TrustZone Migration Guide](#trustzone-migration-guide)
+- [RMII Pin Map](#rmii-pin-map)
 - [RXER Pin Note](#rxer-pin-note)
 - [mac_drv.c Comparison](#mac_drvc-comparison)
 - [Stage Log](#stage-log)
+
+Companion documents: [ptp_clock.md](ptp_clock.md) (PTP clock derivation) ·
+[port_review.md](port_review.md) (review findings and verified-clean audit) ·
+[implementation_plan.md](implementation_plan.md) (staged work plan)
 
 ---
 
@@ -22,7 +27,8 @@ NUCLEO-H563ZI (STM32H563, Cortex-M33).
 **Target**: NUCLEO-H563ZI — STM32H563ZI, Cortex-M33 @ 250 MHz, SP-FPU, stm32h5xx HAL
 
 Key decisions:
-- PTP clock: 200 MHz / 5 ns increment (matching H7 config)
+- PTP clock: HCLK 250 MHz / 5 ns increment (no clock mux exists on this device — see
+  [PTP Clock](#ptp-clock))
 - HSE: Bypass mode (stock Nucleo, ST-Link MCO at 8 MHz)
 - FPU: Keep `double` in Kalman filter, accept software emulation
 - Network stack: LwIP only (initial port)
@@ -31,30 +37,46 @@ Key decisions:
 
 ---
 
-## PTP Clock Optimization Guide
+## PTP Clock
 
-*To be completed in Stage 11/14.*
+The timestamp unit is clocked from **HCLK at 250 MHz** with a **5 ns** subsecond
+increment.
 
-The initial port uses PLL1_Q = 200 MHz with a 5 ns hardware increment, matching the
-H7 configuration. This section will document how to optimize to 250 MHz (4 ns increment)
-for improved PTP resolution.
+| Parameter | Value |
+|---|---|
+| `PTP_MAIN_OSCILLATOR_FREQ_HZ` | 250 000 000 (= HCLK) |
+| `PTP_INCREMENT_NSEC` | 5 |
+| Initial addend | 3435973836 (`0xCCCCCCCC`) |
+| Timestamp granularity | 5 ns |
+| Frequency tuning range | +25 % |
+| Frequency tuning resolution | ≈ 0.29 ppb |
 
-### Current Configuration (200 MHz)
-- `PTP_MAIN_OSCILLATOR_FREQ_HZ` = 200,000,000
-- `PTP_INCREMENT_NSEC` = 5
-- Addend calculation: `2^32 * increment_ns / (1e9 / osc_freq)`
+Three things are worth knowing without reading further:
 
-### Future Optimization (250 MHz)
-- `PTP_MAIN_OSCILLATOR_FREQ_HZ` = 250,000,000
-- `PTP_INCREMENT_NSEC` = 4
-- PLL1_Q must be reconfigured to output 250 MHz
-- Kalman filter gains may need re-tuning
+1. **There is nothing to configure.** The STM32H563 has no Ethernet PTP kernel-clock
+   multiplexer (`RCC_CCIPR5.ETHPTPCLKSEL` does not exist on this device, only on later
+   H5 parts). `ptp_ker_ck` is hardwired to HCLK, so no `HAL_RCCEx_PeriphCLKConfig()` call
+   is required — or possible.
+2. **The subsecond increment must exceed the PTP clock period.** With a 4 ns HCLK period,
+   5 ns is the smallest usable increment. Choosing 4 ns produces an addend that does not
+   fit in 32 bits and a clock that never ticks.
+3. **Timestamp granularity is 5 ns — the same as the H743 source project — and cannot be
+   improved on this part.** A finer increment would need a *faster* PTP clock (≥ 262 MHz),
+   which exceeds the device's 250 MHz HCLK ceiling.
+
+Two settings elsewhere are load-bearing for this: the AHB prescaler must be
+`RCC_HCLK_DIV1` (not the H743's `DIV2`), and the MDIO divider `CR = DIV102` is correct
+only for a 250 MHz HCLK.
+
+> **Full derivation, the `K > 1` constraint, the PLL arithmetic, and the record of why the
+> originally planned 200 MHz / PLL1_Q configuration was abandoned:
+> [ptp_clock.md](ptp_clock.md).**
 
 ---
 
 ## EtherLib Porting Guide
 
-*To be completed in Stage 14.*
+*To be completed in Stage 16.*
 
 The EtherLib in-house Ethernet stack is included as a git submodule but is not
 compiled in the initial port. This section will document what needs to change to
@@ -64,7 +86,7 @@ enable EtherLib support.
 
 ## TrustZone Migration Guide
 
-*To be completed in Stage 14.*
+*To be completed in Stage 16.*
 
 The initial port runs in non-secure flat mode (TZEN=0) using the `ARM_CM33_NTZ`
 FreeRTOS port. This section will document how to migrate to a TrustZone-partitioned
@@ -72,9 +94,37 @@ build when needed.
 
 ---
 
+## RMII Pin Map
+
+The RMII pin assignment is *almost* identical between the two Nucleo boards, with one
+exception that is easy to miss because everything else lines up.
+
+| Signal | NUCLEO-H743ZI | NUCLEO-H563ZI |
+|---|---|---|
+| RMII_REF_CLK | PA1 | PA1 |
+| RMII_MDIO | PA2 | PA2 |
+| RMII_CRS_DV | PA7 | PA7 |
+| RMII_MDC | PC1 | PC1 |
+| RMII_RXD0 | PC4 | PC4 |
+| RMII_RXD1 | PC5 | PC5 |
+| RMII_TX_EN | PG11 | PG11 |
+| RMII_TXD0 | PG13 | PG13 |
+| **RMII_TXD1** | **PB13** | **PB15** |
+| RMII_RXER | PG2 | dropped (see below) |
+
+All pins use `GPIO_AF11_ETH` on both parts.
+
+**Consequence for the port:** `ETHHW_InitClocks()` in `Drivers/EthDrv/mac_drv.c` groups
+PB5 and PB13 into a single `HAL_GPIO_Init(GPIOB, ...)` call. On the H563 that must become
+PB15 (plus whichever pin is chosen for PPS_OUT). Leaving PB13 configured as AF11 and PB15
+unconfigured produces a link that negotiates and receives normally but never transmits —
+a failure mode that looks like a PHY or DMA problem rather than a pin-map problem.
+
+---
+
 ## RXER Pin Note
 
-*To be completed in Stage 10.*
+*To be completed in Stage 16; the GPIO change itself lands in Stage 11.*
 
 The H743 project configures PG2 as ETH_RMII_MII_RXER. This pin has been dropped
 in the H563 port. This section will explain why and how to re-enable it.
@@ -83,7 +133,7 @@ in the H563 port. This section will explain why and how to re-enable it.
 
 ## mac_drv.c Comparison
 
-*To be completed in Stage 10/14.*
+*To be completed in Stage 16.*
 
 This section will provide a detailed comparison of:
 1. The custom register-level MAC driver (`mac_drv.c`)

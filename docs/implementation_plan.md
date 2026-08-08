@@ -1,5 +1,12 @@
 # Port flexPTP Demo to NUCLEO-H563ZI — Implementation Plan
 
+> **Revision note.** Stages 5 onward were renumbered during plan review. Three stages were
+> added (build-system retarget, flexPTP hardware port, project metadata), and the build
+> system was pulled forward so the project can be compiled incrementally rather than only
+> at the end. Stages 1–4 are unchanged and already committed.
+> The review itself — every finding, its evidence, and what was checked and found clean —
+> is recorded in [port_review.md](port_review.md).
+
 ## Implementation Checklist
 
 - [x] **Stage 1** — Create new repository, copy structure
@@ -8,15 +15,30 @@
 - [x] **Stage 4** — New linker script (flat SRAM layout)
 - [ ] **Stage 5** — New startup file (H563 vector table)
 - [ ] **Stage 6** — `stm32h5xx_hal_conf.h`
-- [ ] **Stage 7** — Clock & power init (`main.c` rewrite, `HSE_BYPASS`)
-- [ ] **Stage 8** — `FreeRTOSConfig.h` (M33 + 250 MHz)
-- [ ] **Stage 9** — `serial_io.c` (GPDMA rewrite)
-- [ ] **Stage 10** — `mac_drv.c/h` (register audit + port)
-- [ ] **Stage 11** — `flexptp_options.h` (PTP 200 MHz / 5 ns)
-- [ ] **Stage 12** — Global HAL header swap
-- [ ] **Stage 13** — Build & fix compilation
-- [ ] **Stage 14** — Create `docs/design_doc.md`
-- [ ] **Stage 15** — Flash & test on hardware
+- [ ] **Stage 7** — Build-system retarget (CMake, MCU flags, HAL sources) 🆕
+- [ ] **Stage 8** — FreeRTOS configuration + kernel port selection
+- [ ] **Stage 9** — Clock & power init (`main.c`)
+- [ ] **Stage 10** — `serial_io.c` (GPDMA rewrite)
+- [ ] **Stage 11** — `mac_drv.c/h` (register audit + port)
+- [ ] **Stage 12** — `flexptp_options.h` (PTP HCLK 250 MHz / 5 ns)
+- [ ] **Stage 13** — flexPTP H563 hardware port 🆕
+- [ ] **Stage 14** — Global HAL header sweep
+- [ ] **Stage 15** — Build & warning cleanup
+- [ ] **Stage 16** — Complete `docs/design_doc.md`
+- [ ] **Stage 17** — Project metadata & tooling (README, build.sh, VS Code) 🆕
+- [ ] **Stage 18** — Flash & test on hardware
+
+### Build gates
+
+The original plan deferred all compilation to a single stage at the end. Instead, run a
+build at each of these points and do not proceed until it passes:
+
+| After | Expected result |
+|---|---|
+| Stage 7 | `cmake --preset debug` configures; the H5 HAL static library compiles |
+| Stage 9 | `main.c` compiles |
+| Stage 13 | All application objects compile; link may still fail |
+| Stage 15 | Clean link, zero warnings under `-Wall -Wextra` |
 
 ---
 
@@ -25,14 +47,17 @@
 | Decision | Resolution |
 |---|---|
 | **Repository** | New repository `flexPTP-demo-NUCLEO-H563ZI` |
-| **PTP Clock** | 200 MHz (PLL1_Q), 5 ns increment — matches H7 config. Design doc will include 250 MHz optimization guide. |
+| **PTP Clock** | **HCLK 250 MHz, 5 ns increment.** The H563 has no ETH PTP clock mux, so HCLK is the only source; 5 ns is the smallest usable increment. Supersedes the earlier "200 MHz via PLL1_Q" decision — see [ptp_clock.md](ptp_clock.md). |
 | **HSE Mode** | `RCC_HSE_BYPASS` — stock Nucleo board (ST-Link MCO at 8 MHz) |
-| **Double-Precision FPU** | Keep `double` in Kalman filter. Accept software emulation cost on M33 SP-FPU. |
+| **Double-Precision FPU** | Keep `double` in Kalman filter. Accept software emulation cost on M33 SP-FPU. The servo runs once per Sync (1–8 Hz), so the cost is immaterial. |
 | **Network Stack** | LwIP only for initial port. Design doc will cover EtherLib porting steps. |
 | **TrustZone** | Non-secure flat mode (TZEN=0, `ARM_CM33_NTZ`). Design doc will cover TrustZone migration. |
 | **RXER Pin (PG2)** | Dropped from GPIO init. Design doc will note this. |
-| **mac_drv.c Strategy** | Register-level port (audit every register). Design doc will compare custom driver vs STM32 HAL vs existing H7 implementation. |
-| **PPS Output Pin** | Needs datasheet verification during implementation. |
+| **ETH_TXD1 Pin** | **PB15** (AF11) on NUCLEO-H563ZI — *differs* from the H743 board, which uses PB13. Confirmed against board documentation. |
+| **mac_drv.c Strategy** | Register-level port. Register audit already done during review: every ETH register and descriptor bit the driver touches exists on the H563 with identical names — see Stage 11. |
+| **PPS Output Pin** | Needs datasheet verification. Note the H743 project drives PPS from **PG8** (set up by the flexPTP port file); `mac_drv.c` *additionally* configures PB5 as ETH AF11. Decide which pin the H563 port uses and configure exactly one. |
+| **FreeRTOS kernel version** | Pin `FetchContent` to a release tag. `GIT_TAG main` is a floating dependency on a port being actively changed. |
+| **MCU compiler flags** | Live in `cmake/vscode_generated.cmake`, which is headed "shall not be touched by user". Decide in Stage 7 whether to edit it in place or move the flags into `CMakeLists.txt`. |
 
 ---
 
@@ -43,19 +68,22 @@
 | **Core** | Cortex-M7 (ARMv7-M) | Cortex-M33 (ARMv8-M) |
 | **Max Clock** | 480 MHz | 250 MHz |
 | **FPU** | Double-precision (DP) | Single-precision (SP) only |
-| **L1 Cache** | 16KB I-Cache + 16KB D-Cache (integrated) | ICACHE + DCACHE controllers (system-level) |
+| **L1 Cache** | 16KB I-Cache + 16KB D-Cache (integrated) | ICACHE + DCACHE controllers (system-level, **both off after reset**; `HAL_Init()` does not enable either) |
 | **Flash** | 1 MB @ `0x08000000` | 2 MB @ `0x08000000` |
 | **RAM** | ITCM 64KB, DTCM 128KB, AXI-SRAM 320KB, D2 32KB, D3 16KB | SRAM1 256KB, SRAM2 64KB, SRAM3 320KB (flat) |
 | **Unique ID** | `0x1FF1E800` | `0x08FFF800` |
 | **Ethernet PHY** | LAN8742A (RMII) | LAN8742A (RMII) ✅ same |
 | **USART3 VCP** | PD8 TX / PD9 RX | PD8 TX / PD9 RX ✅ same |
-| **ETH RMII Pins** | PA1/PA2/PA7/PB13/PC1/PC4/PC5/PG11/PG13 | PA1/PA2/PA7/PB13/PC1/PC4/PC5/PG11/PG13 ✅ same |
-| **PPS Pin** | PB5 (AF11) | TBD — needs datasheet verification |
+| **ETH RMII Pins** | PA1/PA2/PA7/**PB13**/PC1/PC4/PC5/PG11/PG13 | PA1/PA2/PA7/**PB15**/PC1/PC4/PC5/PG11/PG13 ⚠️ TXD1 moved |
+| **ETH_TXD1** | PB13 (AF11) | **PB15** (AF11) — must be changed in `mac_drv.c` |
+| **PPS Pin** | PG8 (AF11, set by flexPTP port); PB5 also configured in `mac_drv.c` | TBD — needs datasheet verification |
 | **RXER Pin** | PG2 (AF11) | **Dropped** — not connected on H563 Nucleo |
+| **ETH PTP clock** | HCLK (240 MHz) | HCLK (250 MHz) — **no `ETHPTPCLKSEL` mux on this device** |
 | **DMA Architecture** | DMA1/DMA2 (stream-based) | GPDMA (channel-based, linked-list) |
 | **Eth Clock Enables** | `ETH1MAC`, `ETH1TX`, `ETH1RX` | `ETH`, `ETHTX`, `ETHRX` (H5 naming) |
+| **SYSCFG** | `SYSCFG` (`__HAL_RCC_SYSCFG_CLK_ENABLE`, `HAL_SYSCFG_*`) | Renamed **`SBS`** (`__HAL_RCC_SBS_CLK_ENABLE`, `HAL_SBS_*`) |
 | **Clock Domains** | D1/D2/D3 with APB1–APB4 | Flat AHB + APB1/APB2/APB3 |
-| **Power Config** | `PWR_LDO_SUPPLY`, VOS0 for >400 MHz | VOS0 for 250 MHz, no supply selection API |
+| **Power Config** | `HAL_PWREx_ConfigSupply(PWR_LDO_SUPPLY)`, VOS0 for >400 MHz | VOS0 for 250 MHz. `HAL_PWREx_ConfigSupply()` exists but only accepts `PWR_EXTERNAL_SOURCE_SUPPLY` — drop the call. |
 | **TrustZone** | No | Yes (disabled, TZEN=0) |
 | **HAL Package** | `stm32h7xx-hal-driver` | `stm32h5xx-hal-driver` |
 | **FreeRTOS Port** | `portable/GCC/ARM_CM7/r0p1` | `portable/GCC/ARM_CM33_NTZ/non_secure` |
@@ -103,6 +131,9 @@ Create `flexPTP-demo-NUCLEO-H563ZI` as a new project at `/home/damien/git/flexPT
 
 **Commit**: `"Stage 3: Add CMSIS STM32H5xx device headers"`
 
+*Follow-up owed:* replacing `Src/system_stm32h7xx.c` with `system_stm32h5xx.c` left a dangling
+reference in `Src/CMakeLists.txt`. Fixed in Stage 7.
+
 ---
 
 ### Stage 4 — New linker script
@@ -120,10 +151,15 @@ MEMORY
 ```
 
 - `.data`, `.bss`, stack, heap → **SRAM1**
-- `.EthBufferSection`, `.ETHStateAndDecripSection` → **SRAM3**
+- `.ETHBufferSection`, `.ETHStateAndDecripSection` → **SRAM3**
 - `.FreeRTOSHeapSection` → **SRAM1**
+- `.lwIPHeapSection` → **SRAM3**
 - Remove ITCMRAM, DTCMRAM, RAM_D1/D2/D3 regions
 - Delete `stm32h735igkx_FLASH.ld`
+
+**Notes:** SRAM2 (64 KB) is deliberately left unallocated — spare capacity. The EtherLib
+pool section `.ETHLibPool` has no placement (it had none upstream either); this only
+matters if EtherLib is enabled, and is covered by the EtherLib guide in Stage 16.
 
 **Commit**: `"Stage 4: Add STM32H563ZI linker script"`
 
@@ -133,8 +169,10 @@ MEMORY
 
 Create `Startup/startup_stm32h563zitx.s`:
 - `.cpu cortex-m33`
-- Full STM32H563 vector table (different IRQ numbering)
+- Full STM32H563 vector table (different IRQ numbering; the H743 project actually used an
+  **H735** vector table, so do not diff against it — generate from the H563 reference)
 - GPDMA channel IRQ handlers instead of DMA stream handlers
+- `ETH_IRQn` is position **106** on the H563
 - Standard Reset_Handler with .data/.bss init
 - Delete `Startup/startup_stm32h735igkx.s`
 
@@ -144,126 +182,265 @@ Create `Startup/startup_stm32h563zitx.s`:
 
 ### Stage 6 — HAL configuration header
 
-Create `Inc/stm32h5xx_hal_conf.h`:
-- All `#include "stm32h7xx_hal_*.h"` → `#include "stm32h5xx_hal_*.h"`
-- Module enable/disable macros for H5
+Create `Inc/stm32h5xx_hal_conf.h`, based on
+`Drivers/stm32h5xx-hal-driver/Inc/stm32h5xx_hal_conf_template.h`:
+- Enable modules actually used: `HAL`, `CORTEX`, `DMA`, `ETH`, `FLASH`, `GPIO`, `PWR`,
+  `RCC`, `RNG`, `TIM`, `UART`, `CRC`
+- **`USE_HAL_UART_REGISTER_CALLBACKS` = `1U`** — `serial_io.c` calls
+  `HAL_UART_RegisterCallback()`; the build fails without this
 - `HSE_VALUE` = `8000000UL` (unchanged)
-- `UNIQUE_DEV_ID_BASE` = `0x08FFF800` (was `0x1FF1E800`)
+- `UNIQUE_DEV_ID_BASE` = `0x08FFF800` (was `0x1FF1E800`) — feeds `ETH_MAC_ADDR0..5`
 - `ETH_TX_DESC_CNT` / `ETH_RX_DESC_CNT` = 24 (unchanged)
-- Remove H7-specific callback macros (SAI, CORDIC, DFSDM, etc.)
+- Drop H7-only modules and their callback macros (SAI, CORDIC, DFSDM, MDMA, …)
 - Delete `Inc/stm32h7xx_hal_conf.h`
 
 **Commit**: `"Stage 6: Add stm32h5xx HAL configuration header"`
 
 ---
 
-### Stage 7 — Clock & power init
+### Stage 7 — Build-system retarget 🆕
 
-Rewrite clock/power sections of `Src/main.c`:
-- `init_osc_and_clk()`: Remove `HAL_PWREx_ConfigSupply()`, use H5 voltage scaling API, HSE_BYPASS
-- `init_pll()`: Target 250 MHz SYSCLK, PLL1_Q = 200 MHz, FLASH_LATENCY_5
-- `init_randomizer()`: Update RNG clock enable for H5
-- `init_mpu()`: ARMv8-M MPU disable
-- Update all HAL header includes
-- Update welcome message
+The MCU-specific build configuration is spread across five files. None of this was owned
+by a stage previously; it was implicit in "fix the build".
 
-**Commit**: `"Stage 7: Port clock, power, and system init to STM32H5"`
+**`cmake/vscode_generated.cmake`** — despite the "converter generated, do not touch"
+header, this holds the MCU flags, the linker script path and the startup file path:
+- `-mcpu=cortex-m7 -mfpu=fpv5-d16` → `-mcpu=cortex-m33 -mfpu=fpv5-sp-d16` (keep `-mthumb`,
+  `-mfloat-abi=hard`)
+- linker script → `stm32h563zitx_FLASH.ld`
+- startup source → `Startup/startup_stm32h563zitx.s`
+
+**`CMakeLists.txt`**
+- `set(MCU_TYPE STM32H743xx)` → `STM32H563xx`
+- Optional cleanup while in the file: line 7 contains an unsubstituted template placeholder
+  `list(APPEND CMAKE_MODULE_PATH "{{sr:cmake_path}}")`, and line 41 adds a non-existent
+  `Middlewares/Inc` include path. Both are inherited from upstream and harmless.
+  (`Modules/CMakeLists.txt:58` likewise adds a non-existent `lwip_port/include`.)
+
+**`Drivers/CMakeLists.txt`** — full rewrite:
+- Rename target `H7HAL` → `H5HAL`, root `stm32h7xx-hal-driver` → `stm32h5xx-hal-driver`
+- Replace the 127-file H7 source list with the H5 equivalents (only the enabled modules
+  are needed; there is no `Src/Legacy/` ETH driver on H5)
+- Include path `CMSIS/Device/ST/STM32H7xx/Include` → `STM32H5xx`
+
+**`Src/CMakeLists.txt`**
+- `system_stm32h7xx.c` → `system_stm32h5xx.c` (dangling since Stage 3 — the tree does not
+  configure until this is fixed)
+
+**`Middlewares/CMakeLists.txt`** — see Stage 8 for the FreeRTOS port variables; they can be
+done here if convenient.
+
+**Gate:** `cmake --preset debug` configures and `H5HAL` builds.
+
+**Commit**: `"Stage 7: Retarget build system to STM32H563ZI"`
 
 ---
 
-### Stage 8 — FreeRTOS configuration
+### Stage 8 — FreeRTOS configuration & kernel port
 
-Update `Inc/FreeRTOSConfig.h`:
+**`Inc/FreeRTOSConfig.h`**
 - `configCPU_CLOCK_HZ` = `250000000`
-- Add `configENABLE_TRUSTZONE 0`, `configRUN_FREERTOS_SECURE_ONLY 0`, `configENABLE_FPU 1`, `configENABLE_MPU 0`
-- Verify port interrupt handler mappings for M33
+- Add `configENABLE_TRUSTZONE 0`, `configRUN_FREERTOS_SECURE_ONLY 0`,
+  `configENABLE_FPU 1`, `configENABLE_MPU 0`
+- Verify the handler mappings (`vPortSVCHandler`, `xPortPendSVHandler`,
+  `xPortSysTickHandler` → `OS_Tick_Handler`) against the CM33 port
+
+**`Middlewares/CMakeLists.txt`** — not previously owned by any stage:
+- `FREERTOS_PORT` `GCC_ARM_CM7` → `GCC_ARM_CM33_NTZ`
+- Include path `portable/GCC/ARM_CM7/r0p1` → `portable/GCC/ARM_CM33_NTZ/non_secure`
+- `device_header` variable → the CM33_NTZ `portmacro.h`
+- **Pin `GIT_TAG`** to a FreeRTOS-Kernel release tag instead of `main`
 
 **Commit**: `"Stage 8: Configure FreeRTOS for Cortex-M33 @ 250 MHz"`
 
 ---
 
-### Stage 9 — Serial I/O GPDMA rewrite
+### Stage 9 — Clock & power init
+
+Rewrite clock/power sections of `Src/main.c`:
+- `init_osc_and_clk()`: remove `HAL_PWREx_ConfigSupply()`, keep `PWR_REGULATOR_VOLTAGE_SCALE0`,
+  switch HSE to `RCC_HSE_BYPASS`
+- `init_osc_and_clk()`: `__HAL_RCC_SYSCFG_CLK_ENABLE()` → `__HAL_RCC_SBS_CLK_ENABLE()`;
+  `HAL_EnableCompensationCell()` → `HAL_SBS_EnableVddIO1CompensationCell()` /
+  `…VddIO2…`
+- `init_pll()`: target 250 MHz SYSCLK (VCO 500 MHz, `PLLP` = 2), `FLASH_LATENCY_5`
+- `init_pll()`: **`AHBCLKDivider` = `RCC_HCLK_DIV1`** (was `DIV2`) — HCLK *is* the PTP clock
+- `init_pll()`: drop `SYSCLKDivider`, `APB4CLKDivider`, `RCC_CLOCKTYPE_D1PCLK1`/`D3PCLK1`
+  (→ `RCC_CLOCKTYPE_PCLK3`); rename `RCC_PLLSOURCE_HSE` → `RCC_PLL1_SOURCE_HSE`,
+  `RCC_PLL1VCOWIDE` → `RCC_PLL1_VCORANGE_WIDE`, `RCC_PLL1VCIRANGE_1` → `RCC_PLL1_VCIRANGE_1`
+- No PTP clock routing is needed: the H563 has no `ETHPTPCLKSEL` mux
+- `init_randomizer()`: update RNG clock enable for H5
+- `init_mpu()`: ARMv8-M MPU disable
+- Update HAL header includes (`stm32h7xx_hal.h`, `stm32h7xx_ll_rng.h`)
+- Update the welcome message (board name, MCU name)
+
+**Gate:** `main.c` compiles.
+
+**Commit**: `"Stage 9: Port clock, power, and system init to STM32H5"`
+
+---
+
+### Stage 10 — Serial I/O GPDMA rewrite
 
 Rewrite DMA sections of `Src/standard_output/serial_io.c`:
-- GPDMA channel config instead of DMA1 stream config
-- `__HAL_RCC_GPDMA1_CLK_ENABLE()`
-- `GPDMA1_Channel0_IRQHandler` instead of `DMA1_Stream0_IRQHandler`
+- `__HAL_RCC_DMA1_CLK_ENABLE()` → `__HAL_RCC_GPDMA1_CLK_ENABLE()`
+- `DMA1_Stream0` → a GPDMA1 channel; the H5 `DMA_InitTypeDef` is a different structure —
+  map `PeriphInc`/`MemInc`/`*DataAlignment`/`FIFO*`/`*Burst` onto `SrcInc`/`DestInc`/
+  `SrcDataWidth`/`DestDataWidth`/`SrcBurstLength`/`DestBurstLength`/
+  `TransferAllocatedPort`/`TransferEventMode`
+- `DMA1_Stream0_IRQHandler` → `GPDMA1_Channel0_IRQHandler` (match the startup file)
+- `DMA_REQUEST_USART3_TX` → H5 request ID
 - USART3 GPIO stays identical (PD8/PD9 AF7)
 
-**Commit**: `"Stage 9: Port serial I/O DMA to GPDMA"`
+**Commit**: `"Stage 10: Port serial I/O DMA to GPDMA"`
 
 ---
 
-### Stage 10 — Ethernet MAC driver port
+### Stage 11 — Ethernet MAC driver port
 
-Register-level port of `Drivers/EthDrv/mac_drv.c`:
-- GPIO: Remove PG2, update clock enables
-- MDIO clock divider recalculation
-- Audit all ETH register accesses against H5 reference manual
-- Port PTP timestamp register functions
-- Update `mac_drv.h` includes
-- Update `phy_common.c` HAL header
+Register-level port of `Drivers/EthDrv/mac_drv.c`.
 
-**Commit**: `"Stage 10: Port mac_drv.c to STM32H5 registers"`
+**Audit result (done during review — no surprises expected):** every ETH register the
+driver touches — `MACTSCR`, `MACSSIR`, `MACSTSR/NR`, `MACSTSUR/NUR`, `MACTSAR`, `MACACR`,
+`MACATSSR/NR`, `MACPPSCR`, `MACPPSTTSR/TTNR`, `MACPPSIR`, `MACPPSWR` — and every
+`ETH_DMA*NDESC*` descriptor bit exists on the H563 under identical names. It is the same
+Synopsys QoS core. The real work is peripheral plumbing, not registers:
+
+- GPIO: remove PG2 (RXER), move ETH_TXD1 **PB13 → PB15**, update the pin-map comment block
+- GPIO: decide the PPS pin (see decisions table) and configure exactly one
+- Clock enables: `ETH1MAC`/`ETH1TX`/`ETH1RX` → `ETH`/`ETHTX`/`ETHRX`
+- SYSCFG → SBS: `__HAL_RCC_SBS_CLK_ENABLE()`,
+  `HAL_SYSCFG_ETHInterfaceSelect(SYSCFG_ETH_RMII)` → `HAL_SBS_ETHInterfaceSelect(SBS_ETH_RMII)`
+- **Fix the MDIO divider write.** The current line double-shifts an already-positioned mask:
+  ```c
+  WRITE_REG(eth->MACMDIOAR, ETH_MACMDIOAR_CR_DIV102 << ETH_MACMDIOAR_CR_Pos);  // wrong
+  ```
+  `ETH_MACMDIOAR_CR_DIV102` is `0x400` (bit 10). Shifting by 8 lands in the `RDA` field and
+  leaves `CR` = 0 → ÷42 → ~6 MHz MDC, over the 2.5 MHz limit. Correct form:
+  ```c
+  WRITE_REG(eth->MACMDIOAR, ETH_MACMDIOAR_CR_DIV102);   // 250 MHz / 102 = 2.45 MHz
+  ```
+- Update `mac_drv.h` include (`stm32h7xx.h` → `stm32h5xx.h`)
+- Update `phy_drv/phy_common.c` HAL header
+
+**Commit**: `"Stage 11: Port mac_drv.c to STM32H5"`
 
 ---
 
-### Stage 11 — flexPTP options
+### Stage 12 — flexPTP options
 
 Update `Inc/flexptp_options.h`:
-- `PTP_MAIN_OSCILLATOR_FREQ_HZ` = `200000000`
-- `PTP_INCREMENT_NSEC` = `5`
-- Verify/update PTP port file includes
+- `PTP_MAIN_OSCILLATOR_FREQ_HZ` = `250000000` (= HCLK; no ETH PTP clock mux on this device)
+- `PTP_INCREMENT_NSEC` = `5` (must exceed the 4 ns HCLK period — see [ptp_clock.md](ptp_clock.md))
+- Confirm the resulting addend is 3435973836 (`0xCCCCCCCC`), not 0
+- Repoint the hardware-port include at the new H563 port from Stage 13
 
-**Commit**: `"Stage 11: Configure flexPTP for H5 PTP clock"`
+**Commit**: `"Stage 12: Configure flexPTP for the H563 PTP clock"`
 
 ---
 
-### Stage 12 — Global HAL header swap
+### Stage 13 — flexPTP H563 hardware port 🆕
+
+The flexPTP submodule ships ports for H743 / F407 / CH32F207 / TM4C1294 / Linux only.
+**There is no H5 port**, and the H743 port (`ptp_port_stm32h743_lwip.c`) includes
+`stm32h7xx_hal.h` directly and does its own PPS GPIO setup. This was not covered by any
+stage.
+
+- Create the port implementing `ptphw_init()`, `ptphw_gettime()`, `ptphw_set_pps_freq()`,
+  `ptphw_restart_pps()` and the `ptp pps` CLI command — derive from
+  `ptp_port_stm32h743_lwip.c`
+- Change the include to `stm32h5xx_hal.h`; configure the chosen PPS pin (H743 uses PG8)
+- Wire it up in `Modules/CMakeLists.txt`: currently `FLEXPTP_HWPORT` is `H743_LWIP`
+  / `H743_ETHERLIB`. flexPTP supports project-local ports — populate `FLEXPTP_HWPORT_SRC`
+  and leave `FLEXPTP_HWPORT` unset
+- Decide whether the port lives in this repo or is contributed upstream to flexPTP
+
+**Gate:** all application objects compile.
+
+**Commit**: `"Stage 13: Add flexPTP hardware port for STM32H563"`
+
+---
+
+### Stage 14 — Global HAL header sweep
 
 Search-and-replace across all remaining files:
 - `stm32h7xx_hal.h` → `stm32h5xx_hal.h`
 - `stm32h7xx_ll_rng.h` → `stm32h5xx_ll_rng.h`
 - `stm32h7xx.h` → `stm32h5xx.h`
 
-Files: `eth_drv_lwip.c`, `eth_drv_etherlib.c`, and any others still referencing H7 headers.
+Complete file list (the original plan named only the first two):
+- `Drivers/EthDrv/eth_drv_lwip.c`
+- `Drivers/EthDrv/eth_drv_etherlib.c`
+- `Src/ethernet/ethernet_etherlib.c`
+- `Drivers/CMSIS/CMSIS_RTOS_V2/cmsis_os2.c`
 
-**Commit**: `"Stage 12: Complete HAL header migration to stm32h5xx"`
+Finish with `grep -rn "stm32h7\|STM32H7" --include='*.c' --include='*.h'` over
+`Src/ Inc/ Drivers/EthDrv/ Drivers/CMSIS/CMSIS_RTOS_V2/ Modules/lwip_port/` to confirm none remain.
+
+**Commit**: `"Stage 14: Complete HAL header migration to stm32h5xx"`
 
 ---
 
-### Stage 13 — Build & fix compilation
+### Stage 15 — Build & warning cleanup
 
-- Update `CMakeLists.txt`: MCU flags, linker script, startup file, HAL paths, CMSIS paths, FreeRTOS port
-- Update `Drivers/CMakeLists.txt`: H5 HAL sources
 - `cmake --preset debug && cmake --build build/debug`
-- Fix all compilation errors and warnings
+- Fix all remaining compilation errors and warnings
 - Target: clean build with `-Wall -Wextra`
+- Check the `--print-memory-usage` output: SRAM1 holds `.data`/`.bss`/stack/heap plus the
+  30 KB FreeRTOS heap; SRAM3 holds ~73 KB of ETH buffers plus descriptors and the 16 KB
+  lwIP heap. Both should be comfortable.
 
-**Commit**: `"Stage 13: Fix build for STM32H563ZI target"`
+**Commit**: `"Stage 15: Fix build for STM32H563ZI target"`
 
 ---
 
-### Stage 14 — Design documentation
+### Stage 16 — Complete design documentation
 
-Create `docs/design_doc.md` with:
-- PTP Clock Optimization Guide (200 MHz → 250 MHz)
-- EtherLib Porting Guide
+`docs/design_doc.md` already exists and has been filled incrementally since Stage 1.
+Complete the remaining sections:
+- PTP Clock — ✅ done, detail in [ptp_clock.md](ptp_clock.md); verify against measured
+  hardware behaviour in Stage 18
+- RMII Pin Map — ✅ done
+- EtherLib Porting Guide — include the missing `.ETHLibPool` linker placement
 - TrustZone Migration Guide
 - RXER Pin Note
-- mac_drv.c Comparison (custom vs HAL vs H7)
+- mac_drv.c Comparison (custom vs ST HAL `stm32h5xx_hal_eth.c` vs H7)
+- Note that DCACHE/ICACHE are off after reset and `HAL_Init()` leaves them off, so the
+  SRAM3 Ethernet placement needs no cache maintenance as built
 
-**Commit**: `"Stage 14: Add design documentation"`
+**Commit**: `"Stage 16: Complete design documentation"`
 
 ---
 
-### Stage 15 — Flash & test on hardware
+### Stage 17 — Project metadata & tooling 🆕
+
+Not previously owned by any stage; all of it still says H743:
+- `README.md` — full pass: board name, MCU, clone URL, OpenOCD invocation
+  (`board/st_nucleo_h743zi.cfg`), HAL link, directory listing. It also references
+  `NUCLEO-H743ZI.gif`, which was intentionally not copied — either supply an H563 capture
+  or drop the image
+- `build.sh` — header comment
+- `.vscode/launch.json` — `device` `STM32H743ZITx` → `STM32H563ZITx`, `svdFile`
+  `STM32H743.svd` → `STM32H563.svd`, OpenOCD config → `board/st_nucleo_h563zi.cfg`
+  (4 occurrences across the launch configurations)
+
+**Commit**: `"Stage 17: Update project metadata for NUCLEO-H563ZI"`
+
+---
+
+### Stage 18 — Flash & test on hardware
+
+**Precondition:** the board's `TZEN` option byte must be disabled (factory default). The
+flat `0x08000000` layout and the `ARM_CM33_NTZ` port assume a non-TrustZone part; a board
+previously provisioned with TZEN=1 will not boot this image.
 
 - Flash firmware to NUCLEO-H563ZI board
 - Verify: serial output, DHCP, PTP sync, 1PPS, CLI
-- Document results in design doc
+- Confirm the PTP clock behaves as derived in `ptp_clock.md` — check `ptp addend` reports
+  ~3435973836 and that the servo converges rather than railing
+- Document results in the design doc
 
-**Commit**: `"Stage 15: Hardware verification results"`
+**Commit**: `"Stage 18: Hardware verification results"`
 
 ---
 
@@ -271,27 +448,45 @@ Create `docs/design_doc.md` with:
 
 ```mermaid
 graph TD
-    A["Stage 1: Create repo"] --> B["Stage 2: HAL submodule"]
-    B --> C["Stage 3: CMSIS headers"]
-    C --> D["Stage 4: Linker script"]
-    D --> E["Stage 5: Startup file"]
+    A["Stage 1-4: Repo, HAL, CMSIS, linker (done)"] --> E["Stage 5: Startup file"]
     E --> F["Stage 6: HAL conf"]
-    F --> G["Stage 7: Clock & power"]
-    G --> H["Stage 8: FreeRTOS"]
-    H --> I["Stage 9: Serial GPDMA"]
-    I --> J["Stage 10: MAC driver"]
-    J --> K["Stage 11: flexPTP opts"]
-    K --> L["Stage 12: Header swap"]
-    L --> M["Stage 13: Build fix"]
-    M --> N["Stage 14: Design doc"]
-    N --> O["Stage 15: Hardware test"]
+    F --> G["Stage 7: Build system"]
+    G --> G1{{"Gate: HAL compiles"}}
+    G1 --> H["Stage 8: FreeRTOS"]
+    H --> I["Stage 9: Clock & power"]
+    I --> I1{{"Gate: main.c compiles"}}
+    I1 --> J["Stage 10: Serial GPDMA"]
+    J --> K["Stage 11: MAC driver"]
+    K --> L["Stage 12: flexPTP opts"]
+    L --> M["Stage 13: flexPTP HW port"]
+    M --> M1{{"Gate: all objects compile"}}
+    M1 --> N["Stage 14: Header sweep"]
+    N --> O["Stage 15: Build & warnings"]
+    O --> O1{{"Gate: clean link"}}
+    O1 --> P["Stage 16: Design doc"]
+    P --> Q["Stage 17: Metadata"]
+    Q --> R["Stage 18: Hardware test"]
 ```
+
+---
+
+## Open Items & Risks
+
+| Item | Stage | Notes |
+|---|---|---|
+| PPS output pin not chosen | 11, 13 | H743 uses PG8 via the flexPTP port *and* configures PB5 in `mac_drv.c`. Verify H563 availability and header accessibility; configure one. |
+| CMSIS Core version | 15 | `Drivers/CMSIS/Include` is CMSIS Core 5.6, carried over from the H7 project. CMSIS device pack is 1.7.0. Expected to work with `core_cm33.h`, but a version bump is the first thing to try if odd core-header errors appear. |
+| `vscode_generated.cmake` ownership | 7 | Marked machine-generated. If the STM32 VS Code extension regenerates it, the MCU flags revert. Consider moving them into `CMakeLists.txt`. |
+| ETH DMA reach into SRAM3 | 15, 18 | SRAM1/2/3 are all on the AHB matrix, and DCACHE is off, so no coherency handling is expected. Confirm empirically on hardware before assuming. |
+| FreeRTOS `main` branch | 8 | Pin before the first build so later failures aren't caused by an upstream kernel change. |
+| SNSINC sub-nanosecond increment | — | Left at zero, as on the H743. Unexplored avenue for finer rate resolution; would need a reference-manual check. See `ptp_clock.md`. |
 
 ---
 
 ## Verification Plan
 
 ### Build Verification
+- Incremental gates after Stages 7, 9, 13 (see [Build gates](#build-gates))
 - `cmake --preset debug && cmake --build build/debug` — clean compile, zero errors/warnings
 
 ### Functional Verification (requires hardware)
