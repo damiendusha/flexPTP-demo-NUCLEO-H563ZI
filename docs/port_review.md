@@ -129,7 +129,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F39 | flexPTP has never been ported to Cortex-M33 / ARMv8-M | Risk | plan Open Items |
 | F40 | No OS-binding macro selected; silently defaults to `FLEXPTP_FREERTOS` | Build (latent) | plan Stage 13 |
 | F41 | `PTP_UPDATE_CLOCK` dead; `ETHHW_UpdatePTPTime()` unreachable and suspect | Minor + latent bug | plan Stage 12 |
-| F42 | TX timestamp lost **inside flexPTP's message buffer**, not in the driver — blocks PTP lock | **OPEN, blocking** | driver exonerated by instrumentation |
+| F42 | TX timestamps starved by the ETH ISR servicing RX exclusively — **PTP now synchronises** | **RESOLVED (attribution pending)** | fixed; confirmation experiment outstanding |
 | F43 | `PTP_ACCURACY_LIMIT_NS` (100 ns) is the implicit LOCKED criterion | Minor | plan Stage 20 |
 | F44 | `CMakePresets.json` requires Ninja; not documented as a prerequisite | Minor | plan Stage 19 |
 | F45 | H5 inverts the H7 clock-divider namespaces; the H7 spelling compiles but misconfigures | Critical (silent) | plan Stage 10 (fixed) |
@@ -473,15 +473,54 @@ Either `msgb_get_by_uid()` fails to match when the timestamp arrives, or the mes
 matched but its **tag** is not `RPMT_DELAY_REQ` at lookup time. Both are message-buffer
 bookkeeping in the submodule, not project code.
 
-**Suggestive:** upstream commit `a60190f` — already behind F47 and F49 — is titled *"Linux
-and OS-less working mode, **new message buffer and FIFO**"*. That commit rewrote precisely
-this layer, and this port is pinned newer than the H743 reference, which never exercised it.
+*This message-buffer theory was not borne out* — see the resolution above. The library was
+behaving correctly; the driver was starving it of transmit timestamps.
 
-**Next step, no reflash needed:** `ptp log transmission on` prints both halves of the match
-— `uid (tag) --->` when sending and `---> uid` when the timestamp returns. Mismatched uids,
-or a tag that is not `RPMT_DELAY_REQ`, identifies the defect directly.
+### Resolution — PTP synchronises
 
-### Correction
+After the ISR change described below, the servo runs and holds lock. 150 consecutive
+samples against a `linuxptp` grandmaster:
+
+| Metric | Value |
+|---|---|
+| Time error, mean | **−535 ns** |
+| Time error, std dev | 83 µs |
+| \|error\| median | 47 µs |
+| Best sample | **−69 ns** |
+| Addend range | 3435557497 … 3436028351 |
+| Steady-state frequency offset | **−41 ppb** |
+
+The mean of −535 ns over 150 samples is the meaningful figure: the servo holds the clock
+centred rather than drifting. The addend is tuned around the `0xCCCCCCCC` derived in
+[ptp_clock.md](ptp_clock.md), settling ~41 ppb below nominal — the ST-Link MCO's real
+frequency error, measured and corrected.
+
+The ±83 µs spread is **host-side, not the board**. The test NIC has no PHC, so `-S` places
+master timestamps in software at the mercy of kernel scheduling. The −69 ns sample shows
+what the hardware achieves when that jitter happens to cancel.
+
+### Probable cause: the ISR serviced RX exclusively
+
+`ETHHW_ISR()` used `else if` between its receive and transmit branches:
+
+```c
+if (csr & ETH_DMACSR_RI) { ... }
+else if (csr & ETH_DMACSR_TI) { ETHHW_ProcessTx(eth); }   // skipped whenever RI is also set
+```
+
+Once transmit servicing fell behind, `RI` and `TI` coincided on every entry, receive always
+won, and `ETHHW_ProcessTx()` was never reached — so no transmit timestamps, no T3, and
+every Delay_Resp discarded. Making the branches independent clears `TI` promptly, which is
+why `isrBoth` now reads **0**.
+
+> **Attribution not yet proven.** This is the only functional change between the
+> persistently-failing state and the working one, and the mechanism is self-consistent, but
+> it has not been confirmed by reverting. Note also that `isrBoth = 0` was initially read as
+> evidence *against* this explanation — wrongly, since the counter was introduced in the
+> same build as the fix and therefore only ever measured the post-fix world. A
+> revert-and-retest is outstanding.
+
+### Superseded diagnosis
 
 This finding previously read "lwIP TX timestamp plumbing broken", attributing the defect to
 this project's driver code. The instrumentation above disproves that. The scope was wrong;

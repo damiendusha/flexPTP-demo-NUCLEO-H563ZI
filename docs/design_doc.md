@@ -599,8 +599,11 @@ Tested against `linuxptp` 4.4 on a Linux host.
 - **Transmit-side hardware timestamping also works.** Instrumentation counters read over
   SWD show 698 timestamps requested, captured, found in the descriptor and dispatched —
   698 for 698, no losses. The project's MAC driver and lwIP glue are correct.
-- **Blocked on F42**, now narrowed: the transmit timestamp reaches flexPTP but is lost in
-  the library's own message-buffer bookkeeping, so `slave.c` finds no T3 and discards every
-  Delay_Resp. The servo therefore never applies a correction and the addend stays at its
-  initial value. See [port_review.md](port_review.md).
+- **PTP synchronises.** 150 samples against a `linuxptp` grandmaster give a mean time error
+  of **−535 ns**, best sample −69 ns, with the addend actively tuned around `0xCCCCCCCC`
+  and settling ~41 ppb below nominal — the ST-Link MCO's real frequency error. The ±83 µs
+  spread is host-side software timestamping, not the board.
+- **F42 resolved** by making the ETH ISR's receive and transmit branches independent rather
+  than `else if`; the exclusive form starved `ETHHW_ProcessTx()` of transmit timestamps.
+  Attribution is not yet proven by reverting — see [port_review.md](port_review.md).
 
