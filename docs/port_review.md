@@ -129,7 +129,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F39 | flexPTP has never been ported to Cortex-M33 / ARMv8-M | Risk | plan Open Items |
 | F40 | No OS-binding macro selected; silently defaults to `FLEXPTP_FREERTOS` | Build (latent) | plan Stage 13 |
 | F41 | `PTP_UPDATE_CLOCK` dead; `ETHHW_UpdatePTPTime()` unreachable and suspect | Minor + latent bug | plan Stage 12 |
-| F42 | lwIP TX timestamp plumbing broken — **confirmed live defect**, blocks PTP lock | **OPEN, blocking** | diagnosed on hardware |
+| F42 | TX timestamp lost **inside flexPTP's message buffer**, not in the driver — blocks PTP lock | **OPEN, blocking** | driver exonerated by instrumentation |
 | F43 | `PTP_ACCURACY_LIMIT_NS` (100 ns) is the implicit LOCKED criterion | Minor | plan Stage 20 |
 | F44 | `CMakePresets.json` requires Ninja; not documented as a prerequisite | Minor | plan Stage 19 |
 | F45 | H5 inverts the H7 clock-divider namespaces; the H7 spelling compiles but misconfigures | Critical (silent) | plan Stage 10 (fixed) |
@@ -433,14 +433,59 @@ Ruled out so far:
 - `ETHHW_ProcessTx()` does run — TX descriptors are found zeroed with `tsCbPtr` cleared,
   which only that function does.
 
-So the break lies between the MAC writing back a descriptor with `TTSS` set and
-`ptp_transmit_timestamp_cb()` receiving it. The next step is instrumentation: count in
-`ETHHW_ProcessTx()` how many descriptors are seen with `TTSS` set, versus how many
-callbacks are dispatched.
+### Instrumented result — the driver is not at fault
 
-*One candidate worth checking first:* `ETHHW_ISR()` uses `else if` between the RX and TX
-branches, so a combined RI+TI interrupt services only RX. TI stays asserted so it should
-re-trigger, but the interaction is worth confirming rather than assuming.
+Counters added to `mac_drv.c` and read over SWD, one atomic snapshot:
+
+| Counter | Value |
+|---|---|
+| `txTsRequested` — `ETHHW_Transmit()` set `TTSE` | 698 |
+| `isrTi` — ETH ISR saw a TX interrupt | 698 |
+| `procTxCalls` — `ETHHW_ProcessTx()` ran | 698 |
+| `descWithTs` — descriptors found carrying a timestamp | 698 |
+| `cbCandidates` — reached the dispatch site | 698 |
+| `cbPtrNull` — callback pointer was NULL | **0** |
+| `cbDispatched` — callback actually invoked | **698** |
+
+**698 for 698, with no losses at any stage.** The MAC captures every requested transmit
+timestamp, writes it back with `TTSS` set, `ETHHW_ProcessTx()` finds it, and the callback
+fires with a valid pointer. `mac_drv.c`, `eth_drv_lwip.c` and the F48 tag round-trip are
+all correct.
+
+`isrBoth` = 0, so the `else if` between the ISR's RX and TX branches was never implicated —
+that path did not occur once. (It was changed to independent `if`s anyway, being latently
+wrong, but it was not this defect.)
+
+### Where the timestamp is actually lost
+
+Inside flexPTP, in its own transmit bookkeeping:
+
+```
+ptp_transmit_timestamp_cb(uid) → sTxCbFIFO → PTN_TRANSMIT_DONE handler
+    → msgb_get_by_uid(&sRawTxMsgBuf, ts.uid)      ← miss here drops the timestamp
+    → msgb_set_sent(...)
+                     ↓
+slave.c: ptp_read_and_clear_transmit_timestamp(RPMT_DELAY_REQ)
+    → msgb_get_sent_by_tag(&sRawTxMsgBuf, RPMT_DELAY_REQ)   ← NULL → Delay_Resp discarded
+```
+
+Either `msgb_get_by_uid()` fails to match when the timestamp arrives, or the message is
+matched but its **tag** is not `RPMT_DELAY_REQ` at lookup time. Both are message-buffer
+bookkeeping in the submodule, not project code.
+
+**Suggestive:** upstream commit `a60190f` — already behind F47 and F49 — is titled *"Linux
+and OS-less working mode, **new message buffer and FIFO**"*. That commit rewrote precisely
+this layer, and this port is pinned newer than the H743 reference, which never exercised it.
+
+**Next step, no reflash needed:** `ptp log transmission on` prints both halves of the match
+— `uid (tag) --->` when sending and `---> uid` when the timestamp returns. Mismatched uids,
+or a tag that is not `RPMT_DELAY_REQ`, identifies the defect directly.
+
+### Correction
+
+This finding previously read "lwIP TX timestamp plumbing broken", attributing the defect to
+this project's driver code. The instrumentation above disproves that. The scope was wrong;
+the symptom and the blocking status were not.
 
 
 

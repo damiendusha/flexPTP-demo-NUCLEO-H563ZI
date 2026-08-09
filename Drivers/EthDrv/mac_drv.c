@@ -6,6 +6,11 @@
 
 #include <stm32h5xx_hal.h>
 
+/* ---- TEMPORARY INSTRUMENTATION for finding F42 (TX timestamp path). ----
+ * Plain volatile counters so they can be read over SWD without printing from an ISR.
+ * Remove once the defect is understood. */
+volatile ETHHW_TxTsDebug ethdbg = {0};
+
 __weak uint32_t ETHHW_setupPHY(ETH_TypeDef *eth) {
     (void)eth;
     return MODEINIT_FULL_DUPLEX | MODEINIT_SPEED_100MBPS;
@@ -410,6 +415,8 @@ void ETHHW_ProcessTx(ETH_TypeDef *eth) {
 
     uint16_t descsWithTimestamp = 0;
 
+    ethdbg.procTxCalls++;
+
     do {
         // search for oldest timestamp-carrying descriptor
         bool firstIteration = true;
@@ -418,6 +425,7 @@ void ETHHW_ProcessTx(ETH_TypeDef *eth) {
             uint32_t DES3 = ring[i].desc.DES3;
             if ((DES3 & ETH_DMATXNDESCWBF_TTSS) && !(DES3 & ETH_DMATXNDESCWBF_OWN)) { // examine only descriptors holding a timestamp
                 descsWithTimestamp++;                                                 // desc found with timestamp
+                ethdbg.descWithTs++;
                 int32_t delta = (int32_t)txCntr - (int32_t)state->txCntAcked;
 
                 if (firstIteration) { // initialize variables with valid data
@@ -446,7 +454,12 @@ void ETHHW_ProcessTx(ETH_TypeDef *eth) {
             uint32_t ts_s = bd->desc.DES1;
             uint32_t ts_ns = bd->desc.DES0;
 
+            ethdbg.cbCandidates++;
+            if (bd->ext.tsCbPtr == 0) {
+                ethdbg.cbPtrNull++;
+            }
             if (bd->ext.tsCbPtr != 0) {
+                ethdbg.cbDispatched++;
                 // Signature must match lwipopts.h's tx_cb and flexPTP's ptp_transmit_cb:
                 // the tag is a void *, carried through the descriptor extension as a uint32_t.
                 ((void (*)(uint32_t, uint32_t, void *))(bd->ext.tsCbPtr))(ts_s, ts_ns, (void *)bd->ext.tsCbArg);
@@ -474,14 +487,25 @@ void ETHHW_ISR(ETH_TypeDef *eth) {
     // MSG("ETH [0x%X]\n", csr);
 
     if (csr & ETH_DMACSR_NIS) {    // Normal Interrupt Summary
+        ethdbg.isrNis++;
+        if ((csr & ETH_DMACSR_RI) && (csr & ETH_DMACSR_TI)) {
+            ethdbg.isrBoth++;
+        }
+
         if (csr & ETH_DMACSR_RI) { // Receive Interrupt
+            ethdbg.isrRi++;
             SET_BIT(ETH->DMACSR, ETH_DMACSR_RI);
             SET_BIT(ETH->DMACSR, ETH_DMACSR_NIS);
 
             ETHHW_EventDesc evt;
             evt.type = ETHHW_EVT_RX_NOTFY;
             ETHHW_EventCallback(&evt);
-        } else if (csr & ETH_DMACSR_TI) { // Transmit Interrupt
+        }
+
+        // NOTE: this was "else if" -- a combined RI+TI interrupt serviced only RX.
+        // Made independent so a coincident TX completion is never skipped.
+        if (csr & ETH_DMACSR_TI) { // Transmit Interrupt
+            ethdbg.isrTi++;
             SET_BIT(ETH->DMACSR, ETH_DMACSR_TI);
 
             ETHHW_ProcessTx(eth);
@@ -514,6 +538,7 @@ void ETHHW_Transmit(ETH_TypeDef *eth, const uint8_t *buf, uint16_t len, uint8_t 
     if ((txOpts == ETHHW_TXOPT_CAPTURE_TS) &&
         (txOptArgs != NULL)) { // arguments are mandatory
         opts |= ETH_DMATXNDESCRF_TTSE;
+        ethdbg.txTsRequested++;
         ETHHW_OptArg_TxTsCap *arg = (ETHHW_OptArg_TxTsCap *)txOptArgs; // retrieve args
         bd->ext.tsCbPtr = arg->txTsCbPtr;                              // fill-in extension fields
         bd->ext.tsCbArg = arg->tag;

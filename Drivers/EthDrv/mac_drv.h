@@ -4,6 +4,22 @@
 #include <stdbool.h>
 #include <stm32h5xx.h>
 
+/* ---- TEMPORARY INSTRUMENTATION for finding F42. Remove once resolved. ---- */
+typedef struct {
+    uint32_t txTsRequested; // ETHHW_Transmit() set TTSE on a descriptor
+    uint32_t isrNis;        // ETH ISR entered with Normal Interrupt Summary
+    uint32_t isrRi;         // ... with Receive Interrupt
+    uint32_t isrTi;         // ... with Transmit Interrupt
+    uint32_t isrBoth;       // ... with RI and TI simultaneously
+    uint32_t procTxCalls;   // ETHHW_ProcessTx() invocations
+    uint32_t descWithTs;    // descriptors found carrying a TX timestamp
+    uint32_t cbCandidates;  // timestamped descriptors reaching the dispatch site
+    uint32_t cbPtrNull;     // ... of which the callback pointer was NULL
+    uint32_t cbDispatched;  // callbacks actually invoked
+} ETHHW_TxTsDebug;
+
+extern volatile ETHHW_TxTsDebug ethdbg;
+
 #define MODEINIT_HALF_DUPLEX (0)
 #define MODEINIT_FULL_DUPLEX (1 << 8)
 #define MODEINIT_SPEED_10MBPS (0)
