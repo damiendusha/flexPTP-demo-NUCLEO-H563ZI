@@ -36,14 +36,31 @@ timestamping and you must add `-S` (software timestamping) below.
 
 ## Command
 
-`linuxptp` ships a ready-made gPTP profile that already matches the board on transport,
-destination MAC, `transportSpecific` and sync interval:
+> **The config must live in `/etc/linuxptp/`.** Ubuntu ships an AppArmor profile at
+> `/etc/apparmor.d/usr.sbin.ptp4l` that confines ptp4l's config reads to
+> `@{etc_ro}/linuxptp/** r`. Pointing `-f` at the shipped copy under
+> `/usr/share/doc/linuxptp/configs/` fails with **"Permission denied" even as root**, which
+> looks like a file-permission problem but is not — the file is world-readable and every
+> directory on the path is traversable.
+
+This repository carries a ready-made config with the overrides already folded in:
 
 ```bash
-sudo ptp4l -f /usr/share/doc/linuxptp/configs/gPTP.cfg -i enp7s0 -S -m --serverOnly=1 --priority1=100
+sudo install -D -m644 tools/linuxptp/flexptp-gm.cfg /etc/linuxptp/flexptp-gm.cfg
+sudo ptp4l -f /etc/linuxptp/flexptp-gm.cfg -i enp7s0 -S -m
 ```
 
-Replace `enp7s0` with your interface. The flags that are not in the config file:
+Replace `enp7s0` with your interface, and drop `-S` if your NIC has a PTP hardware clock.
+
+If you would rather use linuxptp's stock file, copy it into the allowed directory and
+supply the overrides on the command line:
+
+```bash
+sudo install -D -m644 /usr/share/doc/linuxptp/configs/gPTP.cfg /etc/linuxptp/gPTP.cfg
+sudo ptp4l -f /etc/linuxptp/gPTP.cfg -i enp7s0 -S -m --serverOnly=1 --priority1=100
+```
+
+The flags that are not in the stock config file:
 
 - **`-S`** — software timestamping. Required only if your NIC has no PHC. Drop it if it
   does, for far better accuracy.
@@ -99,5 +116,6 @@ Symptoms are usually silence rather than errors, because L2 PTP has no handshake
 | Did BMCA pick the wrong grandmaster? | `pmc ... 'GET PARENT_DATA_SET'`; lower `--priority1` |
 | Right destination MAC? | tcpdump should show `01:80:c2:00:00:0e`, not `01:1b:19:...` |
 | Is the target's PTP stack running? | `flexptp` at the CLI; look for *"Turning PTP on!"* |
+| `-f` fails with "Permission denied" as root | AppArmor: the config must be under `/etc/linuxptp/` |
 
 Note that firewall rules are irrelevant here: this is raw Ethernet, below IP.
