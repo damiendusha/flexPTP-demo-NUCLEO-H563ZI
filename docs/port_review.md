@@ -40,40 +40,41 @@ Not done: no compilation (the tree does not yet configure — see [F10](#f10)), 
 | # | Finding | Severity | Now tracked in |
 |---|---|---|---|
 | F1 | PTP baseline misstated: H743 uses 240 MHz, not 200 MHz | Critical | [ptp_clock.md](ptp_clock.md#history) |
-| F2 | Both planned PTP configs have K = 1.0 → addend of 0 | Critical | [ptp_clock.md](ptp_clock.md#the-k--1-constraint), plan Stage 12 |
+| F2 | Both planned PTP configs have K = 1.0 → addend of 0 | Critical | [ptp_clock.md](ptp_clock.md#the-k--1-constraint), plan Stage 13 |
 | F3 | H563 has no ETH PTP clock mux at all | Critical | [ptp_clock.md](ptp_clock.md#why-there-is-no-clock-source-to-choose), design doc, plan diff table |
 | F4 | PLL1_Q cannot produce 200 MHz alongside 250 MHz SYSCLK | Critical | [ptp_clock.md](ptp_clock.md#pll-arithmetic-for-reference) |
 | F5 | A 4 ns increment is unreachable on this device | Critical | [ptp_clock.md](ptp_clock.md#why-a-4-ns-increment-is-unreachable) |
-| F6 | AHB prescaler must change `DIV2` → `DIV1` | Critical | plan Stage 9, [ptp_clock.md](ptp_clock.md#coupled-decisions) |
-| F7 | ETH_TXD1 moves PB13 → PB15 | Critical | design doc RMII Pin Map, plan decisions + Stage 11 |
-| F8 | MDIO divider write double-shifts a positioned mask | Critical | plan Stage 11 (with before/after code) |
-| F9 | No flexPTP hardware port exists for H5 | Critical | plan **Stage 13** 🆕 |
-| F10 | `Src/CMakeLists.txt` references deleted `system_stm32h7xx.c` | Build | plan Stage 7 + Stage 3 follow-up note |
-| F11 | SYSCFG renamed to SBS on H5 | Build | plan Stages 9 & 11, diff table |
+| F6 | AHB prescaler must change `DIV2` → `DIV1` | Critical | plan Stage 10, [ptp_clock.md](ptp_clock.md#coupled-decisions) |
+| F7 | ETH_TXD1 moves PB13 → PB15 | Critical | design doc RMII Pin Map, plan decisions + Stage 12 |
+| F8 | MDIO divider write double-shifts a positioned mask | Critical | plan Stage 12 (with before/after code) |
+| F9 | No flexPTP hardware port exists for H5 | Critical | plan **Stage 14** 🆕 |
+| F10 | `Src/CMakeLists.txt` references deleted `system_stm32h7xx.c` | Build | plan Stage 8 + Stage 3 follow-up note |
+| F11 | SYSCFG renamed to SBS on H5 | Build | plan Stages 10 & 12, diff table |
 | F12 | `USE_HAL_UART_REGISTER_CALLBACKS` must be `1U` | Build | plan Stage 6 |
-| F13 | `Drivers/CMakeLists.txt` is a 127-file H7 source list | Build | plan Stage 7 |
-| F14 | MCU flags still `cortex-m7` / `fpv5-d16` | Build | plan Stage 7 |
-| F15 | `MCU_TYPE` still `STM32H743xx` | Build | plan Stage 7 |
+| F13 | `Drivers/CMakeLists.txt` is a 127-file H7 source list | Build | plan Stage 8 |
+| F14 | MCU flags still `cortex-m7` / `fpv5-d16` | Build | plan Stage 8 |
+| F15 | `MCU_TYPE` still `STM32H743xx` | Build | plan Stage 8 |
 | F16 | FreeRTOS port still `GCC_ARM_CM7` | Build | plan Stage 8 |
-| F17 | Header-sweep stage listed only 2 of 4 affected files | Build | plan Stage 14 |
-| F18 | H7 PWR supply API does not exist on H5 | Build | plan Stage 9, diff table |
-| F19 | H7 RCC clock-tree fields and PLL symbol names differ | Build | plan Stage 9 |
+| F17 | Header-sweep stage listed only 2 of 4 affected files | Build | plan Stage 15 |
+| F18 | H7 PWR supply API does not exist on H5 | Build | plan Stage 10, diff table |
+| F19 | H7 RCC clock-tree fields and PLL symbol names differ | Build | plan Stage 10 |
 | F20 | No intermediate build gates | Process | plan [Build gates](implementation_plan.md#build-gates) |
-| F21 | Old Stage 13 was a catch-all bucket | Process | split into plan Stages 7 & 15 |
-| F22 | Old Stage 14 "create design_doc.md" — already existed | Process | plan Stage 16 reframed as *complete* |
-| F23 | No stage owned README / build.sh / launch.json | Process | plan **Stage 17** 🆕 |
-| F24 | FreeRTOS `GIT_TAG main` is a floating dependency | Process | plan Stage 8, decisions, risks |
-| F25 | TZEN option byte is a boot precondition | Precondition | plan Stage 18 |
-| F26 | PPS pin undecided; H743 configures two | Resolved | **PG8 chosen** — plan decisions, Stages 11 & 13 |
-| F27 | ETH DMA reach into SRAM3 unverified | Precondition | plan Open Items, Stage 16 |
+| F21 | Old Stage 13 was a catch-all bucket | Process | split into plan Stages 8 & 16 |
+| F22 | Old Stage 14 "create design_doc.md" — already existed | Process | plan Stage 17 reframed as *complete* |
+| F23 | No stage owned README / build.sh / launch.json | Process | plan **Stage 19** 🆕 |
+| F24 | FreeRTOS `GIT_TAG main` is a floating dependency | Process | plan Stage 9, decisions, risks |
+| F25 | TZEN option byte is a boot precondition | Precondition | plan Stage 20 |
+| F26 | PPS pin undecided; H743 configures two | Resolved | **PG8 chosen** — plan decisions, Stages 12 & 14 |
+| F27 | ETH DMA reach into SRAM3 unverified | Precondition | plan Open Items, Stage 17 |
 | F28 | SRAM2 (64 KB) unallocated | Minor | plan Stage 4 note |
-| F29 | `.ETHLibPool` has no linker placement | Minor | plan Stage 4 note, Stage 16 |
+| F29 | `.ETHLibPool` has no linker placement | Minor | plan Stage 4 note, Stage 17 |
 | F30 | CMSIS Core 5.6 carried over from the H7 project | Minor | plan Open Items |
 | F31 | Unexpanded `{{sr:cmake_path}}` template placeholder | Minor | plan Stage 7 |
 | F32 | Two CMake include paths point at non-existent dirs | Minor | plan Stage 7 |
 | F33 | ST header comment bug on `MACSSIR` masks | None | this document only |
 | F34 | `/DISCARD/ libc.a` block inherited from ST template | None | this document only |
 | F35 | `double` in Kalman filter on an SP-FPU part | None | plan decisions (accepted) |
+| F36 | Distro/upstream OpenOCD 0.12.0 cannot program the H563 | Blocking (tooling) | plan **Stage 18** 🆕 |
 
 **Every finding is tracked.** F33 and F34 are recorded here only because they are
 observations about upstream code that require no action — noted so a future reader does not
@@ -214,7 +215,16 @@ image.
 the flexPTP port file, while `mac_drv.c` *separately* configures PB5 as ETH AF11. The plan's
 table recorded only PB5, which was the wrong one of the two. The H563 port keeps PG8 and
 drops the PB5 configuration, leaving PPS GPIO setup in exactly one place (the flexPTP
-hardware port, Stage 13). Verified on hardware by Stage 18's oscilloscope check.
+hardware port, Stage 14). Verified on hardware by Stage 20's oscilloscope check.
+
+**F36 — OpenOCD cannot program the H563 out of the box.** The installed OpenOCD 0.12.0 has
+no `target/stm32h5x.cfg`, no H5 board file, and no `stm32h5x` flash driver — `flash bank …
+stm32h5x …` is rejected with *"Invalid command argument"*. Because the driver is compiled
+in rather than expressed in tcl, vendoring ST's `.cfg` files onto a stock build does **not**
+work. ST's fork (`STMicroelectronics/OpenOCD`, tag `openocd-cubeide-v2.1.0`) carries
+`target/stm32h5x.cfg` and `board/st_nucleo_h5.cfg`. Resolved by building the fork from
+`build.sh` (Stage 18). Note the board file is generic `st_nucleo_h5.cfg`; there is no
+`st_nucleo_h563zi.cfg` equivalent to the H743's board file.
 
 **F27 — ETH DMA and SRAM3.** SRAM1/2/3 are all on the AHB matrix and `HAL_Init()` leaves
 DCACHE off, so no cache maintenance is expected for the Ethernet buffers in SRAM3. Confirm

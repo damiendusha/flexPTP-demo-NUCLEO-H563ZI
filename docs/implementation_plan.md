@@ -1,9 +1,10 @@
 # Port flexPTP Demo to NUCLEO-H563ZI — Implementation Plan
 
-> **Revision note.** Stages 5 onward were renumbered during plan review. Three stages were
-> added (build-system retarget, flexPTP hardware port, project metadata), and the build
-> system was pulled forward so the project can be compiled incrementally rather than only
-> at the end. Stages 1–4 are unchanged and already committed.
+> **Revision note.** Stages 5 onward were renumbered during plan review. Five stages were
+> added (build-config consolidation, build-system retarget, flexPTP hardware port, OpenOCD
+> provisioning, project metadata), and the build system was pulled forward so the project
+> can be compiled incrementally rather than only at the end. Stages 1–4 are unchanged and
+> already committed.
 > The review itself — every finding, its evidence, and what was checked and found clean —
 > is recorded in [port_review.md](port_review.md).
 
@@ -15,18 +16,20 @@
 - [x] **Stage 4** — New linker script (flat SRAM layout)
 - [ ] **Stage 5** — New startup file (H563 vector table)
 - [ ] **Stage 6** — `stm32h5xx_hal_conf.h`
-- [ ] **Stage 7** — Build-system retarget (CMake, MCU flags, HAL sources) 🆕
-- [ ] **Stage 8** — FreeRTOS configuration + kernel port selection
-- [ ] **Stage 9** — Clock & power init (`main.c`)
-- [ ] **Stage 10** — `serial_io.c` (GPDMA rewrite)
-- [ ] **Stage 11** — `mac_drv.c/h` (register audit + port)
-- [ ] **Stage 12** — `flexptp_options.h` (PTP HCLK 250 MHz / 5 ns)
-- [ ] **Stage 13** — flexPTP H563 hardware port 🆕
-- [ ] **Stage 14** — Global HAL header sweep
-- [ ] **Stage 15** — Build & warning cleanup
-- [ ] **Stage 16** — Complete `docs/design_doc.md`
-- [ ] **Stage 17** — Project metadata & tooling (README, build.sh, VS Code) 🆕
-- [ ] **Stage 18** — Flash & test on hardware
+- [ ] **Stage 7** — Consolidate build config into `CMakeLists.txt` 🆕
+- [ ] **Stage 8** — Build-system retarget (CMake, MCU flags, HAL sources) 🆕
+- [ ] **Stage 9** — FreeRTOS configuration + kernel port selection
+- [ ] **Stage 10** — Clock & power init (`main.c`)
+- [ ] **Stage 11** — `serial_io.c` (GPDMA rewrite)
+- [ ] **Stage 12** — `mac_drv.c/h` (register audit + port)
+- [ ] **Stage 13** — `flexptp_options.h` (PTP HCLK 250 MHz / 5 ns)
+- [ ] **Stage 14** — flexPTP H563 hardware port 🆕
+- [ ] **Stage 15** — Global HAL header sweep
+- [ ] **Stage 16** — Build & warning cleanup
+- [ ] **Stage 17** — Complete `docs/design_doc.md`
+- [ ] **Stage 18** — Provision ST's OpenOCD via `build.sh` 🆕
+- [ ] **Stage 19** — Project metadata & tooling (README, build.sh, VS Code) 🆕
+- [ ] **Stage 20** — Flash & test on hardware
 
 ### Build gates
 
@@ -35,10 +38,10 @@ build at each of these points and do not proceed until it passes:
 
 | After | Expected result |
 |---|---|
-| Stage 7 | `cmake --preset debug` configures; the H5 HAL static library compiles |
-| Stage 9 | `main.c` compiles |
-| Stage 13 | All application objects compile; link may still fail |
-| Stage 15 | Clean link, zero warnings under `-Wall -Wextra` |
+| Stage 8 | `cmake --preset debug` configures; the H5 HAL static library compiles |
+| Stage 10 | `main.c` compiles |
+| Stage 14 | All application objects compile; link may still fail |
+| Stage 16 | Clean link, zero warnings under `-Wall -Wextra` |
 
 ---
 
@@ -54,10 +57,11 @@ build at each of these points and do not proceed until it passes:
 | **TrustZone** | Non-secure flat mode (TZEN=0, `ARM_CM33_NTZ`). Design doc will cover TrustZone migration. |
 | **RXER Pin (PG2)** | Dropped from GPIO init. Design doc will note this. |
 | **ETH_TXD1 Pin** | **PB15** (AF11) on NUCLEO-H563ZI — *differs* from the H743 board, which uses PB13. Confirmed against board documentation. |
-| **mac_drv.c Strategy** | Register-level port. Register audit already done during review: every ETH register and descriptor bit the driver touches exists on the H563 with identical names — see Stage 11. |
-| **PPS Output Pin** | **PG8** (AF11), same as the H743 project. Configured by the flexPTP hardware port (Stage 13), *not* by `mac_drv.c`. The H743 driver's stray PB5 configuration is dropped — see Stage 11. |
+| **mac_drv.c Strategy** | Register-level port. Register audit already done during review: every ETH register and descriptor bit the driver touches exists on the H563 with identical names — see Stage 12. |
+| **PPS Output Pin** | **PG8** (AF11), same as the H743 project. Configured by the flexPTP hardware port (Stage 14), *not* by `mac_drv.c`. The H743 driver's stray PB5 configuration is dropped — see Stage 12. |
 | **FreeRTOS kernel version** | Pin `FetchContent` to a release tag. `GIT_TAG main` is a floating dependency on a port being actively changed. |
-| **MCU compiler flags** | Live in `cmake/vscode_generated.cmake`, which is headed "shall not be touched by user". Decide in Stage 7 whether to edit it in place or move the flags into `CMakeLists.txt`. |
+| **MCU compiler flags** | **Absorbed into `CMakeLists.txt`; `cmake/vscode_generated.cmake` is deleted** (Stage 7). The generated file was marked "shall not be touched by user", so editing it in place left the MCU configuration one extension-regeneration away from reverting. |
+| **Flash / debug tool** | **ST's OpenOCD fork**, built from source by `build.sh --with-openocd` into `toolchains/` (Stage 18). Upstream/distro OpenOCD 0.12.0 has no `stm32h5x` flash driver and cannot program this part. |
 
 ---
 
@@ -132,7 +136,7 @@ Create `flexPTP-demo-NUCLEO-H563ZI` as a new project at `/home/damien/git/flexPT
 **Commit**: `"Stage 3: Add CMSIS STM32H5xx device headers"`
 
 *Follow-up owed:* replacing `Src/system_stm32h7xx.c` with `system_stm32h5xx.c` left a dangling
-reference in `Src/CMakeLists.txt`. Fixed in Stage 7.
+reference in `Src/CMakeLists.txt`. Fixed in Stage 8.
 
 ---
 
@@ -159,7 +163,7 @@ MEMORY
 
 **Notes:** SRAM2 (64 KB) is deliberately left unallocated — spare capacity. The EtherLib
 pool section `.ETHLibPool` has no placement (it had none upstream either); this only
-matters if EtherLib is enabled, and is covered by the EtherLib guide in Stage 16.
+matters if EtherLib is enabled, and is covered by the EtherLib guide in Stage 17.
 
 **Commit**: `"Stage 4: Add STM32H563ZI linker script"`
 
@@ -198,24 +202,51 @@ Create `Inc/stm32h5xx_hal_conf.h`, based on
 
 ---
 
-### Stage 7 — Build-system retarget 🆕
+### Stage 7 — Consolidate build configuration into `CMakeLists.txt` 🆕
 
-The MCU-specific build configuration is spread across five files. None of this was owned
-by a stage previously; it was implicit in "fix the build".
+`cmake/vscode_generated.cmake` holds the MCU flags, the linker-script path, the startup
+file and the root source list, behind a header reading *"converter generated file, and
+shall not be touched by user"*. Retargeting it in place would leave the entire MCU
+configuration one extension-regeneration away from silently reverting to Cortex-M7.
 
-**`cmake/vscode_generated.cmake`** — despite the "converter generated, do not touch"
-header, this holds the MCU flags, the linker script path and the startup file path:
+**Absorb it and delete it.** This stage is a pure refactor — carry the existing values
+across verbatim, including the H7/H735 ones. Retargeting happens in Stage 8, so any build
+difference here is a mistake rather than an intended change.
+
+- Fill the already-present `set()` calls in `CMakeLists.txt` with what the generated file
+  appended: `cpu_PARAMS`, `linker_script_SRC`, `sources_SRCS`, `include_c_DIRS`
+- Drop the no-op appends (`symbols_*`, `link_DIRS`, `link_LIBS`, `compiler_OPTS`,
+  `linker_OPTS` are all appended empty)
+- Remove `include("cmake/vscode_generated.cmake")` and delete the file
+- Remove `list(APPEND CMAKE_MODULE_PATH "{{sr:cmake_path}}")` — an unsubstituted template
+  placeholder inherited from upstream (review finding F31)
+- Remove the dead `${CMAKE_SOURCE_DIR}/Middlewares/Inc` include path (F32); optionally also
+  `${LWIP_PORT_DIR}/include` in `Modules/CMakeLists.txt`
+
+**Ordering constraint:** the generated file was included *after* the `set()` blocks and
+*before* `add_subdirectory(Middlewares)` and `add_executable()`. `cpu_PARAMS` in particular
+is consumed by `Middlewares/CMakeLists.txt`, `Drivers/CMakeLists.txt` and
+`Modules/CMakeLists.txt`, so the absorbed values must be assigned before those
+`add_subdirectory()` calls.
+
+**Consequence:** `.vscode` CMake integration no longer feeds the build. If the STM32 VS Code
+extension regenerates the file it will simply be ignored, since nothing includes it.
+
+**Commit**: `"Stage 7: Consolidate build configuration into CMakeLists.txt"`
+
+---
+
+### Stage 8 — Build-system retarget 🆕
+
+With Stage 7 done, all MCU configuration lives in `CMakeLists.txt` and three subdirectory
+files. None of this was owned by a stage previously; it was implicit in "fix the build".
+
+**`CMakeLists.txt`** (values absorbed in Stage 7 — now retarget them):
 - `-mcpu=cortex-m7 -mfpu=fpv5-d16` → `-mcpu=cortex-m33 -mfpu=fpv5-sp-d16` (keep `-mthumb`,
   `-mfloat-abi=hard`)
 - linker script → `stm32h563zitx_FLASH.ld`
 - startup source → `Startup/startup_stm32h563zitx.s`
-
-**`CMakeLists.txt`**
 - `set(MCU_TYPE STM32H743xx)` → `STM32H563xx`
-- Optional cleanup while in the file: line 7 contains an unsubstituted template placeholder
-  `list(APPEND CMAKE_MODULE_PATH "{{sr:cmake_path}}")`, and line 41 adds a non-existent
-  `Middlewares/Inc` include path. Both are inherited from upstream and harmless.
-  (`Modules/CMakeLists.txt:58` likewise adds a non-existent `lwip_port/include`.)
 
 **`Drivers/CMakeLists.txt`** — full rewrite:
 - Rename target `H7HAL` → `H5HAL`, root `stm32h7xx-hal-driver` → `stm32h5xx-hal-driver`
@@ -227,16 +258,16 @@ header, this holds the MCU flags, the linker script path and the startup file pa
 - `system_stm32h7xx.c` → `system_stm32h5xx.c` (dangling since Stage 3 — the tree does not
   configure until this is fixed)
 
-**`Middlewares/CMakeLists.txt`** — see Stage 8 for the FreeRTOS port variables; they can be
+**`Middlewares/CMakeLists.txt`** — see Stage 9 for the FreeRTOS port variables; they can be
 done here if convenient.
 
 **Gate:** `cmake --preset debug` configures and `H5HAL` builds.
 
-**Commit**: `"Stage 7: Retarget build system to STM32H563ZI"`
+**Commit**: `"Stage 8: Retarget build system to STM32H563ZI"`
 
 ---
 
-### Stage 8 — FreeRTOS configuration & kernel port
+### Stage 9 — FreeRTOS configuration & kernel port
 
 **`Inc/FreeRTOSConfig.h`**
 - `configCPU_CLOCK_HZ` = `250000000`
@@ -251,11 +282,11 @@ done here if convenient.
 - `device_header` variable → the CM33_NTZ `portmacro.h`
 - **Pin `GIT_TAG`** to a FreeRTOS-Kernel release tag instead of `main`
 
-**Commit**: `"Stage 8: Configure FreeRTOS for Cortex-M33 @ 250 MHz"`
+**Commit**: `"Stage 9: Configure FreeRTOS for Cortex-M33 @ 250 MHz"`
 
 ---
 
-### Stage 9 — Clock & power init
+### Stage 10 — Clock & power init
 
 Rewrite clock/power sections of `Src/main.c`:
 - `init_osc_and_clk()`: remove `HAL_PWREx_ConfigSupply()`, keep `PWR_REGULATOR_VOLTAGE_SCALE0`,
@@ -276,11 +307,11 @@ Rewrite clock/power sections of `Src/main.c`:
 
 **Gate:** `main.c` compiles.
 
-**Commit**: `"Stage 9: Port clock, power, and system init to STM32H5"`
+**Commit**: `"Stage 10: Port clock, power, and system init to STM32H5"`
 
 ---
 
-### Stage 10 — Serial I/O GPDMA rewrite
+### Stage 11 — Serial I/O GPDMA rewrite
 
 Rewrite DMA sections of `Src/standard_output/serial_io.c`:
 - `__HAL_RCC_DMA1_CLK_ENABLE()` → `__HAL_RCC_GPDMA1_CLK_ENABLE()`
@@ -292,11 +323,11 @@ Rewrite DMA sections of `Src/standard_output/serial_io.c`:
 - `DMA_REQUEST_USART3_TX` → H5 request ID
 - USART3 GPIO stays identical (PD8/PD9 AF7)
 
-**Commit**: `"Stage 10: Port serial I/O DMA to GPDMA"`
+**Commit**: `"Stage 11: Port serial I/O DMA to GPDMA"`
 
 ---
 
-### Stage 11 — Ethernet MAC driver port
+### Stage 12 — Ethernet MAC driver port
 
 Register-level port of `Drivers/EthDrv/mac_drv.c`.
 
@@ -307,7 +338,7 @@ driver touches — `MACTSCR`, `MACSSIR`, `MACSTSR/NR`, `MACSTSUR/NUR`, `MACTSAR`
 Synopsys QoS core. The real work is peripheral plumbing, not registers:
 
 - GPIO: remove PG2 (RXER), move ETH_TXD1 **PB13 → PB15**, update the pin-map comment block
-- GPIO: **drop PB5.** PPS is on PG8 and is configured by the flexPTP port (Stage 13), so
+- GPIO: **drop PB5.** PPS is on PG8 and is configured by the flexPTP port (Stage 14), so
   `mac_drv.c` should not touch a PPS pin at all. The GPIOB init reduces to PB15 alone:
   ```c
   GPIO_InitStructure.Pin = GPIO_PIN_15;          /* was GPIO_PIN_5 | GPIO_PIN_13 */
@@ -328,23 +359,23 @@ Synopsys QoS core. The real work is peripheral plumbing, not registers:
 - Update `mac_drv.h` include (`stm32h7xx.h` → `stm32h5xx.h`)
 - Update `phy_drv/phy_common.c` HAL header
 
-**Commit**: `"Stage 11: Port mac_drv.c to STM32H5"`
+**Commit**: `"Stage 12: Port mac_drv.c to STM32H5"`
 
 ---
 
-### Stage 12 — flexPTP options
+### Stage 13 — flexPTP options
 
 Update `Inc/flexptp_options.h`:
 - `PTP_MAIN_OSCILLATOR_FREQ_HZ` = `250000000` (= HCLK; no ETH PTP clock mux on this device)
 - `PTP_INCREMENT_NSEC` = `5` (must exceed the 4 ns HCLK period — see [ptp_clock.md](ptp_clock.md))
 - Confirm the resulting addend is 3435973836 (`0xCCCCCCCC`), not 0
-- Repoint the hardware-port include at the new H563 port from Stage 13
+- Repoint the hardware-port include at the new H563 port from Stage 14
 
-**Commit**: `"Stage 12: Configure flexPTP for the H563 PTP clock"`
+**Commit**: `"Stage 13: Configure flexPTP for the H563 PTP clock"`
 
 ---
 
-### Stage 13 — flexPTP H563 hardware port 🆕
+### Stage 14 — flexPTP H563 hardware port 🆕
 
 The flexPTP submodule ships ports for H743 / F407 / CH32F207 / TM4C1294 / Linux only.
 **There is no H5 port**, and the H743 port (`ptp_port_stm32h743_lwip.c`) includes
@@ -364,11 +395,11 @@ stage.
 
 **Gate:** all application objects compile.
 
-**Commit**: `"Stage 13: Add flexPTP hardware port for STM32H563"`
+**Commit**: `"Stage 14: Add flexPTP hardware port for STM32H563"`
 
 ---
 
-### Stage 14 — Global HAL header sweep
+### Stage 15 — Global HAL header sweep
 
 Search-and-replace across all remaining files:
 - `stm32h7xx_hal.h` → `stm32h5xx_hal.h`
@@ -384,11 +415,11 @@ Complete file list (the original plan named only the first two):
 Finish with `grep -rn "stm32h7\|STM32H7" --include='*.c' --include='*.h'` over
 `Src/ Inc/ Drivers/EthDrv/ Drivers/CMSIS/CMSIS_RTOS_V2/ Modules/lwip_port/` to confirm none remain.
 
-**Commit**: `"Stage 14: Complete HAL header migration to stm32h5xx"`
+**Commit**: `"Stage 15: Complete HAL header migration to stm32h5xx"`
 
 ---
 
-### Stage 15 — Build & warning cleanup
+### Stage 16 — Build & warning cleanup
 
 - `cmake --preset debug && cmake --build build/debug`
 - Fix all remaining compilation errors and warnings
@@ -397,16 +428,16 @@ Finish with `grep -rn "stm32h7\|STM32H7" --include='*.c' --include='*.h'` over
   30 KB FreeRTOS heap; SRAM3 holds ~73 KB of ETH buffers plus descriptors and the 16 KB
   lwIP heap. Both should be comfortable.
 
-**Commit**: `"Stage 15: Fix build for STM32H563ZI target"`
+**Commit**: `"Stage 16: Fix build for STM32H563ZI target"`
 
 ---
 
-### Stage 16 — Complete design documentation
+### Stage 17 — Complete design documentation
 
 `docs/design_doc.md` already exists and has been filled incrementally since Stage 1.
 Complete the remaining sections:
 - PTP Clock — ✅ done, detail in [ptp_clock.md](ptp_clock.md); verify against measured
-  hardware behaviour in Stage 18
+  hardware behaviour in Stage 20
 - RMII Pin Map — ✅ done
 - EtherLib Porting Guide — include the missing `.ETHLibPool` linker placement
 - TrustZone Migration Guide
@@ -415,11 +446,56 @@ Complete the remaining sections:
 - Note that DCACHE/ICACHE are off after reset and `HAL_Init()` leaves them off, so the
   SRAM3 Ethernet placement needs no cache maintenance as built
 
-**Commit**: `"Stage 16: Complete design documentation"`
+**Commit**: `"Stage 17: Complete design documentation"`
 
 ---
 
-### Stage 17 — Project metadata & tooling 🆕
+### Stage 18 — Provision ST's OpenOCD via `build.sh` 🆕
+
+**Why a fork is needed.** `target/stm32h5x.cfg` declares `flash bank … stm32h5x …`, which is
+a compiled-in flash driver, not tcl. Stock OpenOCD 0.12.0 ships no `stm32h5x` driver, no
+`stm32h5x.cfg` and no H5 board file, and rejects the flash bank declaration outright.
+Copying ST's `.cfg` files onto a distro build therefore does **not** work — the binary
+itself must have H5 support.
+
+Extend `build.sh` with a `--with-openocd` flag, mirroring how it already provisions the ARM
+toolchain into `toolchains/`:
+
+- Clone `https://github.com/STMicroelectronics/OpenOCD.git`, **pinned to a tag**
+  (`openocd-cubeide-v2.1.0` was current at review time) into `toolchains/openocd-src/`
+- `./bootstrap` (fetches the `jimtcl` / `libjaylink` submodules), then
+  `./configure --prefix="${TOOLCHAINS_DIR}/openocd" --enable-stlink`, `make -j`, `make install`
+- Prepend `toolchains/openocd/bin` to `PATH` alongside the ARM toolchain
+- Skip the build if `toolchains/openocd/bin/openocd` already exists, matching the existing
+  toolchain check
+- `toolchains/` is already in `.gitignore` — nothing new to ignore
+
+**Host prerequisites** (the script cannot install these without sudo — detect and report
+them clearly rather than failing mid-build): `autoconf`, `automake`, `libtool`,
+`pkg-config`, `libusb-1.0` development headers. On the current machine everything is present
+**except `libtool`**.
+
+**Verification:**
+```bash
+./build.sh --with-openocd
+toolchains/openocd/bin/openocd -f board/st_nucleo_h5.cfg -c "init; halt; exit"
+```
+`make install` places the scripts under `<prefix>/share/openocd/scripts`, so the short
+`board/…` path resolves without `-s`. Note the board file is **`st_nucleo_h5.cfg`** — generic
+across H5 Nucleos — not a board-specific `st_nucleo_h563zi.cfg`. Linux also needs ST-Link
+udev rules for non-root access; call this out in the README.
+
+**Alternatives considered:** STM32CubeCLT ships a prebuilt ST OpenOCD plus
+`STM32_Programmer_CLI`, and `.vscode/launch.json` already references
+`${config:STM32VSCodeExtension.cubeCLT.path}` for the SVD. It was rejected as the primary
+path because it is a registration-walled manual installer and cannot be scripted; it remains
+a valid manual option for developers who have it.
+
+**Commit**: `"Stage 18: Build ST's OpenOCD fork from build.sh"`
+
+---
+
+### Stage 19 — Project metadata & tooling 🆕
 
 Not previously owned by any stage; all of it still says H743:
 - `README.md` — full pass: board name, MCU, clone URL, OpenOCD invocation
@@ -428,14 +504,22 @@ Not previously owned by any stage; all of it still says H743:
   or drop the image
 - `build.sh` — header comment
 - `.vscode/launch.json` — `device` `STM32H743ZITx` → `STM32H563ZITx`, `svdFile`
-  `STM32H743.svd` → `STM32H563.svd`, OpenOCD config → `board/st_nucleo_h563zi.cfg`
-  (4 occurrences across the launch configurations)
+  `STM32H743.svd` → `STM32H563.svd`, and the OpenOCD config → **`board/st_nucleo_h5.cfg`**
+  (generic across H5 Nucleos; there is no `st_nucleo_h563zi.cfg`). Four occurrences across
+  the launch configurations.
+- `.vscode/launch.json` — point `serverpath`/`openocd` at `toolchains/openocd/bin/openocd`
+  from Stage 18 rather than a system OpenOCD, which cannot program this part
+- `.vscode/launch.json` — the `svdFile` entries resolve through
+  `${config:STM32VSCodeExtension.cubeCLT.path}`. With CubeCLT no longer a prerequisite
+  (Stage 18), decide whether to vendor `STM32H563.svd` into the repo or leave the register
+  view dependent on an optional CubeCLT install
+- README — document the ST-Link udev rules needed for non-root OpenOCD access on Linux
 
-**Commit**: `"Stage 17: Update project metadata for NUCLEO-H563ZI"`
+**Commit**: `"Stage 19: Update project metadata for NUCLEO-H563ZI"`
 
 ---
 
-### Stage 18 — Flash & test on hardware
+### Stage 20 — Flash & test on hardware
 
 **Precondition:** the board's `TZEN` option byte must be disabled (factory default). The
 flat `0x08000000` layout and the `ARM_CM33_NTZ` port assume a non-TrustZone part; a board
@@ -447,7 +531,7 @@ previously provisioned with TZEN=1 will not boot this image.
   ~3435973836 and that the servo converges rather than railing
 - Document results in the design doc
 
-**Commit**: `"Stage 18: Hardware verification results"`
+**Commit**: `"Stage 20: Hardware verification results"`
 
 ---
 
@@ -457,22 +541,24 @@ previously provisioned with TZEN=1 will not boot this image.
 graph TD
     A["Stage 1-4: Repo, HAL, CMSIS, linker (done)"] --> E["Stage 5: Startup file"]
     E --> F["Stage 6: HAL conf"]
-    F --> G["Stage 7: Build system"]
+    F --> G0["Stage 7: Consolidate build config"]
+    G0 --> G["Stage 8: Build system retarget"]
     G --> G1{{"Gate: HAL compiles"}}
-    G1 --> H["Stage 8: FreeRTOS"]
-    H --> I["Stage 9: Clock & power"]
+    G1 --> H["Stage 9: FreeRTOS"]
+    H --> I["Stage 10: Clock & power"]
     I --> I1{{"Gate: main.c compiles"}}
-    I1 --> J["Stage 10: Serial GPDMA"]
-    J --> K["Stage 11: MAC driver"]
-    K --> L["Stage 12: flexPTP opts"]
-    L --> M["Stage 13: flexPTP HW port"]
+    I1 --> J["Stage 11: Serial GPDMA"]
+    J --> K["Stage 12: MAC driver"]
+    K --> L["Stage 13: flexPTP opts"]
+    L --> M["Stage 14: flexPTP HW port"]
     M --> M1{{"Gate: all objects compile"}}
-    M1 --> N["Stage 14: Header sweep"]
-    N --> O["Stage 15: Build & warnings"]
+    M1 --> N["Stage 15: Header sweep"]
+    N --> O["Stage 16: Build & warnings"]
     O --> O1{{"Gate: clean link"}}
-    O1 --> P["Stage 16: Design doc"]
-    P --> Q["Stage 17: Metadata"]
-    Q --> R["Stage 18: Hardware test"]
+    O1 --> P["Stage 17: Design doc"]
+    P --> Q0["Stage 18: OpenOCD (ST fork)"]
+    Q0 --> Q["Stage 19: Metadata"]
+    Q --> R["Stage 20: Hardware test"]
 ```
 
 ---
@@ -481,10 +567,9 @@ graph TD
 
 | Item | Stage | Notes |
 |---|---|---|
-| CMSIS Core version | 15 | `Drivers/CMSIS/Include` is CMSIS Core 5.6, carried over from the H7 project. CMSIS device pack is 1.7.0. Expected to work with `core_cm33.h`, but a version bump is the first thing to try if odd core-header errors appear. |
-| `vscode_generated.cmake` ownership | 7 | Marked machine-generated. If the STM32 VS Code extension regenerates it, the MCU flags revert. Consider moving them into `CMakeLists.txt`. |
-| ETH DMA reach into SRAM3 | 15, 18 | SRAM1/2/3 are all on the AHB matrix, and DCACHE is off, so no coherency handling is expected. Confirm empirically on hardware before assuming. |
-| FreeRTOS `main` branch | 8 | Pin before the first build so later failures aren't caused by an upstream kernel change. |
+| CMSIS Core version | 16 | `Drivers/CMSIS/Include` is CMSIS Core 5.6, carried over from the H7 project. CMSIS device pack is 1.7.0. Expected to work with `core_cm33.h`, but a version bump is the first thing to try if odd core-header errors appear. |
+| ETH DMA reach into SRAM3 | 16, 20 | SRAM1/2/3 are all on the AHB matrix, and DCACHE is off, so no coherency handling is expected. Confirm empirically on hardware before assuming. |
+| FreeRTOS `main` branch | 9 | Pin before the first build so later failures aren't caused by an upstream kernel change. |
 | SNSINC sub-nanosecond increment | — | Left at zero, as on the H743. Unexplored avenue for finer rate resolution; would need a reference-manual check. See `ptp_clock.md`. |
 
 ---

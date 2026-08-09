@@ -76,7 +76,7 @@ only for a 250 MHz HCLK.
 
 ## EtherLib Porting Guide
 
-*To be completed in Stage 16.*
+*To be completed in Stage 17.*
 
 The EtherLib in-house Ethernet stack is included as a git submodule but is not
 compiled in the initial port. This section will document what needs to change to
@@ -86,7 +86,7 @@ enable EtherLib support.
 
 ## TrustZone Migration Guide
 
-*To be completed in Stage 16.*
+*To be completed in Stage 17.*
 
 The initial port runs in non-secure flat mode (TZEN=0) using the `ARM_CM33_NTZ`
 FreeRTOS port. This section will document how to migrate to a TrustZone-partitioned
@@ -131,7 +131,7 @@ ever moved, that port file is the only file to change.
 
 ## RXER Pin Note
 
-*To be completed in Stage 16; the GPIO change itself lands in Stage 11.*
+*To be completed in Stage 17; the GPIO change itself lands in Stage 12.*
 
 The H743 project configures PG2 as ETH_RMII_MII_RXER. This pin has been dropped
 in the H563 port. This section will explain why and how to re-enable it.
@@ -140,7 +140,7 @@ in the H563 port. This section will explain why and how to re-enable it.
 
 ## mac_drv.c Comparison
 
-*To be completed in Stage 16.*
+*To be completed in Stage 17.*
 
 This section will provide a detailed comparison of:
 1. The custom register-level MAC driver (`mac_drv.c`)
