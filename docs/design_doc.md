@@ -18,6 +18,7 @@ NUCLEO-H563ZI (STM32H563, Cortex-M33).
 - [Stage Log](#stage-log)
 
 Companion documents: [architecture.md](architecture.md) (module stack, threads, interrupts) ·
+[host_ptp_setup.md](host_ptp_setup.md) (running a PTP master on the host) ·
 [ptp_clock.md](ptp_clock.md) (PTP clock derivation) ·
 [port_review.md](port_review.md) (review findings and verified-clean audit) ·
 [implementation_plan.md](implementation_plan.md) (staged work plan)
