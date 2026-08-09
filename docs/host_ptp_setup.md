@@ -37,47 +37,60 @@ timestamping and you must add `-S` (software timestamping) below.
 ## Command
 
 > **The config must live in `/etc/linuxptp/`.** Ubuntu ships an AppArmor profile at
-> `/etc/apparmor.d/usr.sbin.ptp4l` that confines ptp4l's config reads to
+> `/etc/apparmor.d/usr.sbin.ptp4l` confining ptp4l's config reads to
 > `@{etc_ro}/linuxptp/** r`. Pointing `-f` at the shipped copy under
-> `/usr/share/doc/linuxptp/configs/` fails with **"Permission denied" even as root**, which
-> looks like a file-permission problem but is not — the file is world-readable and every
-> directory on the path is traversable.
+> `/usr/share/doc/linuxptp/configs/` fails with **"Permission denied" even as root** —
+> which looks like a file-permission problem but is not: the file is world-readable and
+> every directory on the path is traversable.
 
-This repository carries a ready-made config with the overrides already folded in:
+`linuxptp` ships a gPTP profile that already matches the board on the four settings that
+matter most — transport, destination MAC, `transportSpecific` and sync interval. Copy it
+into the directory AppArmor allows, then supply the two overrides it lacks:
+
+```bash
+sudo install -D -m644 /usr/share/doc/linuxptp/configs/gPTP.cfg /etc/linuxptp/gPTP.cfg
+```
+
+```bash
+sudo ptp4l -f /etc/linuxptp/gPTP.cfg -i enp7s0 -S -m --serverOnly=1 --priority1=100
+```
+
+Replace `enp7s0` with your interface. The four flags, and why each is there:
+
+| Flag | Why |
+|---|---|
+| `-S` | Software timestamping. Required **only** if your NIC has no PHC — check with `ethtool -T <iface>`. Drop it if it has one; accuracy improves by orders of magnitude. |
+| `-m` | Log to stdout so you can watch it. |
+| `--serverOnly=1` | Never become a slave. This is the linuxptp **4.x** spelling; 3.x and earlier use `--masterOnly=1`. |
+| `--priority1=100` | **Not optional.** The stock `gPTP.cfg` sets `priority1 248`, which is *worse* than the board's 128 — without this, BMCA elects the board as grandmaster and neither side ever syncs. |
+
+Re-copy the file after a `linuxptp` package upgrade if you want to track upstream changes.
+
+<details>
+<summary>Alternative: a pre-baked config in this repository</summary>
+
+`tools/linuxptp/flexptp-gm.cfg` is the same stock profile with the two overrides already
+folded in, so the command line stays short and the `priority1` override cannot be
+forgotten:
 
 ```bash
 sudo install -D -m644 tools/linuxptp/flexptp-gm.cfg /etc/linuxptp/flexptp-gm.cfg
 sudo ptp4l -f /etc/linuxptp/flexptp-gm.cfg -i enp7s0 -S -m
 ```
 
-Replace `enp7s0` with your interface, and drop `-S` if your NIC has a PTP hardware clock.
+Being a copy, it will not pick up upstream changes to `gPTP.cfg`. The stock-file route
+above is the one to prefer.
 
-If you would rather use linuxptp's stock file, copy it into the allowed directory and
-supply the overrides on the command line:
-
-```bash
-sudo install -D -m644 /usr/share/doc/linuxptp/configs/gPTP.cfg /etc/linuxptp/gPTP.cfg
-sudo ptp4l -f /etc/linuxptp/gPTP.cfg -i enp7s0 -S -m --serverOnly=1 --priority1=100
-```
-
-The flags that are not in the stock config file:
-
-- **`-S`** — software timestamping. Required only if your NIC has no PHC. Drop it if it
-  does, for far better accuracy.
-- **`-m`** — log to stdout so you can watch it.
-- **`--serverOnly=1`** — never become a slave. This is the linuxptp **4.x** spelling; on
-  3.x and earlier it is `--masterOnly=1`.
-- **`--priority1=100`** — **not optional.** The shipped `gPTP.cfg` sets `priority1 248`,
-  which is *worse* than the board's 128, so without this BMCA elects the board as
-  grandmaster and neither side ever syncs.
+</details>
 
 ## Verifying
 
 On the host, in a second terminal:
 
 ```bash
-sudo pmc -u -b 0 -f /etc/linuxptp/flexptp-gm.cfg 'GET PORT_DATA_SET'
-sudo pmc -u -b 0 -f /etc/linuxptp/flexptp-gm.cfg 'GET TIME_STATUS_NP'
+sudo pmc -u -b 0 -f /etc/linuxptp/gPTP.cfg 'GET PORT_DATA_SET'
+sudo pmc -u -b 0 -f /etc/linuxptp/gPTP.cfg 'GET TIME_STATUS_NP'
+sudo pmc -u -b 0 -f /etc/linuxptp/gPTP.cfg 'GET PARENT_DATA_SET'   # who won BMCA
 ```
 
 On the target, over the ST-Link VCP (`/dev/ttyACM0`, 115200 8N1):
