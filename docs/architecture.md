@@ -300,6 +300,12 @@ flexPTP sets pbuf->tx_cb = ptp_transmit_cb and pbuf->tag = uid   (nsd_lwip.c)
 `nsd_lwip.c`, and nothing enforces it. It has already drifted once (F48). Re-check it on
 any flexPTP bump.
 
+**Both halves of this path are verified working on hardware at the driver level.** Receive
+timestamps arrive via the context descriptor (T1/T2 carry real values), and transmit
+timestamps were instrumented at 698-for-698 through `ETHHW_ProcessTx()` into the callback.
+What remains broken (F42) is downstream of this diagram, inside flexPTP's message buffer:
+the timestamp is delivered but never matched back to the Delay_Req that requested it.
+
 Because timestamps are captured **in hardware**, PTP accuracy does not depend on thread
 scheduling or interrupt latency. Latency affects how quickly the servo *reacts*, not how
 accurate its inputs are.

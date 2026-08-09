@@ -596,6 +596,11 @@ Tested against `linuxptp` 4.4 on a Linux host.
 - **BMCA works**: the board goes `MASTER → UNCALIBRATED → SLAVE` once the host advertises
   a better `priority1`.
 - **Receive-side hardware timestamping works** — T1/T2 carry real values.
-- **Blocked on F42**: the transmit timestamp never reaches flexPTP, so every Delay_Resp is
-  discarded and the servo never applies a correction. See [port_review.md](port_review.md).
+- **Transmit-side hardware timestamping also works.** Instrumentation counters read over
+  SWD show 698 timestamps requested, captured, found in the descriptor and dispatched —
+  698 for 698, no losses. The project's MAC driver and lwIP glue are correct.
+- **Blocked on F42**, now narrowed: the transmit timestamp reaches flexPTP but is lost in
+  the library's own message-buffer bookkeeping, so `slave.c` finds no T3 and discards every
+  Delay_Resp. The servo therefore never applies a correction and the addend stays at its
+  initial value. See [port_review.md](port_review.md).
 
