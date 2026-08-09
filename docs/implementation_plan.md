@@ -356,6 +356,14 @@ Synopsys QoS core. The real work is peripheral plumbing, not registers:
   ```c
   WRITE_REG(eth->MACMDIOAR, ETH_MACMDIOAR_CR_DIV102);   // 250 MHz / 102 = 2.45 MHz
   ```
+- `ETHHW_UpdatePTPTime()` is **unreachable**: its only caller is the `PTP_UPDATE_CLOCK`
+  macro, which the pinned flexPTP core never invokes. Port it mechanically or drop it, but
+  do not spend time validating it — and note it contains a suspect `nsec = 1e9 - (nsec >> 1)`
+  in the subtract path (review finding F41). If coarse correction is ever routed through it,
+  fix that first.
+- Re-verify the PTP timestamp plumbing into lwIP after the port: RX timestamps arrive via
+  context descriptors through `ETHHW_ReadCallback`, TX timestamps via the descriptor
+  extension `tsCbPtr` callbacks from `ETHHW_ProcessTx` (F42)
 - Update `mac_drv.h` include (`stm32h7xx.h` → `stm32h5xx.h`)
 - Update `phy_drv/phy_common.c` HAL header
 
@@ -370,6 +378,14 @@ Update `Inc/flexptp_options.h`:
 - `PTP_INCREMENT_NSEC` = `5` (must exceed the 4 ns HCLK period — see [ptp_clock.md](ptp_clock.md))
 - Confirm the resulting addend is 3435973836 (`0xCCCCCCCC`), not 0
 - Repoint the hardware-port include at the new H563 port from Stage 14
+- Add `#define PTP_ADDEND_INTERFACE` explicitly. It is auto-selected today; the porting
+  guide calls explicit selection best practice
+- Add the OS binding explicitly. Neither `FLEXPTP_FREERTOS` nor `FLEXPTP_CMSIS_OS2` is
+  defined, so flexPTP silently falls back to `FLEXPTP_FREERTOS` and calls `xTaskCreate`
+  directly while the application uses CMSIS-OS2. That combination works, but state it (F40)
+- **Leave `FLEXPTP_SNPRINTF` alone.** The published porting guide calls this macro
+  `SPRINTF`; the code does not. `FLEXPTP_SNPRINTF` is correct for this version (F38)
+- `PTP_UPDATE_CLOCK` may be deleted — the pinned core never calls it (F41)
 
 **Commit**: `"Stage 13: Configure flexPTP for the H563 PTP clock"`
 
@@ -385,12 +401,22 @@ stage.
 - Create the port implementing `ptphw_init()`, `ptphw_gettime()`, `ptphw_set_pps_freq()`,
   `ptphw_restart_pps()` and the `ptp pps` CLI command — derive from
   `ptp_port_stm32h743_lwip.c`
+- **`ptphw_gettime()` takes `TimestampU *`, not `TimestampI *`.** The published porting
+  guide states `TimestampI *`; the code passes `TimestampU *` at every call site. The
+  documentation is wrong. Deriving from the H743 port gets this right — do not "correct" it
+  against the guide (F37)
 - Change the include to `stm32h5xx_hal.h`; keep the PPS pin setup on **PG8 / AF11**
   (`__HAL_RCC_GPIOG_CLK_ENABLE()` + `GPIO_PIN_8`), unchanged from the H743 port — this is
   the only place PPS GPIO is configured
 - Wire it up in `Modules/CMakeLists.txt`: currently `FLEXPTP_HWPORT` is `H743_LWIP`
   / `H743_ETHERLIB`. flexPTP supports project-local ports — populate `FLEXPTP_HWPORT_SRC`
   and leave `FLEXPTP_HWPORT` unset
+- If the port lives outside the submodule, it will also need `FLEXPTP_LOCAL_INCLUDES` so
+  flexPTP can resolve the header
+- Confirm end-to-end timestamping once the port builds: a captured TX timestamp must reach
+  the `tsCbPtr` callback, and RX timestamps must arrive from the context descriptor. Both
+  paths are project code (`eth_drv_lwip.c` + `mac_drv.c`), not library code, so nothing
+  else checks them (F42)
 - Decide whether the port lives in this repo or is contributed upstream to flexPTP
 
 **Gate:** all application objects compile.
@@ -567,6 +593,7 @@ graph TD
 
 | Item | Stage | Notes |
 |---|---|---|
+| flexPTP on ARMv8-M | 16, 20 | This is flexPTP's first Cortex-M33 target — the library is documented as tested on Cortex-M4/M7 only. No specific defect is known; treat unexplained core-level misbehaviour as potentially an ARMv7-M assumption rather than a port bug (F39). |
 | CMSIS Core version | 16 | `Drivers/CMSIS/Include` is CMSIS Core 5.6, carried over from the H7 project. CMSIS device pack is 1.7.0. Expected to work with `core_cm33.h`, but a version bump is the first thing to try if odd core-header errors appear. |
 | ETH DMA reach into SRAM3 | 16, 20 | SRAM1/2/3 are all on the AHB matrix, and DCACHE is off, so no coherency handling is expected. Confirm empirically on hardware before assuming. |
 | FreeRTOS `main` branch | 9 | Pin before the first build so later failures aren't caused by an upstream kernel change. |
@@ -583,7 +610,10 @@ graph TD
 ### Functional Verification (requires hardware)
 1. **Boot & Serial Output**: USART3 VCP at 115200 — welcome message appears
 2. **DHCP**: Ethernet link-up → DHCP address acquired and printed
-3. **PTP Sync**: Run against a PTP grandmaster → verify `ptp log` shows converging offset
+3. **PTP Sync**: Run against a PTP grandmaster → `ptp log` shows converging offset and the
+   stack reaches **LOCKED**, i.e. offset inside `PTP_ACCURACY_LIMIT_NS` (default 100 ns, F43).
+   A stack that syncs but never locks usually means a broken TX-timestamp path (F42), not a
+   servo problem
 4. **1PPS Output**: Measure PPS pulse on oscilloscope — verify frequency and jitter
 5. **CLI**: All flexPTP CLI commands respond correctly (`?`, `flexptp`, profile switching)
 

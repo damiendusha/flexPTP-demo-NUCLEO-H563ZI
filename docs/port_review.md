@@ -13,6 +13,7 @@ owns the work.
 - [Build-Blocking Findings](#build-blocking-findings)
 - [Plan Structure Findings](#plan-structure-findings)
 - [Preconditions Requiring Hardware or Datasheet](#preconditions-requiring-hardware-or-datasheet)
+- [flexPTP Library & Documentation Findings](#flexptp-library--documentation-findings)
 - [Minor Findings](#minor-findings)
 - [Verified Clean](#verified-clean)
 - [H743 Baseline Reference Data](#h743-baseline-reference-data)
@@ -30,6 +31,10 @@ owns the work.
   Stage 1 copy was faithful, and to recover baseline values for comparison.
 - Constant-folding the flexPTP addend macro under GCC to confirm the arithmetic in
   [F2](#f2) rather than reasoning about it.
+- Cross-check of the flexPTP README, the published documentation and the porting guide
+  (`epagris.github.io/flexPTP`) against the **pinned** submodule `RC1.0-11-g76aaf67`
+  (2026-03-06). The website documents whatever is current on `master`; where the two
+  disagree, the pinned source wins — see [F37](#f37) and [F38](#f38).
 
 Not done: no compilation (the tree does not yet configure — see [F10](#f10)), no hardware.
 
@@ -75,6 +80,13 @@ Not done: no compilation (the tree does not yet configure — see [F10](#f10)), 
 | F34 | `/DISCARD/ libc.a` block inherited from ST template | None | this document only |
 | F35 | `double` in Kalman filter on an SP-FPU part | None | plan decisions (accepted) |
 | F36 | Distro/upstream OpenOCD 0.12.0 cannot program the H563 | Blocking (tooling) | plan **Stage 18** 🆕 |
+| F37 | Porting guide types `PTP_HW_GET_TIME` as `TimestampI *`; code passes `TimestampU *` | Critical (trap) | plan Stage 14 |
+| F38 | Guide requires `SPRINTF`; code calls `FLEXPTP_SNPRINTF` | Trap | plan Stage 13 |
+| F39 | flexPTP has never been ported to Cortex-M33 / ARMv8-M | Risk | plan Open Items |
+| F40 | No OS-binding macro selected; silently defaults to `FLEXPTP_FREERTOS` | Build (latent) | plan Stage 13 |
+| F41 | `PTP_UPDATE_CLOCK` dead; `ETHHW_UpdatePTPTime()` unreachable and suspect | Minor + latent bug | plan Stage 12 |
+| F42 | No stage verifies the lwIP RX/TX timestamp plumbing survives the MAC port | Coverage gap | plan Stages 14 & 20 |
+| F43 | `PTP_ACCURACY_LIMIT_NS` (100 ns) is the implicit LOCKED criterion | Minor | plan Stage 20 |
 
 **Every finding is tracked.** F33 and F34 are recorded here only because they are
 observations about upstream code that require no action — noted so a future reader does not
@@ -229,6 +241,95 @@ work. ST's fork (`STMicroelectronics/OpenOCD`, tag `openocd-cubeide-v2.1.0`) car
 **F27 — ETH DMA and SRAM3.** SRAM1/2/3 are all on the AHB matrix and `HAL_Init()` leaves
 DCACHE off, so no cache maintenance is expected for the Ethernet buffers in SRAM3. Confirm
 empirically rather than assuming.
+
+---
+
+## flexPTP Library & Documentation Findings
+
+These concern the flexPTP library contract rather than this repository. They are recorded
+because two of them will actively mislead whoever implements the hardware port.
+
+### F37 — `PTP_HW_GET_TIME` is documented with the wrong type {#f37}
+
+Both the published guide and the pinned `manual/porting.dox:46,54` state that `pt` is of
+type `TimestampI *`. The code disagrees at every call site:
+
+```c
+slave.c:185               TimestampU tu;  PTP_HW_GET_TIME(&tu);
+settings_interface.c:202  void ptp_time(TimestampU * pT) { PTP_HW_GET_TIME(pT); }
+```
+
+and `ptp_port_stm32h743_lwip.h:23` declares `void ptphw_gettime(TimestampU * pTime)`.
+**The documentation is wrong, not the code.** Writing the H563 port from the guide yields a
+signature mismatch. Stage 14's instruction to derive from `ptp_port_stm32h743_lwip.c` avoids
+this; the reason is now stated there so the correct type is not "corrected" to match the docs.
+
+### F38 — `SPRINTF` vs `FLEXPTP_SNPRINTF` {#f38}
+
+The guide lists `SPRINTF(str,n,...)` among the required printing routines. The pinned code
+calls `FLEXPTP_SNPRINTF` (`timeutils.c:135`) and never references `SPRINTF`. Our
+`Inc/flexptp_options.h` defines `FLEXPTP_SNPRINTF`, which matches the code and is correct.
+Do not "fix" it to match the guide.
+
+### F39 — first ARMv8-M target
+
+The README states flexPTP has been *"ported to and tested on ARM Cortex-M4 and Cortex-M7
+based microcontrollers"*; the supported list is TM4C1294, STM32F4xx, STM32F7xx, STM32H7xx,
+MK64F and Linux. This port will therefore be flexPTP's **first Cortex-M33 / ARMv8-M
+target**. The missing H5 hardware port (F9) is the visible part; the unquantified part is
+whether the library core carries any ARMv7-M assumptions (alignment, `__attribute__` usage,
+atomics). Tracked as an Open Item rather than a stage, since there is nothing specific to
+fix until something breaks.
+
+### F40 — OS binding is implicit
+
+The guide requires defining `FLEXPTP_CMSIS_OS2` **or** `FLEXPTP_FREERTOS`.
+`Inc/flexptp_options.h` defines neither, so `ptp_defs.h` falls back to `FLEXPTP_FREERTOS`.
+The result is that flexPTP calls `xTaskCreate` directly while the demo application uses
+CMSIS-OS2 (`osThreadNew`, `osDelay`) and the root `CMakeLists.txt` defines `CMSIS_OS2`.
+This works — CMSIS-OS2 is a FreeRTOS wrapper — but the binding is invisible and load-bearing.
+Made explicit in Stage 13.
+
+Verified clean alongside it: `FLEXPTP_TASK_PRIORITY` is 24 against `configMAX_PRIORITIES`
+of 56, and `FLEXPTP_TASK_STACK_SIZE` defaults to 2048.
+
+### F41 — `PTP_UPDATE_CLOCK` is dead, and conceals a suspect calculation
+
+The guide's required hardware-clock list is `PTP_HW_INIT`, `PTP_SET_CLOCK`,
+`PTP_SET_ADDEND`, `PTP_HW_GET_TIME`. `PTP_UPDATE_CLOCK` is not among them, and the pinned
+core never references it. Our `flexptp_options.h` defines it anyway, and that macro is the
+**only** caller of `ETHHW_UpdatePTPTime()` — so the function is unreachable.
+
+That matters because the subtract path looks wrong:
+
+```c
+/* Drivers/EthDrv/mac_drv.c:697 */
+nsec = 1000000000 - (nsec >> 1);
+nsec |= (1 << 31);
+```
+
+The STM32 MAC expects `10⁹ − nsec` with bit 31 set to mark subtraction; the `>> 1` has no
+evident justification and would produce roughly a 2× time error. It is harmless today
+because nothing calls it. Recorded here because it is invisible until someone re-enables
+coarse correction through this path.
+
+### F42 — lwIP timestamp plumbing is unverified
+
+The README states the low-level lwIP driver must be instrumented to convey RX and TX
+timestamps, and links a guide to the H743 `ethernetif.c` amendments. This project does not
+use vendor `ethernetif.c`; `Drivers/EthDrv/eth_drv_lwip.c` carries its own plumbing —
+RX timestamps from context descriptors via `ETHHW_ReadCallback`, TX timestamps via the
+descriptor-extension `tsCbPtr` callbacks driven from `ETHHW_ProcessTx`.
+
+Stage 12 rewrites the code immediately around that machinery and Stage 15 touches
+`eth_drv_lwip.c` only for header renames, so nothing confirms the path still works. A
+silently broken TX-timestamp path presents as "PTP runs but never converges", which is the
+hardest symptom to attribute correctly. Explicit checks added to Stages 14 and 20.
+
+### F43 — the LOCKED threshold is the real pass criterion
+
+`PTP_ACCURACY_LIMIT_NS` defaults to 100 ns and is what moves the stack into the LOCKED
+state. Stage 20 previously said only "converging offset"; it now names the threshold.
 
 ---
 
