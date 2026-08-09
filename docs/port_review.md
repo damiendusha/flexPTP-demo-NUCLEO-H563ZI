@@ -591,11 +591,30 @@ The board receives Sync, Follow_Up and Announce — all to the same multicast gr
 (224.0.1.129) and the same destination MAC — so plain group forwarding works. Something
 about the Delay_Resp specifically is not being delivered across the network.
 
-**Next test, software-only:** run `ptp4l` with `hybrid_e2e 1`, which sends Delay_Resp as
-**unicast** while leaving Sync and Announce multicast. If a unicast Delay_Resp arrives, the
-problem is multicast forwarding of that particular flow; if it still does not, the problem
-is more fundamental. This is cheaper and more diagnostic than the direct-cable test, which
-would also work but changes several variables at once.
+**`hybrid_e2e` tested — no change.** With `ptp4l --hybrid_e2e=1`, which replies to a
+Delay_Req with a **unicast** Delay_Resp, a 30-second delta at the MAC gave:
+
+| Message | Δ30 s |
+|---|---|
+| Sync | +31 |
+| Follow_Up | +31 |
+| Announce | +15 |
+| **Delay_Resp** | **0** |
+
+So the fault is not multicast forwarding. A unicast Delay_Resp addressed directly to this
+board traverses the same path and also fails to arrive.
+
+Worth noting what the MAC cannot be doing: every one of these messages carries the **same
+destination MAC** (`01:00:5E:00:01:81`, derived from 224.0.1.129) in the multicast case, so
+with `PM = 1` the MAC is incapable of distinguishing them. Whatever discriminates must sit
+outside the chip.
+
+**Remaining test — direct cable.** Connect the host NIC straight to the board, removing the
+switch entirely. It changes several variables at once, which is why it was not the first
+choice, but every cheaper discriminator is now exhausted. If Delay_Resp arrives on a direct
+link, the switch is discarding it; if it still does not, attention returns to the host's
+transmit path, since `tcpdump` on the sending host proves only that the frame was handed to
+the kernel, not that it reached the wire.
 
 ### Earlier localisation: lwIP never delivers Delay_Resp
 
