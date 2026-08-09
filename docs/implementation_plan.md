@@ -21,7 +21,7 @@
 - [x] **Stage 9** — FreeRTOS configuration + kernel port selection
 - [x] **Stage 10** — Clock & power init (`main.c`)
 - [x] **Stage 11** — `serial_io.c` (GPDMA rewrite)
-- [ ] **Stage 12** — `mac_drv.c/h` (register audit + port)
+- [x] **Stage 12** — `mac_drv.c/h` (register audit + port)
 - [ ] **Stage 13** — `flexptp_options.h` (PTP HCLK 250 MHz / 5 ns)
 - [ ] **Stage 14** — flexPTP H563 hardware port 🆕
 - [ ] **Stage 15** — Global HAL header sweep

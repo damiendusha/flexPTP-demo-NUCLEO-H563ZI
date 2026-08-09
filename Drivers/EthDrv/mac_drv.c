@@ -1,10 +1,10 @@
 #include "mac_drv.h"
 #include "standard_output/standard_output.h"
-#include "stm32h7xx.h"
+#include "stm32h5xx.h"
 
 #include <memory.h>
 
-#include <stm32h7xx_hal.h>
+#include <stm32h5xx_hal.h>
 
 __weak uint32_t ETHHW_setupPHY(ETH_TypeDef *eth) {
     (void)eth;
@@ -32,11 +32,13 @@ static void ETHHW_InitClocks() {
      RMII_MII_CRS_DV -------------------> PA7
      RMII_MII_RXD0 ---------------------> PC4
      RMII_MII_RXD1 ---------------------> PC5
-     RMII_MII_RXER ---------------------> PG2
      RMII_MII_TX_EN --------------------> PG11
      RMII_MII_TXD0 ---------------------> PG13
-     RMII_MII_TXD1 ---------------------> PB13
-     PPS_OUT ---------------------------> PB5
+     RMII_MII_TXD1 ---------------------> PB15   (PB13 on the H743 board)
+
+     Not configured here:
+       RMII_MII_RXER  - PG2 on the H743 board; dropped, see docs/design_doc.md
+       PPS_OUT        - PG8; owned by the flexPTP hardware port, not this driver
      */
 
     /* Configure PA1, PA2 and PA7 */
@@ -47,26 +49,26 @@ static void ETHHW_InitClocks() {
     GPIO_InitStructure.Pin = GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_7;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStructure);
 
-    /* Configure PB5 and PB13 */
-    GPIO_InitStructure.Pin = GPIO_PIN_5 | GPIO_PIN_13;
+    /* Configure PB15 (ETH_TXD1; this is PB13 on the NUCLEO-H743ZI) */
+    GPIO_InitStructure.Pin = GPIO_PIN_15;
     HAL_GPIO_Init(GPIOB, &GPIO_InitStructure);
 
     /* Configure PC1, PC4 and PC5 */
     GPIO_InitStructure.Pin = GPIO_PIN_1 | GPIO_PIN_4 | GPIO_PIN_5;
     HAL_GPIO_Init(GPIOC, &GPIO_InitStructure);
 
-    /* Configure PG2, PG11, PG13 and PG14 */
-    GPIO_InitStructure.Pin = GPIO_PIN_2 | GPIO_PIN_11 | GPIO_PIN_13;
+    /* Configure PG11 and PG13 (PG2/RXER is not brought out on this board) */
+    GPIO_InitStructure.Pin = GPIO_PIN_11 | GPIO_PIN_13;
     HAL_GPIO_Init(GPIOG, &GPIO_InitStructure);
 
     /* Enable the Ethernet global Interrupt */
     HAL_NVIC_SetPriority(ETH_IRQn, 0x7, 0);
     HAL_NVIC_EnableIRQ(ETH_IRQn);
 
-    /* Enable Ethernet clocks */
-    __HAL_RCC_ETH1MAC_CLK_ENABLE();
-    __HAL_RCC_ETH1TX_CLK_ENABLE();
-    __HAL_RCC_ETH1RX_CLK_ENABLE();
+    /* Enable Ethernet clocks (H5 drops the "1" from the H7 names) */
+    __HAL_RCC_ETH_CLK_ENABLE();
+    __HAL_RCC_ETHTX_CLK_ENABLE();
+    __HAL_RCC_ETHRX_CLK_ENABLE();
 
 }
 
@@ -75,8 +77,9 @@ static void ETHHW_InitClocks() {
 #endif
 
 static void ETHHW_InitPeripheral(ETH_TypeDef *eth, ETHHW_InitOpts *init) {
-    __HAL_RCC_SYSCFG_CLK_ENABLE();
-    HAL_SYSCFG_ETHInterfaceSelect(SYSCFG_ETH_RMII);
+    /* SYSCFG is called SBS on the STM32H5 */
+    __HAL_RCC_SBS_CLK_ENABLE();
+    HAL_SBS_ETHInterfaceSelect(SBS_ETH_RMII);
 
     // reset all MAC internal registers and logic
     SET_BIT(eth->DMAMR, ETH_DMAMR_SWR);
@@ -88,8 +91,11 @@ static void ETHHW_InitPeripheral(ETH_TypeDef *eth, ETHHW_InitOpts *init) {
 
     /* ---- MAC initialization ---- */
 
-    // initialize MDIO clock
-    WRITE_REG(eth->MACMDIOAR, ETH_MACMDIOAR_CR_DIV102 << ETH_MACMDIOAR_CR_Pos); // for 150-250MHz HCLK
+    // Initialize the MDIO clock. ETH_MACMDIOAR_CR_DIV102 is already a positioned mask
+    // (bit 10), so it must NOT be shifted by ETH_MACMDIOAR_CR_Pos again -- doing so lands
+    // in the RDA field and leaves CR at 0 (divide by 42). At HCLK 250 MHz that would give
+    // ~6 MHz MDC against a 2.5 MHz limit. 250/102 = 2.45 MHz.
+    WRITE_REG(eth->MACMDIOAR, ETH_MACMDIOAR_CR_DIV102);
 
     // setup PHY
     uint32_t initMode = ETHHW_setupPHY(eth);
@@ -689,6 +695,10 @@ void ETHHW_EnablePTPFineCorr(ETH_TypeDef *eth, bool enFineCorr) {
 // #define ETH_PTP_FLAG_TSSTU ((uint32_t)(1 << 3)) // flag initiating time
 // update
 
+// NOTE: unreachable in this project. Its only caller is the PTP_UPDATE_CLOCK macro in
+// Inc/flexptp_options.h, which the flexPTP core never invokes -- coarse correction goes
+// through PTP_SET_CLOCK instead. The subtract path below also looks wrong (the >> 1 has
+// no evident justification); fix it before routing anything through here. See F41.
 void ETHHW_UpdatePTPTime(ETH_TypeDef *eth, uint32_t sec, uint32_t nsec,
                          bool add_substract) { // true = add
     if (add_substract) {

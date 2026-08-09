@@ -362,3 +362,32 @@ This section will provide a detailed comparison of:
 - USART3 setup otherwise unchanged: PD8/PD9, AF7, 115200 8N1, register callbacks
 - Verified: compiles clean, zero warnings
 
+### Stage 12 — Ethernet MAC driver port
+The register audit from the plan review held exactly: **no ETH register or descriptor-bit
+change was needed.** The H563 and H743 carry the same Synopsys QoS core, so all of
+`MACTSCR`, `MACSSIR`, `MACSTSR/NR`, `MACSTSUR/NUR`, `MACTSAR`, `MACACR`, `MACATSSR/NR`,
+`MACPPSCR`, `MACPPSTTSR/TTNR`, `MACPPSIR`, `MACPPSWR` and every `ETH_DMA*NDESC*` bit
+resolved unchanged. The work was entirely peripheral plumbing:
+
+- Headers: `stm32h7xx.h` → `stm32h5xx.h` in both `mac_drv.c` and `mac_drv.h`
+- **ETH_TXD1 PB13 → PB15.** The `HAL_GPIO_Init(GPIOB, …)` call now covers PB15 alone
+- **PG2 (RXER) dropped** from the GPIOG init
+- **PB5 dropped.** PPS is PG8 and is owned by the flexPTP hardware port, so this driver no
+  longer configures a PPS pin at all — one owner, one place
+- Clock enables `ETH1MAC`/`ETH1TX`/`ETH1RX` → `ETH`/`ETHTX`/`ETHRX`
+- SYSCFG → SBS: `__HAL_RCC_SBS_CLK_ENABLE()`,
+  `HAL_SYSCFG_ETHInterfaceSelect(SYSCFG_ETH_RMII)` → `HAL_SBS_ETHInterfaceSelect(SBS_ETH_RMII)`
+- **MDIO divider bug fixed (F8).** `ETH_MACMDIOAR_CR_DIV102` is already a positioned mask
+  (bit 10); the inherited code shifted it by `ETH_MACMDIOAR_CR_Pos` again, landing in the
+  `RDA` field and leaving `CR` = 0. Effect at HCLK 250 MHz:
+
+  | | CR field | divider | MDC | verdict |
+  |---|---|---|---|---|
+  | inherited (double-shifted) | 0 | ÷42 | 5.95 MHz | over the 2.5 MHz limit |
+  | fixed | 4 | ÷102 | 2.45 MHz | within limit |
+
+- `ETHHW_UpdatePTPTime()` annotated as unreachable, with a warning about its suspect
+  subtract path (F41). Ported mechanically; not validated, because nothing calls it
+- `phy_common.c` needed no change — it reaches the HAL only through `mac_drv.h`
+- Verified: `mac_drv.c` and `phy_common.c` both compile clean, zero warnings
+

@@ -2,7 +2,7 @@
 #define ETH_MAC_DRV_H_
 
 #include <stdbool.h>
-#include <stm32h7xx.h>
+#include <stm32h5xx.h>
 
 #define MODEINIT_HALF_DUPLEX (0)
 #define MODEINIT_FULL_DUPLEX (1 << 8)
