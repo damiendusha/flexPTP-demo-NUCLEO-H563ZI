@@ -87,6 +87,7 @@ Not done: no compilation (the tree does not yet configure — see [F10](#f10)), 
 | F41 | `PTP_UPDATE_CLOCK` dead; `ETHHW_UpdatePTPTime()` unreachable and suspect | Minor + latent bug | plan Stage 12 |
 | F42 | No stage verifies the lwIP RX/TX timestamp plumbing survives the MAC port | Coverage gap | plan Stages 14 & 20 |
 | F43 | `PTP_ACCURACY_LIMIT_NS` (100 ns) is the implicit LOCKED criterion | Minor | plan Stage 20 |
+| F44 | `CMakePresets.json` requires Ninja; not documented as a prerequisite | Minor | plan Stage 19 |
 
 **Every finding is tracked.** F33 and F34 are recorded here only because they are
 observations about upstream code that require no action — noted so a future reader does not
@@ -325,6 +326,15 @@ Stage 12 rewrites the code immediately around that machinery and Stage 15 touche
 `eth_drv_lwip.c` only for header renames, so nothing confirms the path still works. A
 silently broken TX-timestamp path presents as "PTP runs but never converges", which is the
 hardest symptom to attribute correctly. Explicit checks added to Stages 14 and 20.
+
+### F44 — undocumented Ninja dependency
+
+`CMakePresets.json` sets `"generator": "Ninja"`, so `cmake --preset debug` fails with
+*"unable to find a build program corresponding to Ninja"* on a machine without it.
+`build.sh` never uses presets — it calls `cmake -S -B` and gets the platform default
+(Unix Makefiles) — so the two documented build paths have different prerequisites and
+only one of them is self-describing. Neither the README nor the plan mentioned Ninja.
+Found while running the Stage 8 build gate.
 
 ### F43 — the LOCKED threshold is the real pass criterion
 

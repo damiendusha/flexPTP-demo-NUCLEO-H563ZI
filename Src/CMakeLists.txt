@@ -4,7 +4,7 @@ target_sources(
     main.c
     syscall.c
     sysmem.c
-    system_stm32h7xx.c
+    system_stm32h5xx.c
 
     cmds.c
     cmds.h

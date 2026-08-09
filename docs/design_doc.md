@@ -232,3 +232,20 @@ This section will provide a detailed comparison of:
 - `.vscode` CMake integration no longer feeds the build; a regenerated file would simply
   be ignored since nothing includes it
 
+### Stage 8 — Build-system retarget
+- `cpu_PARAMS`: `-mcpu=cortex-m7 -mfpu=fpv5-d16` → **`-mcpu=cortex-m33 -mfpu=fpv5-sp-d16`**
+  (`-mthumb -mfloat-abi=hard` unchanged)
+- `MCU_TYPE` `STM32H743xx` → **`STM32H563xx`**
+- Linker script → `stm32h563zitx_FLASH.ld`; startup → `Startup/startup_stm32h563zitx.s`
+- `Drivers/CMakeLists.txt` rewritten: target `H7HAL` → **`H5HAL`**, CMSIS include path
+  `STM32H7xx` → `STM32H5xx`, and the 127-file H7 source list replaced by the 120
+  non-template sources the H5 submodule ships. Sources whose module is disabled in
+  `stm32h5xx_hal_conf.h` compile to empty translation units, so the list can be generated
+  mechanically rather than curated
+- `Src/CMakeLists.txt`: `system_stm32h7xx.c` → `system_stm32h5xx.c`, fixing the dangling
+  reference left by Stage 3 (F10) that prevented the tree from configuring at all
+- **Gate passed**: `cmake --preset debug` configures, and `libH5HAL.a` builds from 121
+  objects with zero errors and zero warnings
+- Note: the preset requires the Ninja generator (F44); `build.sh` uses the CMake default
+  instead, so the two build paths have different prerequisites
+

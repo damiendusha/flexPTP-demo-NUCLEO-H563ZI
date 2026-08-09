@@ -23,20 +23,20 @@ set(CMAKE_CXX_EXTENSIONS ON)
 # Core MCU flags, CPU type, instruction set and FPU setup
 set(cpu_PARAMS
     -mthumb
-    -mcpu=cortex-m7
-    -mfpu=fpv5-d16
+    -mcpu=cortex-m33
+    -mfpu=fpv5-sp-d16
     -mfloat-abi=hard
 )
 
 # Set MCU type
-set(MCU_TYPE STM32H743xx)
+set(MCU_TYPE STM32H563xx)
 
 # Sources
 set(sources_SRCS
     ${CMAKE_SOURCE_DIR}/Src/main.c
     ${CMAKE_SOURCE_DIR}/Src/syscall.c
     ${CMAKE_SOURCE_DIR}/Src/sysmem.c
-    ${CMAKE_SOURCE_DIR}/Startup/startup_stm32h735igkx.s
+    ${CMAKE_SOURCE_DIR}/Startup/startup_stm32h563zitx.s
 )
 
 # Include directories for all compilers
@@ -66,7 +66,7 @@ set(link_LIBS freertos_kernel)
 
 # Linker script
 set(linker_script_SRC
-    ${CMAKE_SOURCE_DIR}/stm32h735igkx_FLASH.ld
+    ${CMAKE_SOURCE_DIR}/stm32h563zitx_FLASH.ld
 )
 
 # Compiler options

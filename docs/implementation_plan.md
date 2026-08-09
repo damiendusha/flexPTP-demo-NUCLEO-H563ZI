@@ -17,7 +17,7 @@
 - [x] **Stage 5** — New startup file (H563 vector table)
 - [x] **Stage 6** — `stm32h5xx_hal_conf.h`
 - [x] **Stage 7** — Consolidate build config into `CMakeLists.txt` 🆕
-- [ ] **Stage 8** — Build-system retarget (CMake, MCU flags, HAL sources) 🆕
+- [x] **Stage 8** — Build-system retarget (CMake, MCU flags, HAL sources) 🆕
 - [ ] **Stage 9** — FreeRTOS configuration + kernel port selection
 - [ ] **Stage 10** — Clock & power init (`main.c`)
 - [ ] **Stage 11** — `serial_io.c` (GPDMA rewrite)
@@ -529,6 +529,9 @@ Not previously owned by any stage; all of it still says H743:
   `NUCLEO-H743ZI.gif`, which was intentionally not copied — either supply an H563 capture
   or drop the image
 - `build.sh` — header comment
+- README — document the build prerequisites. `CMakePresets.json` pins the **Ninja**
+  generator, which is not mentioned anywhere; `build.sh` bypasses presets and uses the
+  CMake default, so the two paths have different requirements (F44)
 - `.vscode/launch.json` — `device` `STM32H743ZITx` → `STM32H563ZITx`, `svdFile`
   `STM32H743.svd` → `STM32H563.svd`, and the OpenOCD config → **`board/st_nucleo_h5.cfg`**
   (generic across H5 Nucleos; there is no `st_nucleo_h563zi.cfg`). Four occurrences across
