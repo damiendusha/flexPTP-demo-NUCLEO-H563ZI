@@ -20,6 +20,21 @@ git -C Modules/flexptp checkout -- src/
 
 ## Contents
 
+### `0002-servo-nan-latch-fix.patch` — **permanent, keep**
+
+Makes the clock servo survive a repeated Sync cycle. Without it a single duplicated Sync
+gives `measSyncPeriodNs == 0`, the Kalman filter computes `0.0/0.0`, and NaN latches into
+its state permanently — the servo then reports a correction of `0.0000` for ever while the
+clock free-runs. Full analysis in
+[`docs/port_review.md`](../../docs/port_review.md) under F59.
+
+| File | Change |
+|---|---|
+| `slave.c` | `ptp_perform_correction()` skips a cycle whose measured Sync period is not positive; `ptp_tune_clock()` ignores a non-finite tuning value |
+| `servo/kalman_filter.c` | Skips a non-positive period, and resets the filter if its state or output goes non-finite |
+
+Report upstream: the defect is target-independent.
+
 ### `0001-temporary-F42-instrumentation.patch` — **temporary, do not ship**
 
 Counters added while investigating F42 (PTP fails to complete the E2E delay exchange).

@@ -611,5 +611,15 @@ Tested against `linuxptp` 4.4 on a Linux host.
 - **PTP locks on a direct link.** After `ptp reset`, offset converged 5.19 ms → −45 µs with
   the addend actively tuned and 50 of 67 samples applying a correction. The residual
   ±10–50 µs is the host's software-timestamping floor, not the board.
-- **F59 open**: the servo does not engage on its own after a prolonged delay-exchange
-  failure — offset diverged at ~18.7 ppm with `corr_ppb` exactly 0 until `ptp reset`.
+- **F59 resolved: one duplicated Sync cycle latched the servo into NaN.** A repeated Sync
+  timestamp makes the measured Sync period zero; the Kalman filter then computes `0.0/0.0`
+  and NaN propagates through its state for ever. Nothing in flexPTP tested for it, and two
+  Arm conversion behaviours hid it — NaN printed as `0.0000` and tuned the addend by zero,
+  so every visible indicator stayed green while the clock free-ran at ~18.7 ppm. Fixed with
+  three guards (`patches/flexptp/0002-…`); after the fix, 190 of 191 samples apply a
+  correction and the offset holds at a mean of 519 ns.
+- **F60 resolved: embfmt could not print `%ll` and rendered NaN as `0.0000`.** The mean path
+  delay and measured Sync period columns were blank on every servo line
+  (`patches/embfmt/0001-…`).
+- **F61 open**: the duplicated Sync of F59 shared T1, T2 *and* offset, so one received frame
+  was delivered twice. Seen once in ~150 cycles; now harmless, but not root-caused.

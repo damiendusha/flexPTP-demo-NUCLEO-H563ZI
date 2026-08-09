@@ -62,8 +62,8 @@ source — with one **temporary** exception, noted below.
 | **CMSIS-RTOS2 shim** | ST distribution | in-tree, `Drivers/CMSIS/CMSIS_RTOS_V2` | **Patched.** One line: `stm32h7xx.h` → `stm32h5xx.h` (Stage 15). This is a vendored copy, not a submodule, so the edit is in-repo and visible in git history |
 | **FreeRTOS-Kernel** | `V11.3.0` | CMake `FetchContent`, pinned tag | **As-is.** Configured by `Inc/FreeRTOSConfig.h` |
 | **lwIP** | `3d896ba` (`STABLE-2_2_1_RELEASE-34`) | git submodule | **As-is, but extended.** `Inc/lwipopts.h` injects four fields into `struct pbuf` via lwIP's `LWIP_PBUF_CUSTOM_DATA` hook — a supported extension point, not a patch. See [The PTP Timestamp Path](#the-ptp-timestamp-path) |
-| **flexPTP** | `76aaf67` (`RC1.0-11`) | git submodule | **Temporarily patched** (F42 instrumentation, see above), plus two external workarounds. (1) `__PRI64_PREFIX=__INT64` compile definition, because flexPTP uses a glibc-internal macro newlib lacks (F47). (2) The STM32H5 hardware port is supplied by this project, since flexPTP ships none |
-| **embfmt** | `670a349` | git submodule | **As-is.** Formatted-print backend for `MSG()` |
+| **flexPTP** | `76aaf67` (`RC1.0-11`) | git submodule | **Patched.** A permanent servo fix (F59, `patches/flexptp/0002-…`) plus temporary F42 instrumentation (see above), and two external workarounds. (1) `__PRI64_PREFIX=__INT64` compile definition, because flexPTP uses a glibc-internal macro newlib lacks (F47). (2) The STM32H5 hardware port is supplied by this project, since flexPTP ships none |
+| **embfmt** | `670a349` | git submodule | **Patched.** Formatted-print backend for `MSG()`. `%ll` conversions were dropped entirely and NaN printed as `0.0000`; see [F60](port_review.md#f60--embfmt-drops-ll-conversions-and-renders-nan-as-00000-resolved) and `patches/embfmt/` |
 | **EtherLib** | `ec35be5` | git submodule | **Present but not compiled.** Alternative to lwIP, selectable via the `ETH_STACK` CMake variable |
 
 Project-owned code that would otherwise look like a third-party module:

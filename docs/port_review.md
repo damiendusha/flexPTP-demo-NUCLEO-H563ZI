@@ -130,7 +130,9 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F40 | No OS-binding macro selected; silently defaults to `FLEXPTP_FREERTOS` | Build (latent) | plan Stage 13 |
 | F41 | `PTP_UPDATE_CLOCK` dead; `ETHHW_UpdatePTPTime()` unreachable and suspect | Minor + latent bug | plan Stage 12 |
 | F42 | **The switch silently discarded PTP Delay_Resp** — nothing in the port was at fault | **RESOLVED** | proven by direct cable |
-| F59 | Servo never engages after a prolonged delay-exchange failure until `ptp reset` | **OPEN** | offset diverges with `corr_ppb` = 0 |
+| F59 | **One duplicated Sync cycle latches the Kalman servo into NaN for ever** | **RESOLVED** | root-caused, fixed, verified on hardware |
+| F60 | embfmt cannot parse `%ll`, and renders NaN as a plausible `0.0000` | **RESOLVED** | reproduced on the host, fixed |
+| F61 | The same received Sync/Follow_Up was processed twice — one frame, one RX timestamp | **OPEN** | identical T1, T2 and offset on consecutive corrections |
 | F58 | `eth_drv_lwip.c` RX copy never advances the source pointer across a chained pbuf | Latent bug | open |
 | F43 | `PTP_ACCURACY_LIMIT_NS` (100 ns) is the implicit LOCKED criterion | Minor | plan Stage 20 |
 | F44 | `CMakePresets.json` requires Ninja; not documented as a prerequisite | Minor | plan Stage 19 |
@@ -902,7 +904,7 @@ descriptor is released *before* the callback runs so it cannot be observed twice
 **This is a real latent bug and the fix is worth keeping, but it is not the cause of F42** —
 the counters read 125/125 after the change, with the failure unaffected.
 
-### F59 — the servo does not engage without `ptp reset` *(OPEN)*
+### F59 — one duplicated Sync cycle latches the servo into NaN for ever *(RESOLVED)*
 
 With the delay exchange finally working, the board reached SLAVE, identified the correct
 master, and computed a valid offset — yet applied **no correction at all**:
@@ -913,17 +915,170 @@ master, and computed a valid offset — yet applied **no correction at all**:
 | Addend | frozen at 3435894134 | tuned, Δ −40815 |
 | `corr_ppb` | **0 of 77** samples | **50 of 67** non-zero |
 
-The drift rate while uncorrected was ~18.7 ppm — the free-running oscillator error, exactly
-what the servo exists to remove.
+The drift while uncorrected was ~18.7 ppm — the free-running oscillator error, exactly what
+the servo exists to remove.
 
-Issuing `ptp reset` fixed it immediately and completely. The likely explanation is servo or
-BMCA state left over from the long preceding period of failed delay exchanges, but that is
-**a hypothesis, not a measurement**.
+The first recorded hypothesis — leftover servo or BMCA state from the preceding failure
+period — was **wrong**. The retained serial captures contain the moment of failure, and it
+is a single event.
 
-This matters more than it looks: the stack presents as entirely healthy — SLAVE state,
-correct master clock ID, delay exchange flowing, offsets computed and logged — while
-silently never disciplining the clock. Anyone watching only the state machine would believe
-PTP was working.
+#### The trigger
+
+Eleven consecutive log lines from `direct.log`, one per Sync. The servo is working, then it
+is not, and the boundary is exact:
+
+```
+T1                       T4                       offset      addend    corr_ppb
+1786312152 466717025  1786312152 448344766       -54568   3435909890   -3185.5125
+1786312153 466824103  1786312152 448344766       -29726   3435894134   -4585.7671
+1786312153 466824103  1786312152 448344766       -29726   3435894134       0.0000  <-- duplicate
+1786312154 467150630  1786312153 471275973       -12196   3435894134       0.0000
+1786312155 467218774  1786312154 494273634       -13047   3435894134       0.0000
+   ... 74 more, addend never moves again ...
+```
+
+Two consecutive corrections carry the **same T1** — the same master Sync timestamp. There
+is exactly one such duplicate in the entire capture, and it is the first zero sample. Every
+sample after it is zero.
+
+#### The mechanism
+
+`slave.c` derives the servo's time base from consecutive Sync timestamps:
+
+```c
+subTime(&measSyncPeriod, &syncMa, &(S.slave.prevSyncMa));
+int64_t measSyncPeriod_ns = nsI(&measSyncPeriod);
+```
+
+A repeated Sync makes `syncMa == prevSyncMa`, so `measSyncPeriod_ns == 0`. In
+`kalman_filter_run()` that value is a divisor twice over:
+
+```c
+double skew = ((double)(dt - dt_prev)) / ((double)pAux->measSyncPeriodNs);
+double DT   = ((double)pAux->measSyncPeriodNs) * 1E-09;   // -> insert_DT(0)
+```
+
+The repeated cycle also repeats the offset, so `dt - dt_prev` is zero as well:
+**0.0 / 0.0 = NaN**, not infinity. `insert_DT(0)` then fills the measurement covariance `R`
+with infinities. NaN enters the state vector `x`, and from that point every prediction and
+correction step propagates it. **The filter never recovers**, because nothing in flexPTP
+ever tests for it.
+
+#### Why it was invisible
+
+Two independent pieces of arithmetic conspire to make a dead servo look like a healthy one:
+
+- **`corr_ppb` printed `0.0000`, not `nan`.** embfmt's `pfn_double()` splits the value into
+  integer and fractional parts with `(uint64_t)d`. Converting NaN to an integer is undefined
+  in C, and Arm's `VCVT` returns **0** — so a NaN formats as a perfectly plausible zero.
+  (On x86 the same code prints `9223372040447430051.92…`, which would have been noticed
+  immediately. See F60.)
+- **The addend froze rather than exploding.** `ptp_tune_clock()` does
+  `(int64_t)(tuning_ppb * PTP_ADDEND_CORR_PER_PPB_F)`; the same Arm conversion turns NaN
+  into 0, so the addend was incremented by zero, forever.
+
+Had either behaved like x86, this would have been a five-minute diagnosis.
+
+#### Proof
+
+Compiled the **unmodified** `kalman_filter.c` for the host and replayed the offsets from the
+capture, with `measSyncPeriodNs = 0` on the eleventh sample only:
+
+```
+cycle  measSyncPeriodNs        dt        corr_ppb
+    9        1000000000    -29726      -4584.4570      <- matches the board (-4585.7671)
+   10                 0    -29726             nan      <- the duplicate
+   11        1000000000    -12196            -nan
+   12        1000000000    -13047             nan      ... and every sample thereafter
+```
+
+The replayed values track the board to four significant figures, and one zero-length period
+is sufficient and permanent. Same exercise on embfmt confirmed `% 8.4f` of a NaN yields
+`       0.0000`.
+
+#### The fix
+
+Three guards, because any one of them alone would have prevented this:
+
+| Where | Guard |
+|---|---|
+| `slave.c`, `ptp_perform_correction()` | Skip the cycle when `measSyncPeriod_ns <= 0`, so no servo — Kalman, PID or otherwise — is ever handed a zero time base |
+| `servo/kalman_filter.c` | Skip a non-positive period, and **reset the filter** if the state or the tuning output goes non-finite, so a single bad sample costs one cycle rather than the session |
+| `slave.c`, `ptp_tune_clock()` | Ignore a non-finite tuning value instead of converting it to an unpredictable integer |
+
+Both are submodule changes, recorded in
+[`patches/flexptp/0002-servo-nan-latch-fix.patch`](../patches/flexptp/0002-servo-nan-latch-fix.patch).
+
+#### Verified on hardware
+
+Reflashed, board on the direct link against `ptp4l -i enp5s0 -S -m --serverOnly=1
+--priority1=100`, `default` profile:
+
+| | Before the fix | After the fix |
+|---|---|---|
+| Samples applying a correction | 0 of 77 | **190 of 191** (the one zero is the servo's own first cycle) |
+| Offset over the last 40 samples | diverging past 3.6 ms | mean **519 ns**, peak 83 µs |
+| `mpd_ns` / `sync_period_ns` columns | printed as `d u` | `~30 µs` / `~1.0001 s` |
+
+The residual is the host's software-timestamping floor, not the board.
+
+This matters more than the fix does: the stack presented as entirely healthy — SLAVE state,
+correct master clock ID, delay exchange flowing, offsets computed and logged once a second —
+while silently never disciplining the clock. **Every visible indicator was green.**
+
+### F60 — embfmt drops `%ll` conversions and renders NaN as `0.0000` *(RESOLVED)*
+
+Two defects in `Modules/embfmt/embformat.c`, both of which cost real time during F59.
+
+**`ll` is not parsed.** `process_format_word()` accepts at most one `l`:
+
+```c
+word->length = LEN_NORMAL;
+if (*str == 'l') { word->length = LEN_LONG; str++; }
+```
+
+For `%lld` the designator lookup then sees `l`, returns `UNKNOWN`, and the conversion is
+dropped — leaving the trailing `d` as literal text and consuming no argument. This is why
+every servo line ended in a bare `d u`:
+
+```
+... 3435894134  0.0000 d u
+                       ^ ^-- sync_period_ns, "% 9llu"
+                       +---- mpd_ns, "% 9lld"
+```
+
+flexPTP uses `__PRI64_PREFIX` (`"ll"` under newlib) throughout, so the mean path delay, the
+measured Sync period and the coarse-correction threshold message were **all unprintable**.
+The mean path delay would have exposed F42 far sooner. `LEN_LONG` already reads
+`int64_t`/`uint64_t`, so accepting a second `l` is a two-line change.
+
+**NaN formats as a plausible number.** `pfn_double()` has no non-finite path; see F59 for
+why that is worse than it sounds. Now prints `nan` / `inf` / `-inf`.
+
+Recorded in
+[`patches/embfmt/0001-ll-length-modifier-and-non-finite-doubles.patch`](../patches/embfmt/0001-ll-length-modifier-and-non-finite-doubles.patch).
+Both are worth reporting upstream: they are target-independent.
+
+### F61 — the same received Sync was processed twice *(OPEN)*
+
+F59's trigger is understood and now harmless, but **what produced the duplicate is not**.
+
+The two corrections shared T1, T2 *and* the resulting offset. T2 is the board's own hardware
+RX timestamp, so a genuine retransmission by the master would have produced a different T2.
+Identical T2 means **one frame delivered twice**, not two frames.
+
+The slave state machine cannot do this on its own: a second Follow_Up arrives in `SIdle`,
+where only Sync is handled, and is discarded. So the duplication is below `slave.c` — the RX
+path, `nsd_lwip.c`, or the message-buffer FIFO added in flexPTP `a60190f`.
+
+Observed **once in roughly 150 Sync cycles** and not seen since, which makes it awkward to
+chase. The way to catch it is a counter pair — Syncs entering `ptp_slave_process_message()`
+versus calls to `ptp_perform_correction()` — left to run for hours and read over SWD; the
+`slvdbg` instrumentation from F42 is most of the way there already.
+
+Low priority now that a duplicate costs one skipped cycle instead of the session, but it is
+a real defect and it is not this port's alone: the same duplicate would corrupt any
+flexPTP-based slave.
 
 ### F58 — RX pbuf copy never advances the source pointer
 

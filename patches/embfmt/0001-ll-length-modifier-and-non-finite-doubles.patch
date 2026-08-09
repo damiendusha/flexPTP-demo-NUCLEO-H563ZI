@@ -1,0 +1,40 @@
+diff --git a/embformat.c b/embformat.c
+index c9c6582..2cb38f8 100644
+--- a/embformat.c
++++ b/embformat.c
+@@ -6,6 +6,7 @@
+ #include <stdbool.h>
+ #include <stddef.h>
+ #include <stdint.h>
++#include <float.h>
+ #include <sys/_types.h>
+ 
+ #define MAX(x, y) (((x) > (y)) ? (x) : (y))
+@@ -274,6 +275,17 @@ static int pfn_integer(va_list *va, FmtWord *fmt, char *outbuf, size_t free_spac
+ static int pfn_double(va_list *va, FmtWord *fmt, char *outbuf, size_t free_space) {
+     // get passed double variable
+     double d = va_arg((*va), double);
++
++    // Print non-finite values as such. Without this they fall through the integer/fraction
++    // split below, where the undefined double-to-integer conversion yields zero, and a NaN
++    // is displayed as a perfectly plausible "0.0000".
++    if (d != d) {
++        return string_copy(outbuf, "nan", free_space);
++    }
++    if (d > DBL_MAX || d < -DBL_MAX) {
++        return string_copy(outbuf, (d > 0) ? "inf" : "-inf", free_space);
++    }
++
+     bool negative = d < 0;
+     if (negative) {
+         d *= -1;
+@@ -574,6 +586,9 @@ static int process_format_word(char *str, FmtWord *word, int *rewind) {
+     if (*str == 'l') {
+         word->length = LEN_LONG;
+         str++;
++        if (*str == 'l') { // "ll": already handled as 64-bit by LEN_LONG
++            str++;
++        }
+     }
+ 
+     // 5.: get type from the designator
