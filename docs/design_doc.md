@@ -8,6 +8,7 @@ NUCLEO-H563ZI (STM32H563, Cortex-M33).
 
 - [Port Overview](#port-overview)
 - [System Clock Tree](#system-clock-tree)
+- [Submodule Pinning](#submodule-pinning)
 - [PTP Clock](#ptp-clock) — full derivation in [ptp_clock.md](ptp_clock.md)
 - [EtherLib Porting Guide](#etherlib-porting-guide)
 - [TrustZone Migration Guide](#trustzone-migration-guide)
@@ -35,6 +36,80 @@ Key decisions:
 - Network stack: LwIP only (initial port)
 - TrustZone: Disabled (TZEN=0, ARM_CM33_NTZ)
 - mac_drv.c: Register-level port
+
+---
+
+## Submodule Pinning
+
+**All four submodules are pinned ahead of the NUCLEO-H743ZI reference project**, because
+Stage 1 added them at then-current `master` rather than at the commits the H743 demo
+records. This was not a deliberate choice at the time, but it is now a deliberate one to
+keep.
+
+| Submodule | This port | H743 reference |
+|---|---|---|
+| `flexptp` | `76aaf67` | `62fc906` |
+| `lwip` | `3d896ba` | `554e104` |
+| `embfmt` | `670a349` | `78d8aa4` |
+| `etherlib` | `ec35be5` | `1127b3d` |
+
+### Decision: keep the newer pins
+
+flexPTP is five commits ahead:
+
+```
+76aaf67  P2P Sync-FollowUp-PDelReq separation
+3601a6f  Fix non-atomic sec/nsec register read in ptphw_gettime()
+70d2636  C linkage marking added
+a60190f  Linux and OS-less working mode, new message buffer and FIFO
+12fec5a  CMSIS OS2 support has been added
+```
+
+The deciding commit is **`3601a6f`**. `ptphw_gettime()` reads the seconds and nanoseconds
+registers separately; without a guard, a seconds rollover between the two reads yields a
+timestamp up to a second wrong. Compare:
+
+```c
+/* 62fc906 — what pinning back would give us */      /* 76aaf67 — what we have */
+pTime->sec     = ETH->MACSTSR;                       do {
+pTime->nanosec = ETH->MACSTNR & ETH_MACSTNR_TSSS;        pTime->sec     = ETH->MACSTSR;
+                                                         pTime->nanosec = ETH->MACSTNR & ETH_MACSTNR_TSSS;
+                                                     } while (pTime->sec != ETH->MACSTSR);
+```
+
+Since `Src/flexptp_port/ptp_port_stm32h563.c` is derived from the submodule's H743 port, it
+inherits the fixed version. **Pinning back to match the reference project would silently
+reintroduce a PTP timestamp bug** — the opposite of what "match the known-good reference"
+is supposed to buy. `12fec5a` (CMSIS-OS2 support) is also directly relevant to this project.
+
+### Cost of the decision
+
+Two defects had to be worked around, both consequences of integrating a library the
+reference project never did. Details in [port_review.md](port_review.md):
+
+| Finding | Problem | Fix |
+|---|---|---|
+| **F47** | flexPTP uses `__PRI64_PREFIX`, a glibc-internal macro absent from newlib, so the library does not compile for `arm-none-eabi` | `__PRI64_PREFIX=__INT64` in `FLEXPTP_COMPILE_DEFS` |
+| **F48** | `tx_cb`'s tag argument changed from `uint32_t` to `void *`, breaking the TX timestamp path | Aligned `Inc/lwipopts.h` and the `mac_drv.c` call site |
+
+Neither patches a submodule, so `git submodule update` remains safe.
+
+### What to watch
+
+- **F47 should be reported upstream.** It breaks every newlib target, not just this one.
+  If upstream fixes it, drop the `__PRI64_PREFIX` define — it is a reserved identifier and
+  only defined here under duress.
+- **The `tx_cb` contract is unversioned.** `Inc/lwipopts.h` and flexPTP's `nsd_lwip.c` must
+  agree on the callback signature, and nothing enforces it. A future flexPTP bump should
+  re-check it. A mismatch in the tag's *type* fails at compile time, as it did here; a
+  mismatch in its *meaning* would not (F42).
+- The other three submodules were not audited commit-by-commit. They build and link; no
+  behavioural claim is made about their divergence.
+
+### To revert
+
+Pin all four back with `git -C Modules/<name> checkout <hash>`, then revert the F47 and F48
+workarounds — and re-apply the `ptphw_gettime()` atomicity fix by hand, or accept the bug.
 
 ---
 
