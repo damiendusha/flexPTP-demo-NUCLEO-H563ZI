@@ -14,7 +14,7 @@
 - [x] **Stage 2** — Swap HAL submodule (`stm32h7xx` → `stm32h5xx`)
 - [x] **Stage 3** — Add CMSIS H5 device headers
 - [x] **Stage 4** — New linker script (flat SRAM layout)
-- [ ] **Stage 5** — New startup file (H563 vector table)
+- [x] **Stage 5** — New startup file (H563 vector table)
 - [ ] **Stage 6** — `stm32h5xx_hal_conf.h`
 - [ ] **Stage 7** — Consolidate build config into `CMakeLists.txt` 🆕
 - [ ] **Stage 8** — Build-system retarget (CMake, MCU flags, HAL sources) 🆕

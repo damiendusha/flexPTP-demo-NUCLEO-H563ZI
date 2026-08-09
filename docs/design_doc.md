@@ -182,3 +182,22 @@ This section will provide a detailed comparison of:
 - Removed SAI section (not used in this port)
 - Added DCACHE coherency note for SRAM3 Ethernet region
 - H7 linker script (`stm32h735igkx_FLASH.ld`) was not copied to this repo
+
+### Stage 5 — New startup file
+- Created `Startup/startup_stm32h563zitx.s` (`.cpu cortex-m33`)
+- **Vector table generated programmatically** from the `IRQn_Type` enum in
+  `stm32h563xx.h` rather than transcribed, so slot numbering cannot drift from CMSIS
+  or from `HAL_NVIC_*` calls
+- 131 IRQ slots (0..130), 128 defined + 3 reserved gaps emitted as `.word 0`;
+  147 vector entries total = 588 bytes
+- ARMv8-M: exception 7 is `SecureFault_Handler` (unreachable with TZEN=0, retained
+  for layout correctness)
+- `.fpu softvfp` retained, matching both the H743 project and ST's own H5 template;
+  the file emits no FP instructions
+- Reset_Handler follows the ST/upstream convention: set SP, `bl SystemInit`, copy
+  `.data`, zero `.bss`, `__libc_init_array`, `main`. Note `main()` also calls
+  `SystemInit()` — harmless, and unchanged from the H743 project
+- Verified: assembles clean for `-mcpu=cortex-m33`; relocations confirm
+  GPDMA1_Channel0 at index 43, USART3 at 76, USB_DRD_FS at 90, ETH at 122
+- No H7 startup file existed in this repo to delete (`Startup/` was empty from Stage 1)
+
