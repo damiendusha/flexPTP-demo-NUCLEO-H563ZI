@@ -2,9 +2,9 @@
 #include <stdint.h>
 
 #include <stdlib.h>
-#include <stm32h7xx_hal.h>
+#include <stm32h5xx_hal.h>
 
-#include <stm32h7xx_ll_rng.h>
+#include <stm32h5xx_ll_rng.h>
 
 #include "FreeRTOSConfig.h"
 
@@ -47,11 +47,11 @@ void init_pll() {
     // Configure the Main PLL.
 
     osc.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-	osc.HSEState = RCC_HSE_ON; // TODO: turn HSE bypass OFF if using X3 instead of the board controller's clock output
+	osc.HSEState = RCC_HSE_BYPASS; // ST-Link MCO drives HSE; use RCC_HSE_ON if an X3 crystal is fitted
 	osc.HSIState = RCC_HSI_OFF;
 	osc.CSIState = RCC_CSI_OFF;
 	osc.PLL.PLLState = RCC_PLL_ON;
-	osc.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+	osc.PLL.PLLSource = RCC_PLL1_SOURCE_HSE;
 
 	osc.PLL.PLLM = HSE_VALUE / 2000000;
 	osc.PLL.PLLN = TARGET_SYSCLK_MHZ;
@@ -60,8 +60,8 @@ void init_pll() {
 	osc.PLL.PLLR = 2;
 	osc.PLL.PLLQ = 4;
 
-	osc.PLL.PLLVCOSEL = RCC_PLL1VCOWIDE;
-	osc.PLL.PLLRGE = RCC_PLL1VCIRANGE_1;
+	osc.PLL.PLLVCOSEL = RCC_PLL1_VCORANGE_WIDE; // VCO = 500 MHz, inside 192..836 MHz
+	osc.PLL.PLLRGE = RCC_PLL1_VCIRANGE_1;       // VCI = 2 MHz, inside 2..4 MHz
 
 
     HAL_RCC_OscConfig(&osc);
@@ -69,25 +69,34 @@ void init_pll() {
     // initialize clock tree
     clk.ClockType = (RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_HCLK |
                      RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2 |
-                     RCC_CLOCKTYPE_D3PCLK1 | RCC_CLOCKTYPE_D1PCLK1);
+                     RCC_CLOCKTYPE_PCLK3);
     clk.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-    clk.SYSCLKDivider = RCC_SYSCLK_DIV1;
-    clk.AHBCLKDivider = RCC_HCLK_DIV2;
-    clk.APB1CLKDivider = RCC_APB1_DIV2;
-    clk.APB2CLKDivider = RCC_APB2_DIV2;
-    clk.APB3CLKDivider = RCC_APB3_DIV2;
-    clk.APB4CLKDivider = RCC_APB4_DIV2;
 
-    HAL_RCC_ClockConfig(&clk, FLASH_LATENCY_4); // set a FLASH latency supporting maximum speed
+    // HCLK is also the Ethernet PTP timestamp clock on the STM32H563 -- there is no
+    // ETHPTPCLKSEL mux on this device. It must run at the full 250 MHz; dividing here
+    // would silently detune the PTP clock. See docs/ptp_clock.md.
+    // NOTE: the H5 divider namespaces are the inverse of the H7's. AHBCLKDivider takes
+    // RCC_SYSCLK_DIVn (it divides SYSCLK); the APB dividers take RCC_HCLK_DIVn (they
+    // divide HCLK). RCC_HCLK_DIVn exists on both families with different encodings, so
+    // carrying the H7 spelling over here would compile and silently set the wrong AHB
+    // divider.
+    clk.AHBCLKDivider = RCC_SYSCLK_DIV1;
+
+    clk.APB1CLKDivider = RCC_HCLK_DIV2;
+    clk.APB2CLKDivider = RCC_HCLK_DIV2;
+    clk.APB3CLKDivider = RCC_HCLK_DIV2;
+
+    HAL_RCC_ClockConfig(&clk, FLASH_LATENCY_5); // 250 MHz at VOS0 requires 5 wait states
 
     // ---------------------
 }
 
 void init_osc_and_clk() {
-    // ensure that the MCU uses the internal LDO instead of anything else
-    HAL_PWREx_ConfigSupply(PWR_LDO_SUPPLY);
+    // The STM32H5 has no supply-source selection equivalent to the H7's
+    // HAL_PWREx_ConfigSupply(PWR_LDO_SUPPLY); the only accepted argument is
+    // PWR_EXTERNAL_SOURCE_SUPPLY, which does not apply here.
 
-    // configure internal voltage regulator to VOS0 to unlock main clock frequencies above 400MHz
+    // configure internal voltage regulator to VOS0, required for 250 MHz
     __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE0);
     while (!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {
     }
@@ -95,11 +104,13 @@ void init_osc_and_clk() {
     // initialize the main PLL
     init_pll();
 
-    // turn on additional clock sources and prepare GPIOs for high-speed operation
+    // turn on additional clock sources and prepare GPIOs for high-speed operation.
+    // SYSCFG was renamed SBS on the STM32H5.
     __HAL_RCC_HSI48_ENABLE();
-    __HAL_RCC_SYSCFG_CLK_ENABLE();
+    __HAL_RCC_SBS_CLK_ENABLE();
     __HAL_RCC_CSI_ENABLE();
-    HAL_EnableCompensationCell();
+    HAL_SBS_EnableVddIO1CompensationCell();
+    HAL_SBS_EnableVddIO2CompensationCell();
 
     // compute SYSCLK values (HSE_VALUE must be correct when invoking this)
     SystemCoreClockUpdate();
@@ -110,10 +121,10 @@ void init_osc_and_clk() {
 
 void print_welcome_message() {
     MSGraw("\033[2J\033[H");
-    MSG(ANSI_COLOR_BGREEN "Hi!" ANSI_COLOR_BYELLOW " This is a flexPTP demo for the STMicroelectronics NUCLEO-H743ZI2 (STM32H743) board.\n\n"
+    MSG(ANSI_COLOR_BGREEN "Hi!" ANSI_COLOR_BYELLOW " This is a flexPTP demo for the STMicroelectronics NUCLEO-H563ZI (STM32H563) board.\n\n"
                           "The application is built on FreeRTOS, flexPTP is currenty compiled against %s and uses the supplied example %s Network Stack Driver. "
                           "In this demo, the underlying Ethernet stack can be either lwip or EtherLib, the 'ETH_STACK' CMake variable (in the main CMakeLists.txt file) determines which one will be used. "
-                          "The STM32H7xx PTP hardware module driver is also picked from the bundled ones. This flexPTP instance features a full CLI control interface, the help can be listed by typing '?' once the flexPTP has loaded. "
+                          "The STM32H5xx PTP hardware module driver is supplied by this project. This flexPTP instance features a full CLI control interface, the help can be listed by typing '?' once the flexPTP has loaded. "
                           "The initial PTP preset that loads upon flexPTP initialization is the 'gPTP' (802.1AS) profile. It's a nowadays common profile, but we encourage "
                           "you to also try out the 'default' (plain IEEE 1588) profile and fiddle around with other options as well. The application will try to acquire an IP-address with DHCP. "
                           "Once the IP-address is secured, you might start the flexPTP module by typing 'flexptp'. 'Have a great time! :)'\n\n" ANSI_COLOR_RESET,

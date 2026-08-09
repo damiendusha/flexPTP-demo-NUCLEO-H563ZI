@@ -319,3 +319,24 @@ This section will provide a detailed comparison of:
 - **Gate passed**: kernel builds clean; the object produced is
   `portable/GCC/ARM_CM33_NTZ/non_secure/port.c.obj`, confirming the CM33 port is selected
 
+### Stage 10 — Clock & power init
+- Headers → `stm32h5xx_hal.h`, `stm32h5xx_ll_rng.h`
+- `RCC_HSE_ON` → **`RCC_HSE_BYPASS`** (ST-Link MCO; comment notes how to revert for a
+  fitted X3 crystal)
+- Symbol renames: `RCC_PLLSOURCE_HSE` → `RCC_PLL1_SOURCE_HSE`,
+  `RCC_PLL1VCOWIDE` → `RCC_PLL1_VCORANGE_WIDE`, `RCC_PLL1VCIRANGE_1` → `RCC_PLL1_VCIRANGE_1`
+- Clock tree: dropped `SYSCLKDivider`, `APB4CLKDivider`, `RCC_CLOCKTYPE_D1PCLK1`/`D3PCLK1`;
+  added `RCC_CLOCKTYPE_PCLK3`
+- **`AHBCLKDivider` = `RCC_SYSCLK_DIV1`** (HCLK 250 MHz, also the PTP clock) and APB
+  dividers = `RCC_HCLK_DIV2`. The H5 divider namespaces are *inverted* relative to the H7 —
+  see finding F45 in [port_review.md](port_review.md); this is a silent-miscompile trap
+- `FLASH_LATENCY_4` → **`FLASH_LATENCY_5`** for 250 MHz at VOS0
+- Removed `HAL_PWREx_ConfigSupply(PWR_LDO_SUPPLY)` — H5 accepts only
+  `PWR_EXTERNAL_SOURCE_SUPPLY`, which does not apply here
+- SYSCFG → SBS: `__HAL_RCC_SBS_CLK_ENABLE()`, and `HAL_EnableCompensationCell()` →
+  `HAL_SBS_EnableVddIO1CompensationCell()` + `...VddIO2...`
+- Welcome message updated for the board and MCU
+- **Gate**: `main.c` compiles clean with zero warnings. Verified in isolation with a
+  throwaway shim header, because `main.c` → `flexptp_options.h` → `mac_drv.h` still
+  includes `stm32h7xx.h` until Stage 12 — a gate dependency the plan had not anticipated
+

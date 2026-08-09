@@ -88,6 +88,7 @@ Not done: no compilation (the tree does not yet configure — see [F10](#f10)), 
 | F42 | No stage verifies the lwIP RX/TX timestamp plumbing survives the MAC port | Coverage gap | plan Stages 14 & 20 |
 | F43 | `PTP_ACCURACY_LIMIT_NS` (100 ns) is the implicit LOCKED criterion | Minor | plan Stage 20 |
 | F44 | `CMakePresets.json` requires Ninja; not documented as a prerequisite | Minor | plan Stage 19 |
+| F45 | H5 inverts the H7 clock-divider namespaces; the H7 spelling compiles but misconfigures | Critical (silent) | plan Stage 10 (fixed) |
 
 **Every finding is tracked.** F33 and F34 are recorded here only because they are
 observations about upstream code that require no action — noted so a future reader does not
@@ -326,6 +327,26 @@ Stage 12 rewrites the code immediately around that machinery and Stage 15 touche
 `eth_drv_lwip.c` only for header renames, so nothing confirms the path still works. A
 silently broken TX-timestamp path presents as "PTP runs but never converges", which is the
 hardest symptom to attribute correctly. Explicit checks added to Stages 14 and 20.
+
+### F45 — inverted clock-divider namespaces between H7 and H5
+
+On the STM32H7, `RCC_ClkInitTypeDef.AHBCLKDivider` takes `RCC_HCLK_DIVn` and the APB
+dividers take `RCC_APBx_DIVn`. On the STM32H5 both are shifted one level:
+
+| Field | H7 constants | H5 constants |
+|---|---|---|
+| `AHBCLKDivider` | `RCC_HCLK_DIVn` | **`RCC_SYSCLK_DIVn`** |
+| `APB1/2/3CLKDivider` | `RCC_APBx_DIVn` | **`RCC_HCLK_DIVn`** |
+
+The APB half is benign: `RCC_APB1_DIV2` simply does not exist on H5, so it fails to
+compile. The AHB half is not. `RCC_HCLK_DIV2` exists on **both** families with different
+encodings — `RCC_CFGR_HPRE_3` on H7, `RCC_CFGR2_PPRE1_2` on H5 — so carrying the H7
+spelling across compiles silently and writes a PPRE-encoded value into the HPRE field,
+yielding the wrong AHB divider.
+
+Given that HCLK is also the PTP clock on this part, that would have detuned the PTP clock
+with no diagnostic. Caught by the Stage 10 compile gate only because the neighbouring APB
+lines failed loudly first.
 
 ### F44 — undocumented Ninja dependency
 

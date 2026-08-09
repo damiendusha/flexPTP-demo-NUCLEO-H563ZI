@@ -19,7 +19,7 @@
 - [x] **Stage 7** — Consolidate build config into `CMakeLists.txt` 🆕
 - [x] **Stage 8** — Build-system retarget (CMake, MCU flags, HAL sources) 🆕
 - [x] **Stage 9** — FreeRTOS configuration + kernel port selection
-- [ ] **Stage 10** — Clock & power init (`main.c`)
+- [x] **Stage 10** — Clock & power init (`main.c`)
 - [ ] **Stage 11** — `serial_io.c` (GPDMA rewrite)
 - [ ] **Stage 12** — `mac_drv.c/h` (register audit + port)
 - [ ] **Stage 13** — `flexptp_options.h` (PTP HCLK 250 MHz / 5 ns)
@@ -39,7 +39,7 @@ build at each of these points and do not proceed until it passes:
 | After | Expected result |
 |---|---|
 | Stage 8 | `cmake --preset debug` configures; the H5 HAL static library compiles |
-| Stage 10 | `main.c` compiles |
+| Stage 10 | `main.c` compiles — note it pulls in `mac_drv.h`, so a full build needs Stage 12; verify in isolation until then |
 | Stage 14 | All application objects compile; link may still fail |
 | Stage 16 | Clean link, zero warnings under `-Wall -Wextra` |
 
