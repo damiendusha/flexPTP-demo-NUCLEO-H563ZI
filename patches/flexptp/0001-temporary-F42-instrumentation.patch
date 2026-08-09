@@ -1,0 +1,139 @@
+diff --git a/src/flexptp/ptp_core.c b/src/flexptp/ptp_core.c
+index 879d97a..a3e8a07 100644
+--- a/src/flexptp/ptp_core.c
++++ b/src/flexptp/ptp_core.c
+@@ -154,15 +154,40 @@ static void ptp_core_reset() {
+ }
+ 
+ // packet processing
++/* ---- TEMPORARY INSTRUMENTATION (F42). ---- */
++volatile struct {
++    uint32_t msgsIn;        // messages reaching the core dispatcher
++    uint32_t drespIn;       // ... of type Delay_Resp
++    uint32_t filtered;      // rejected by the domain/transportSpecific gate
++    uint32_t drespFiltered; // ... of which were Delay_Resp
++    uint32_t drespDomain;   // last Delay_Resp's domainNumber
++    uint32_t drespTspec;    // last Delay_Resp's transportSpecific
++    uint32_t myDomain;      // our configured domainNumber
++    uint32_t myTspec;       // our configured transportSpecific
++} coredbg = {0};
++
+ void ptp_process_packet(RawPtpMessage *pRawMsg) {
+     PtpHeader header;
+ 
+     // header readout
+     ptp_extract_header(&header, pRawMsg->data);
+ 
++    coredbg.msgsIn++;
++    if (header.messageType == PTP_MT_Delay_Resp) {
++        coredbg.drespIn++;
++        coredbg.drespDomain = header.domainNumber;
++        coredbg.drespTspec = header.transportSpecific;
++        coredbg.myDomain = S.profile.domainNumber;
++        coredbg.myTspec = S.profile.transportSpecific;
++    }
++
+     // consider only messages in our domain
+     if (header.domainNumber != S.profile.domainNumber ||
+         header.transportSpecific != S.profile.transportSpecific) {
++        if (header.messageType == PTP_MT_Delay_Resp) {
++            coredbg.drespFiltered++;
++        }
++        coredbg.filtered++;
+         return;
+     }
+ 
+diff --git a/src/flexptp/slave.c b/src/flexptp/slave.c
+index 953fd2e..7a7bf41 100644
+--- a/src/flexptp/slave.c
++++ b/src/flexptp/slave.c
+@@ -297,6 +297,16 @@ static void ptp_commence_p2p_correction(uint32_t pdelRespSeqId) {
+ }
+ 
+ // packet processing
++/* ---- TEMPORARY INSTRUMENTATION (F42). ---- */
++volatile struct {
++    uint32_t msgsSeen;      // messages entering the slave handler
++    uint32_t delayRespSeen; // ... of type Delay_Resp
++    uint32_t drespDmOk;     // Delay_Resp AND delay mechanism is E2E
++    uint32_t drespSeqOk;    // ... AND sequenceID matched the outstanding Delay_Req
++    uint32_t lastRespSeq;   // sequenceID of the last Delay_Resp seen
++    uint32_t lastReqSeq;    // the delay_reqSequenceID it was compared against
++} slvdbg = {0};
++
+ void ptp_slave_process_message(RawPtpMessage *pRawMsg, PtpHeader *pHeader) {
+     PtpMessageType mt = pHeader->messageType;
+     PtpDelayMechanism dm = S.profile.delayMechanism;
+@@ -369,6 +379,19 @@ void ptp_slave_process_message(RawPtpMessage *pRawMsg, PtpHeader *pHeader) {
+     // ------ (P)DELAY_RESPONSE PROCESSING --------
+ 
+     // wait for (P)Delay_Resp message
++    slvdbg.msgsSeen++;
++    if (mt == PTP_MT_Delay_Resp) {
++        slvdbg.delayRespSeen++;
++        slvdbg.lastRespSeq = pHeader->sequenceID;
++        slvdbg.lastReqSeq = S.slave.messaging.delay_reqSequenceID;
++        if (dm == PTP_DM_E2E) {
++            slvdbg.drespDmOk++;
++            if (pHeader->sequenceID == S.slave.messaging.delay_reqSequenceID) {
++                slvdbg.drespSeqOk++;
++            }
++        }
++    }
++
+     if (((mt == PTP_MT_Delay_Resp) && (dm == PTP_DM_E2E)) ||
+         (((mt == PTP_MT_PDelay_Resp) || (mt == PTP_MT_PDelay_Resp_Follow_Up)) && (dm == PTP_DM_P2P))) {
+         if (pHeader->sequenceID == S.slave.messaging.delay_reqSequenceID) { // read clock ID of requester
+diff --git a/src/flexptp/task_ptp.c b/src/flexptp/task_ptp.c
+index 3ba5662..9e3a0a8 100644
+--- a/src/flexptp/task_ptp.c
++++ b/src/flexptp/task_ptp.c
+@@ -534,7 +534,19 @@ bool ptp_transmit_enqueue(const RawPtpMessage *pMsg) {
+     }
+ }
+ 
++/* ---- TEMPORARY INSTRUMENTATION (F42 investigation). Remove with the parent-repo patch. ---- */
++volatile struct {
++    uint32_t txTsCbCalls;   // ptp_transmit_timestamp_cb() invocations (from the driver ISR)
++    uint32_t txDoneHandled; // PTN_TRANSMIT_DONE handler entries
++    uint32_t txDoneUidHit;  // msgb_get_by_uid() matched the outstanding message
++    uint32_t txDoneUidMiss; // ... did not match
++    uint32_t readTagCalls;  // ptp_read_and_clear_transmit_timestamp() calls
++    uint32_t readTagHit;    // msgb_get_sent_by_tag() found a sent message
++    uint32_t readTagMiss;   // ... did not
++} ptpdbg = {0};
++
+ void ptp_transmit_timestamp_cb(uint32_t uid, uint32_t seconds, uint32_t nanoseconds) {
++    ptpdbg.txTsCbCalls++;
+     // create timestamp association object
+     TxTs ts = {.uid = uid, .seconds = seconds, .nanoseconds = nanoseconds};
+ 
+@@ -563,10 +575,13 @@ void ptp_transmit_timestamp_cb(uint32_t uid, uint32_t seconds, uint32_t nanoseco
+ 
+ bool ptp_read_and_clear_transmit_timestamp(uint32_t tag, TimestampI *pTs) {
+     // fetch message
++    ptpdbg.readTagCalls++;
+     RawPtpMessage *pRawMsg = msgb_get_sent_by_tag(&sRawTxMsgBuf, tag);
+     if (pRawMsg == NULL) {
++        ptpdbg.readTagMiss++;
+         return false;
+     }
++    ptpdbg.readTagHit++;
+ 
+     // copy timestamp
+     *pTs = pRawMsg->ts;
+@@ -656,9 +671,14 @@ void task_ptp(void) {
+             // clang-format on
+ 
+             // fetch the message
++            ptpdbg.txDoneHandled++;
+             CLILOG(S.logging.transmission, "[% 8u]---> %u\n", S.ticks, ts.uid);
+             RawPtpMessage *pRawMsg = msgb_get_by_uid(&sRawTxMsgBuf, ts.uid);
++            if (pRawMsg == NULL) {
++                ptpdbg.txDoneUidMiss++;
++            }
+             if (pRawMsg != NULL) {
++                ptpdbg.txDoneUidHit++;
+                 // insert the timestamp
+                 pRawMsg->ts.sec = ts.seconds;
+                 pRawMsg->ts.nanosec = ts.nanoseconds;

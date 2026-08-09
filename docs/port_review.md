@@ -129,7 +129,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F39 | flexPTP has never been ported to Cortex-M33 / ARMv8-M | Risk | plan Open Items |
 | F40 | No OS-binding macro selected; silently defaults to `FLEXPTP_FREERTOS` | Build (latent) | plan Stage 13 |
 | F41 | `PTP_UPDATE_CLOCK` dead; `ETHHW_UpdatePTPTime()` unreachable and suspect | Minor + latent bug | plan Stage 12 |
-| F42 | PTP synchronises, but only after a 40–60 s delay from start; cause not identified | **PARTIALLY UNDERSTOOD** | syncs reliably once locked; startup failure unexplained |
+| F42 | **Delay_Resp never reaches flexPTP** — dropped below the library, in lwIP/UDP receive | **OPEN, localised** | measured layer by layer |
 | F43 | `PTP_ACCURACY_LIMIT_NS` (100 ns) is the implicit LOCKED criterion | Minor | plan Stage 20 |
 | F44 | `CMakePresets.json` requires Ninja; not documented as a prerequisite | Minor | plan Stage 19 |
 | F45 | H5 inverts the H7 clock-divider namespaces; the H7 spelling compiles but misconfigures | Critical (silent) | plan Stage 10 (fixed) |
@@ -543,6 +543,32 @@ Del_Req #261 (~4.5 minutes) without recovering, versus 40–60 s with independen
 That is suggestive but was observed once, and one run does not distinguish it from
 variance.
 
+### Root cause localised: the Delay_Resp never reaches flexPTP
+
+Measured layer by layer, from the wire downwards:
+
+| Layer | Delay_Resp seen? | Evidence |
+|---|---|---|
+| Wire | **yes** — correct sequence ID and requesting port identity | `tcpdump` |
+| lwIP / network-stack driver | **lost here** | — |
+| flexPTP core dispatcher | **no** — `drespIn` = 0, `filtered` = 0 of 165 messages | `coredbg` |
+| Slave handler | no — `delayRespSeen` = 0 of 136 messages | `slvdbg` |
+| `ptp_read_and_clear_transmit_timestamp()` | never called — `readTagCalls` = 0 | `ptpdbg` |
+| Transmit timestamp path | fully healthy — 85 requested / 85 dispatched / 85 handled | `ethdbg` + `ptpdbg` |
+
+`filtered = 0` is the decisive figure: the packet is not being rejected by the
+domain/`transportSpecific` gate, it simply never arrives. Everything above that line —
+the MAC driver, the descriptor handling, the timestamp bookkeeping, the message buffer,
+`slave.c` — was **downstream of a packet that never appears**, and was never at fault.
+`slave.c`'s early return on a missing T3, the original diagnosis, is unreachable in this
+failure.
+
+**What makes Delay_Resp different** from the Announce and Follow_Up that arrive on the same
+port-320 socket: it is the only inbound message *solicited* by this node, and the only one
+arriving ~200 µs after our own transmission. A receive-buffer or pbuf interaction around the
+transmit path is the shape to look at next — instrument `ptp_receive_cb()` in `nsd_lwip.c`
+to count arrivals per port and message type.
+
 ### Measured facts (stable across many runs)
 
 | Fact | Method |
@@ -571,8 +597,15 @@ because it recurred:
 | Debugger halt perturbing the system | Halt/resume in the failing state changed nothing |
 | flexPTP message-buffer `uid`/tag mismatch | `PTP_LOG_TRANSMISSION`: both halves match correctly |
 | `ETHHW_ProcessTx()` double-dispatching | Counters after the rewrite: 125/125, still failing |
+| Missing T3 blocking the Delay_Resp branch | `readTagCalls` = 0 — that code is never reached |
 
-**The recurring error was treating "changed something, then it worked" as confirmation.**
+**The recurring error was theorising downstream of an unverified assumption.** Every one of
+those five attributions assumed the Delay_Resp was arriving and being mishandled. None of
+them tested that assumption, which took one counter to falsify. Instrumenting from the
+outside in — wire, then stack, then library — would have found this in one pass instead of
+five.
+
+A second, compounding error: treating "changed something, then it worked" as confirmation.
 Twice the symptom disappeared after a reflash and was credited to the change; both times a
 revert showed the change was irrelevant. Only the experiments that *reproduced the failure
 on demand* produced reliable information.
