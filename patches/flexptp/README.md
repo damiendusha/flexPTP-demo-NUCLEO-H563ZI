@@ -9,7 +9,19 @@ is destroyed by `git submodule update`. Anything that must survive lives here.
 ## Applying
 
 ```bash
-git -C Modules/flexptp apply ../../patches/flexptp/<name>.patch
+git -C Modules/flexptp apply "$PWD/patches/flexptp/<name>.patch"
+```
+
+The patches are **independent and order-free**: each is generated against the pinned commit
+and touches disjoint regions, so either may be applied alone or both in either order. Verify
+after regenerating any of them — a patch extracted with `git diff -- <file>` from a tree that
+carries other changes will silently swallow them, which is how `0002` first shipped with the
+temporary instrumentation folded in:
+
+```bash
+git clone --shared Modules/flexptp /tmp/rt && git -C /tmp/rt checkout $(git -C Modules/flexptp rev-parse HEAD)
+git -C /tmp/rt apply "$PWD"/patches/flexptp/*.patch
+diff <(git -C Modules/flexptp diff) <(git -C /tmp/rt diff)   # must be empty
 ```
 
 ## Reverting

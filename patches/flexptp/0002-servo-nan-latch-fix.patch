@@ -32,7 +32,7 @@ index ba0898a..5c3e4d2 100644
      u[0] = 0;
      u[1] = tuning;
 diff --git a/src/flexptp/slave.c b/src/flexptp/slave.c
-index 953fd2e..6576c57 100644
+index 953fd2e..96a10e7 100644
 --- a/src/flexptp/slave.c
 +++ b/src/flexptp/slave.c
 @@ -32,6 +32,13 @@
@@ -65,40 +65,3 @@ index 953fd2e..6576c57 100644
      // ------------------------------
  
      // if time difference is greater than the predefined threshold then jump the clock
-@@ -297,6 +313,16 @@ static void ptp_commence_p2p_correction(uint32_t pdelRespSeqId) {
- }
- 
- // packet processing
-+/* ---- TEMPORARY INSTRUMENTATION (F42). ---- */
-+volatile struct {
-+    uint32_t msgsSeen;      // messages entering the slave handler
-+    uint32_t delayRespSeen; // ... of type Delay_Resp
-+    uint32_t drespDmOk;     // Delay_Resp AND delay mechanism is E2E
-+    uint32_t drespSeqOk;    // ... AND sequenceID matched the outstanding Delay_Req
-+    uint32_t lastRespSeq;   // sequenceID of the last Delay_Resp seen
-+    uint32_t lastReqSeq;    // the delay_reqSequenceID it was compared against
-+} slvdbg = {0};
-+
- void ptp_slave_process_message(RawPtpMessage *pRawMsg, PtpHeader *pHeader) {
-     PtpMessageType mt = pHeader->messageType;
-     PtpDelayMechanism dm = S.profile.delayMechanism;
-@@ -369,6 +395,19 @@ void ptp_slave_process_message(RawPtpMessage *pRawMsg, PtpHeader *pHeader) {
-     // ------ (P)DELAY_RESPONSE PROCESSING --------
- 
-     // wait for (P)Delay_Resp message
-+    slvdbg.msgsSeen++;
-+    if (mt == PTP_MT_Delay_Resp) {
-+        slvdbg.delayRespSeen++;
-+        slvdbg.lastRespSeq = pHeader->sequenceID;
-+        slvdbg.lastReqSeq = S.slave.messaging.delay_reqSequenceID;
-+        if (dm == PTP_DM_E2E) {
-+            slvdbg.drespDmOk++;
-+            if (pHeader->sequenceID == S.slave.messaging.delay_reqSequenceID) {
-+                slvdbg.drespSeqOk++;
-+            }
-+        }
-+    }
-+
-     if (((mt == PTP_MT_Delay_Resp) && (dm == PTP_DM_E2E)) ||
-         (((mt == PTP_MT_PDelay_Resp) || (mt == PTP_MT_PDelay_Resp_Follow_Up)) && (dm == PTP_DM_P2P))) {
-         if (pHeader->sequenceID == S.slave.messaging.delay_reqSequenceID) { // read clock ID of requester
