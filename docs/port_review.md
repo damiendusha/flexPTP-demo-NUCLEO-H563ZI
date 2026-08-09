@@ -563,24 +563,39 @@ The frame never enters the descriptor ring. Every software layer is therefore ex
 flexPTP, the NSD, lwIP, the queue between the ISR and the RX thread, and the MAC driver.
 Frames to the *same* multicast MAC arrive normally in both directions.
 
-### Hypotheses, ranked
+### Hypotheses tested
 
-1. **The frame never reaches this board.** `tcpdump` was run on the *host*, so it proves the
-   host transmitted — not that the switch forwarded it to the board's port. Other messages
-   in the same group do arrive, which argues against it, but it has not been tested from
-   the board's side.
-2. **The MAC's address/perfect filter rejects it.** `mac_drv.c` sets `ETH_MACPFR_PM`
-   (pass all multicast) and `HPF`, which should preclude this. Directly testable by
-   enabling promiscuous mode (`ETH_MACPFR_PR`).
-3. **PTP snapshot configuration is filtering reception.** `ETHHW_EnablePTPTimeStamping()`
-   writes `SNAPTYPSEL = 0b01` with `TSIPV4ENA | TSIPENA | TSVER2ENA`. *Weak a priori:*
-   RM0481 describes these bits as selecting which messages are **timestamped**, not which
-   are received. Worth testing because the failure correlates with enabling timestamping —
-   DHCP and ARP work before `flexptp` runs — but the documented function does not support
-   the mechanism.
+| # | Hypothesis | Outcome |
+|---|---|---|
+| 1 | The frame never reaches this board | **Remaining** — all on-chip explanations eliminated |
+| 2 | The MAC address filter rejects it | **Ruled out**: `MACPFR` = `0x410`, `PM` (pass all multicast) = 1. A multicast frame cannot be filtered while another to the same MAC passes. |
+| 3 | PTP snapshot config filters reception (`SNAPTYPSEL`) | **Disproven by experiment**: rebuilt with `SNAPTYPSEL = 0b00`; Delay_Resp still 0 of 245 frames. RM0481 was right that these bits select what is *timestamped*, not what is *received*. |
+| 4 | The MAC receives it but discards it as errored | **Ruled out**: `MMCRCRCEPR` (CRC errors) = 0, `MMCRAEPR` (alignment errors) = 0, `DMACMFCR` (missed frames) = 0. |
 
-**Promiscuous mode is the decisive discriminator**: it separates "the MAC filtered it" from
-"it never arrived", which no amount of register inspection can.
+Live register state confirming 2 and 4:
+
+```
+MACTSCR = 0x00012E03   TSENA=1 TSCFUPDT=1 TSVER2ENA=1 TSIPENA=1 TSIPV4ENA=1
+                       TSEVNTENA=0 TSMSTRENA=0 SNAPTYPSEL=0b01
+MACPFR  = 0x00000410   PR=0  PM=1  DBF=0  HPF=1
+CRC errors 0, alignment errors 0, DMA missed frames 0
+```
+
+### Conclusion: the frame does not arrive at the board
+
+Every layer from flexPTP down to the MAC's receive filter and error counters has been
+measured and exonerated. `tcpdump` proves only that the **host transmitted** the Delay_Resp;
+it says nothing about whether the switch forwarded it to the board's port.
+
+The board receives Sync, Follow_Up and Announce — all to the same multicast group
+(224.0.1.129) and the same destination MAC — so plain group forwarding works. Something
+about the Delay_Resp specifically is not being delivered across the network.
+
+**Next test, software-only:** run `ptp4l` with `hybrid_e2e 1`, which sends Delay_Resp as
+**unicast** while leaving Sync and Announce multicast. If a unicast Delay_Resp arrives, the
+problem is multicast forwarding of that particular flow; if it still does not, the problem
+is more fundamental. This is cheaper and more diagnostic than the direct-cable test, which
+would also work but changes several variables at once.
 
 ### Earlier localisation: lwIP never delivers Delay_Resp
 
