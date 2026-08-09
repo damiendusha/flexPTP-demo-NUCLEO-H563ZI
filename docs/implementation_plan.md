@@ -22,7 +22,7 @@
 - [x] **Stage 10** — Clock & power init (`main.c`)
 - [x] **Stage 11** — `serial_io.c` (GPDMA rewrite)
 - [x] **Stage 12** — `mac_drv.c/h` (register audit + port)
-- [ ] **Stage 13** — `flexptp_options.h` (PTP HCLK 250 MHz / 5 ns)
+- [x] **Stage 13** — `flexptp_options.h` (PTP HCLK 250 MHz / 5 ns)
 - [ ] **Stage 14** — flexPTP H563 hardware port 🆕
 - [ ] **Stage 15** — Global HAL header sweep
 - [ ] **Stage 16** — Build & warning cleanup

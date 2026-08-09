@@ -7,6 +7,12 @@
 #define LWIP
 #endif
 
+// Select the OS binding explicitly. Without this, ptp_defs.h silently falls back to
+// FLEXPTP_FREERTOS. That fallback happens to be what we want -- flexPTP calls the FreeRTOS
+// API directly while the application uses CMSIS-OS2 on top of the same kernel -- but the
+// choice is load-bearing, so state it. (F40)
+#define FLEXPTP_FREERTOS (1)
+
 #define FLEXPTP_TASK_PRIORITY 24
 
 // -------------------------------------------
@@ -40,19 +46,26 @@
 
 #include "Drivers/EthDrv/mac_drv.h"
 
-#ifdef ETH_ETHERLIB
-#include <flexptp/port/example_ports/ptp_port_stm32h743_etherlib.h>
-#elif defined(ETH_LWIP)
-#include <flexptp/port/example_ports/ptp_port_stm32h743_lwip.h>
-#endif
+// Project-local hardware port: flexPTP ships no STM32H5 port.
+#include "ptp_port_stm32h563.h"
 
-#define PTP_MAIN_OSCILLATOR_FREQ_HZ (240000000)
+// Select the ADDEND clock interface explicitly. It is auto-selected when no interface
+// macro is defined, but the porting guide asks for it to be stated.
+#define PTP_ADDEND_INTERFACE
+
+// The STM32H563 has no ETH PTP clock mux (no RCC_CCIPR5.ETHPTPCLKSEL), so the timestamp
+// unit is fed from HCLK. The increment must exceed the 4 ns HCLK period, which makes 5 ns
+// the smallest usable value. Yields addend = 2^32 / 1.25 = 3435973836 (0xCCCCCCCC) with
+// 25% frequency-tuning headroom. Full derivation in docs/ptp_clock.md.
+#define PTP_MAIN_OSCILLATOR_FREQ_HZ (250000000)
 #define PTP_INCREMENT_NSEC (5)
 
 #include <stdlib.h>
 
 #define PTP_HW_INIT(increment, addend) ptphw_init(increment, addend)
-#define PTP_UPDATE_CLOCK(s, ns) ETHHW_UpdatePTPTime(ETH, labs(s), abs(ns), (s * NANO_PREFIX + ns) < 0)
+// PTP_UPDATE_CLOCK is deliberately not defined: the flexPTP core never references it, and
+// the ETHHW_UpdatePTPTime() it used to call has a suspect subtract path. Coarse correction
+// goes through PTP_SET_CLOCK. (F41)
 #define PTP_SET_CLOCK(s, ns) ETHHW_InitPTPTime(ETH, labs(s), abs(ns))
 #define PTP_SET_ADDEND(addend) ETHHW_SetPTPAddend(ETH, addend)
 #define PTP_HW_GET_TIME(pt) ptphw_gettime(pt)

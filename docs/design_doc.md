@@ -391,3 +391,19 @@ resolved unchanged. The work was entirely peripheral plumbing:
 - `phy_common.c` needed no change — it reaches the HAL only through `mac_drv.h`
 - Verified: `mac_drv.c` and `phy_common.c` both compile clean, zero warnings
 
+### Stage 13 — flexPTP options
+- `PTP_MAIN_OSCILLATOR_FREQ_HZ` 240 MHz → **250 MHz** (= HCLK), `PTP_INCREMENT_NSEC` 5.
+  Confirmed the core computes `PTP_ADDEND_INIT` = 3435973836 (`0xCCCCCCCC`), K = 1.25,
+  ≈0.29 ppb tuning resolution — matching [ptp_clock.md](ptp_clock.md) exactly
+- Added `#define PTP_ADDEND_INTERFACE` explicitly (it was auto-selected; the porting guide
+  asks for it to be stated)
+- Added `#define FLEXPTP_FREERTOS (1)` explicitly (F40). The fallback in `ptp_defs.h`
+  already chose it, but the binding is load-bearing and was invisible
+- **Removed `PTP_UPDATE_CLOCK`** (F41): the core never references it, and the
+  `ETHHW_UpdatePTPTime()` it called has a suspect subtract path. Coarse correction goes
+  through `PTP_SET_CLOCK`
+- Hardware-port include repointed from the bundled H743 port to the project-local
+  `ptp_port_stm32h563.h`
+- Left `FLEXPTP_SNPRINTF` alone — the porting guide calls it `SPRINTF`, but the code does
+  not (F38)
+
