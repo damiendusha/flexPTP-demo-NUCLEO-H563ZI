@@ -245,6 +245,10 @@ exception that is easy to miss because everything else lines up.
 
 All pins use `GPIO_AF11_ETH` on both parts.
 
+**Board precondition:** UM3115 confirms PB15 as RMII_TXD1 and warns *"Make sure that JP6 is
+ON when using Ethernet"* — PB15 is shared with `I2S_A_SD` and routed through that jumper.
+The board manual is therefore independent confirmation of the PB13 → PB15 change.
+
 **Consequence for the port:** `ETHHW_InitClocks()` in `Drivers/EthDrv/mac_drv.c` groups
 PB5 and PB13 into a single `HAL_GPIO_Init(GPIOB, ...)` call. On the H563 that call reduces
 to **PB15 alone**. Leaving PB13 configured as AF11 and PB15 unconfigured produces a link

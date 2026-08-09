@@ -142,6 +142,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F52 | `ptphw_init()` set the PTP addend before the subsecond increment → TSADDREG never clears | Critical | fixed, verified on hardware |
 | F53 | PTP timestamp counter is not clocked — PLL1Q output never enabled | **RESOLVED** | fixed, verified on hardware |
 | F54 | `ETHHW_SetPTPAddend()` waits unbounded, turning any PTP clock fault into a silent hang | Robustness | open |
+| F55 | Welcome message tells users to fit an **8 MHz** oscillator at X3; on MB1404 X3 is **25 MHz** | Wrong advice | plan Stage 19 |
 
 **Every finding is tracked.** F33 and F34 are recorded here only because they are
 observations about upstream code that require no action — noted so a future reader does not
@@ -486,6 +487,28 @@ So the register block accepts writes but the update engine never runs, while the
 clock that should drive it is present. Next step is the ETH chapter's clock/reset
 requirements and the device errata sheet — this now looks more like a missing enable
 condition or a silicon erratum than a configuration mistake.
+
+### F55 — the inherited welcome message gives wrong hardware advice
+
+`print_welcome_message()` carries this text over from the H743 project:
+
+> *"We highly recommend to solder a 8 MHz oscillator onto the designated X3 pads to achieve
+> the best results!"*
+
+On the NUCLEO-H563ZI (MB1404) that is wrong in three ways, per UM3115:
+
+1. **X3 is already fitted**, not empty pads — the board ships with the crystal.
+2. **X3 is 25 MHz**, not 8 MHz (*"25 MHz, 6 pF, and 20 ppm"*).
+3. **Selecting it is not just soldering a part**: it needs SB3 and SB4 ON, SB49 OFF, and
+   C70/C71 populated with 5.6 pF.
+
+The underlying advice is still sound — the default HSE is the ST-Link MCO at 8 MHz, which
+the project README describes as noisy, and the crystal is the better reference. But a user
+following the current text would fit the wrong part.
+
+Acting on it also requires firmware changes: `HSE_VALUE` becomes 25000000, and `PLLM` must
+be re-derived, since `init_pll()` assumes `HSE_VALUE / 2000000` yields an integer in the
+2–4 MHz `RCC_PLL1_VCIRANGE_1` window (25/2 = 12.5 does not).
 
 ### F54 — unbounded wait in `ETHHW_SetPTPAddend()`
 

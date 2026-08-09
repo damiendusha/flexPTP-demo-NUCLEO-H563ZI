@@ -531,6 +531,10 @@ Not previously owned by any stage; all of it still says H743:
   (`board/st_nucleo_h743zi.cfg`), HAL link, directory listing. It also references
   `NUCLEO-H743ZI.gif`, which was intentionally not copied — either supply an H563 capture
   or drop the image
+- `Src/main.c` — **fix the welcome message (F55)**. It advises soldering an 8 MHz
+  oscillator at X3; on MB1404 X3 is fitted, is 25 MHz, and is selected with SB3/SB4 ON +
+  SB49 OFF + C70/C71 at 5.6 pF. Note that using it also requires `HSE_VALUE` = 25000000
+  and a re-derived `PLLM`
 - `build.sh` — header comment
 - README — document the build prerequisites. `CMakePresets.json` pins the **Ninja**
   generator, which is not mentioned anywhere; `build.sh` bypasses presets and uses the
