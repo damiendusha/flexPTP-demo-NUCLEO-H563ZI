@@ -598,10 +598,11 @@ graph TD
 
 | Item | Stage | Notes |
 |---|---|---|
+| PTP timestamp clock (F53) | 20 | **Blocking for PTP.** `MACSSIR`/`MACTSAR` programme correctly but the counter never advances and `TSADDREG` never clears — reproduced from the debugger with the core halted, so it is not firmware logic. Next: ETH chapter clock/reset requirements, then the errata sheet. |
+| Unbounded driver waits (F54) | 12 | `ETHHW_SetPTPAddend()` spins on `TSADDREG` with no timeout, so a PTP clock fault hangs the `ptp` thread silently instead of reporting. Fix as a bounded wait that returns an error — not a silent timeout. |
 | flexPTP on ARMv8-M | 16, 20 | This is flexPTP's first Cortex-M33 target — the library is documented as tested on Cortex-M4/M7 only. No specific defect is known; treat unexplained core-level misbehaviour as potentially an ARMv7-M assumption rather than a port bug (F39). |
 | CMSIS Core version | 16 | `Drivers/CMSIS/Include` is CMSIS Core 5.6, carried over from the H7 project. CMSIS device pack is 1.7.0. Expected to work with `core_cm33.h`, but a version bump is the first thing to try if odd core-header errors appear. |
 | ETH DMA reach into SRAM3 | 16, 20 | SRAM1/2/3 are all on the AHB matrix, and DCACHE is off, so no coherency handling is expected. Confirm empirically on hardware before assuming. |
-| FreeRTOS `main` branch | 9 | Pin before the first build so later failures aren't caused by an upstream kernel change. |
 | SNSINC sub-nanosecond increment | — | Left at zero, as on the H743. Unexplored avenue for finer rate resolution; would need a reference-manual check. See `ptp_clock.md`. |
 
 ---

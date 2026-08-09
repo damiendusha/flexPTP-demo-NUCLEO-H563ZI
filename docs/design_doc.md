@@ -556,8 +556,14 @@ needed). Debugging via ST's OpenOCD fork built in Stage 18.
 F52 (PTP addend/increment ordering). Both compiled and linked cleanly and were invisible
 to static review.
 
-**Open:** F53 — the PTP timestamp counter is not clocked, so PTP cannot yet synchronise.
-Everything beneath it works.
+**Open:**
+- **F53** — the PTP timestamp counter is not clocked, so PTP cannot yet synchronise.
+  Everything beneath it works.
+- **F54** — `ETHHW_SetPTPAddend()` waits on `TSADDREG` with no timeout, eight times over.
+  This is what turned F53 from "PTP does not lock" into a silent hang of the `ptp` thread,
+  taking the PTP CLI commands down with it. Inherited from the H743 driver, where the wait
+  always completed. Deliberately not yet fixed: a silent timeout would trade one invisible
+  failure for another, so the right form reports the error rather than swallowing it.
 
 **PTP transport:** the app loads the `gPTP` preset, which is `PTP_TP_802_3` (Layer 2,
 ethertype 0x88F7) with `PTP_DM_P2P` — not UDP/IPv4. A linuxptp master must therefore use

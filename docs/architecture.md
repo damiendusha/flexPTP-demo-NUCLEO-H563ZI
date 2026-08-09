@@ -175,6 +175,10 @@ Notes:
   other.
 - **`tcpip_thread` is the only thread above the pack.** Everything else at 24 can be
   preempted by it, which is what keeps the network stack responsive under console load.
+- **The `ptp` thread can be wedged by the MAC driver.** `ETHHW_SetPTPAddend()` waits on
+  `MACTSCR.TSADDREG` with no timeout; if the PTP timestamp unit is not running, that wait
+  never returns and the thread is stuck inside the driver, taking the `ptp pps` and
+  `ptp addend` CLI commands with it. See F53/F54 in [port_review.md](port_review.md).
 - **`ptp` sits at the same priority as the CLI and the console writer.** flexPTP's timing
   does not depend on winning that race, because timestamps are captured in hardware — see
   below.
