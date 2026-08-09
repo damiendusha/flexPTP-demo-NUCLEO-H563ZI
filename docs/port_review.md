@@ -129,7 +129,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F39 | flexPTP has never been ported to Cortex-M33 / ARMv8-M | Risk | plan Open Items |
 | F40 | No OS-binding macro selected; silently defaults to `FLEXPTP_FREERTOS` | Build (latent) | plan Stage 13 |
 | F41 | `PTP_UPDATE_CLOCK` dead; `ETHHW_UpdatePTPTime()` unreachable and suspect | Minor + latent bug | plan Stage 12 |
-| F42 | No stage verifies the lwIP RX/TX timestamp plumbing survives the MAC port | Coverage gap | plan Stages 14 & 20 |
+| F42 | lwIP TX timestamp plumbing broken — **confirmed live defect**, blocks PTP lock | **OPEN, blocking** | diagnosed on hardware |
 | F43 | `PTP_ACCURACY_LIMIT_NS` (100 ns) is the implicit LOCKED criterion | Minor | plan Stage 20 |
 | F44 | `CMakePresets.json` requires Ninja; not documented as a prerequisite | Minor | plan Stage 19 |
 | F45 | H5 inverts the H7 clock-divider namespaces; the H7 spelling compiles but misconfigures | Critical (silent) | plan Stage 10 (fixed) |
@@ -386,7 +386,63 @@ evident justification and would produce roughly a 2× time error. It is harmless
 because nothing calls it. Recorded here because it is invisible until someone re-enables
 coarse correction through this path.
 
-### F42 — lwIP timestamp plumbing is unverified
+### F42 — lwIP TX timestamp plumbing is broken *(CONFIRMED on hardware)*
+
+**The predicted failure happened, in the predicted form.** PTP reaches SLAVE state and
+never converges.
+
+**Symptom.** `(P)Del_Req #N: no response received!` once per second, indefinitely. Servo
+correction stays `0.0000`; the addend never moves off its initial `0xCCCCCCCC`.
+
+**The network is not at fault.** `tcpdump` shows a complete, correct E2E exchange:
+
+```
+21:11:22.223003  192.168.1.113.319 > 224.0.1.129.319: delay req,  seq 296, clock 0x56001efffe000451
+21:11:22.223195  192.168.1.119.320 > 224.0.1.129.320: delay resp, seq 296, port identity: 0x56001efffe000451
+```
+
+The master answers in 192 µs with the matching sequence ID and the board's own port
+identity. The board receives the Delay_Resp and **discards it**.
+
+**Where it is discarded** — `slave.c`, in the Delay_Resp branch:
+
+```c
+// try fetching Delay_Req timestamp
+if (!ptp_read_and_clear_transmit_timestamp(RPMT_DELAY_REQ, &S.slave.scd.t[T3])) {
+    return;                         // <-- taken every time
+}
+```
+
+Without T3 there is no path delay, so no offset, so no correction. The T3/T4 values printed
+by `ptp log ts on` are stale — T4 precedes T3, which is physically impossible.
+
+**Narrowed to the TX path only.** Receive-side hardware timestamping works: T1/T2 carry
+real values, so the MAC captures RX timestamps and they reach flexPTP through the context
+descriptor. It is specifically the *transmit* timestamp that never arrives.
+
+Ruled out so far:
+
+- `ETHHW_TXOPT_CAPTURE_TS` is `0b11` and `eth_drv_lwip.c` passes exactly that, so the
+  `txOpts == ETHHW_TXOPT_CAPTURE_TS` equality test in `ETHHW_Transmit()` succeeds and
+  `ETH_DMATXNDESCRF_TTSE` is set.
+- `0b11` includes the interrupt bit, so `ETH_DMATXNDESCRF_IOC` is set too and a TX
+  interrupt is raised.
+- `MACTSCR.TXTSSTSM` is 0, so the MAC reports TX timestamps **in the descriptor**, not in
+  `MACTTSSNR/SR`.
+- The failure is systematic (135+ consecutive), not a race with the RX branch of the ISR.
+- `ETHHW_ProcessTx()` does run — TX descriptors are found zeroed with `tsCbPtr` cleared,
+  which only that function does.
+
+So the break lies between the MAC writing back a descriptor with `TTSS` set and
+`ptp_transmit_timestamp_cb()` receiving it. The next step is instrumentation: count in
+`ETHHW_ProcessTx()` how many descriptors are seen with `TTSS` set, versus how many
+callbacks are dispatched.
+
+*One candidate worth checking first:* `ETHHW_ISR()` uses `else if` between the RX and TX
+branches, so a combined RI+TI interrupt services only RX. TI stays asserted so it should
+re-trigger, but the interaction is worth confirming rather than assuming.
+
+
 
 The README states the low-level lwIP driver must be instrumented to convey RX and TX
 timestamps, and links a guide to the H743 `ethernetif.c` amendments. This project does not

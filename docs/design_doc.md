@@ -581,3 +581,21 @@ ethertype 0x88F7) with `PTP_DM_P2P` — not UDP/IPv4. A linuxptp master must the
 the gPTP profile, e.g.
 `ptp4l -f /usr/share/doc/linuxptp/configs/gPTP.cfg -i <iface> -S -m --serverOnly=1 --priority1=100`.
 
+### Hardware bring-up — PTP interoperability
+Tested against `linuxptp` 4.4 on a Linux host.
+
+- **gPTP (802.1AS) over the site switch does not work, by design.** The destination MAC
+  `01:80:C2:00:00:0E` is in the IEEE 802.1D reserved range that conformant bridges must not
+  forward. Confirmed by `tcpdump`: the host's Pdelay_Req frames leave and nothing returns,
+  and ptp4l never progresses past Pdelay_Req because a gPTP port will not emit Sync or
+  Announce until the peer-delay exchange proves the link `asCapable`. gPTP needs either a
+  direct cable or 802.1AS-capable bridges throughout.
+- **Plain IEEE 1588 over UDP/IPv4 traverses the switch.** Switching the board to the
+  `default` preset (`ptp profile preset default`) and running ptp4l with its defaults gets
+  Announce, Sync, Follow_Up, Delay_Req and Delay_Resp all flowing correctly.
+- **BMCA works**: the board goes `MASTER → UNCALIBRATED → SLAVE` once the host advertises
+  a better `priority1`.
+- **Receive-side hardware timestamping works** — T1/T2 carry real values.
+- **Blocked on F42**: the transmit timestamp never reaches flexPTP, so every Delay_Resp is
+  discarded and the servo never applies a correction. See [port_review.md](port_review.md).
+
