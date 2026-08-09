@@ -141,6 +141,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F51 | H563 UID region rejects **byte** reads; `ETH_MAC_ADDR*` byte-indexed it → HardFault | Critical | fixed, verified on hardware |
 | F52 | `ptphw_init()` set the PTP addend before the subsecond increment → TSADDREG never clears | Critical | fixed, verified on hardware |
 | F53 | PTP timestamp counter is not clocked; MACSTSR/MACSTNR frozen at 0 | **OPEN** | blocks PTP sync |
+| F54 | `ETHHW_SetPTPAddend()` waits unbounded, turning any PTP clock fault into a silent hang | Robustness | open |
 
 **Every finding is tracked.** F33 and F34 are recorded here only because they are
 observations about upstream code that require no action — noted so a future reader does not
@@ -419,26 +420,49 @@ the fix.
 
 ### F53 — PTP timestamp counter is not clocked *(OPEN)*
 
-After F52, both PTP registers hold their intended values — `MACSSIR` = `0x00050000`,
+After F52, both PTP registers hold their intended values — `MACSSIR` = `0x00050000` and
 `MACTSAR` = `0xCCCCCCCC`, exactly as derived in [ptp_clock.md](ptp_clock.md) — but the
-counter does not advance: `MACSTSR` and `MACSTNR` both read 0 and are unchanged over a
-2-second sampling interval, and `MACTSCR.TSADDREG` never clears.
+counter never advances. `MACSTSR` and `MACSTNR` both read 0 across **4 seconds of genuine
+run time**, sampled from two separate debug sessions with the core resumed in between.
 
-**This is not a firmware-logic issue.** Setting `TSADDREG` directly from the debugger, with
-the core halted, also fails to clear it. The timestamp unit has no clock.
+**Characterised, not guessed:**
 
-What is already ruled out:
+| Observation | Method |
+|---|---|
+| `TSADDREG` is software-writable and software-clearable | Wrote `MACTSCR` = `0x00012e03`, read back `0x00012e03` |
+| Setting `TSADDREG` never completes | Wrote `0x00012e23`; reads back set, indefinitely |
+| Not a firmware-logic fault | Reproduced entirely from the debugger with the core **halted** |
+| Firmware is stuck in the addend wait loop | `PC` = `0x080045c4`, inside `ETHHW_SetPTPAddend` (`0x080045a6`–`0x08004604`) |
+| `TSINIT` reads 0 because it was never *reached*, not because it completed | The Stage-14 ordering puts `InitPTPTime` after `SetPTPAddend` |
 
-- There is no separate PTP clock enable: `RCC_AHB1ENR` offers only `ETHEN`, `ETHTXEN` and
-  `ETHRXEN`, and all three are enabled.
-- There is no ETH PTP clock mux on this device (F3), so it cannot be mis-routed.
-- The MAC itself is fully functional — link up at 100 Mbps full duplex, and DHCP completes,
-  so ETH is clocked and both directions work.
-- `MACTSCR` is otherwise correct: `TSENA` and `TSCFUPDT` set, `TSINIT` completed.
+**Ruled out:**
 
-Next step is RM0481's PTP clocking section: something gates `eth_ptp_ker_ck` that this port
-does not yet configure. Until it is resolved, PTP will not synchronise, though everything
-below it works.
+- No separate PTP clock enable exists — `RCC_AHB1ENR` offers only `ETHEN`, `ETHTXEN`,
+  `ETHRXEN`, all three enabled.
+- **RM0481 confirms F3 rather than contradicting it.** `ETHPTPCLKSEL` (CCIPR5[11:10]) and
+  `ETHPTPDIV` (CCIPR4[31:28]) *are* documented, but each carries the note *"only available
+  on STM32H543/553xx devices"*. The CMSIS header's omission for the H563 is therefore
+  correct, and `clk_ptp_ref_i` should default to `rcc_hclk1` — which is demonstrably
+  running at 250 MHz.
+- The MAC is fully functional: link up, DHCP lease acquired, so ETH is clocked.
+- RM0481 §63 (explicitly *"applies only to the STM32H562/63/73xx devices"*) describes the
+  standard fine-correction accumulator and documents no additional enable.
+
+So the register block accepts writes but the update engine never runs, while the reference
+clock that should drive it is present. Next step is the ETH chapter's clock/reset
+requirements and the device errata sheet — this now looks more like a missing enable
+condition or a silicon erratum than a configuration mistake.
+
+### F54 — unbounded wait in `ETHHW_SetPTPAddend()`
+
+The function spins on `while (eth->MACTSCR & ETH_MACTSCR_TSADDREG)` with no timeout, eight
+times over. That is what converted F53 from "PTP does not lock" into "the flexPTP task
+hangs silently and the PTP CLI commands stop responding". Inherited from the H743 driver,
+where the wait always completed.
+
+A bounded wait with an error return would have surfaced F53 immediately and left the rest
+of the system diagnosable. Not fixed yet, because a silent timeout could equally mask real
+faults — the right form is a timeout that reports.
 
 ### F49 — `task_ptp_is_operating()` renamed upstream
 
