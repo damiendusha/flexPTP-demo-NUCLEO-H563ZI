@@ -1,13 +1,19 @@
 # Port Review — Findings & Disposition
 
-A review of [implementation_plan.md](implementation_plan.md) and the repository state as of
-commit `e2d9556` (Stage 4 complete). This document is the audit trail: what was checked,
-what was found, and where each finding is now tracked. It is not a task list — the plan
-owns the work.
+The audit trail for this port: what was checked, what was found, and where each finding is
+now tracked. It is not a task list — [implementation_plan.md](implementation_plan.md) owns
+the work.
+
+**This is a living document, written in two phases.** Findings **F1–F43** come from a
+static review of the plan and the repository at commit `e2d9556` (Stage 4 complete),
+before anything had been compiled. Findings **F44 onward** were found during
+implementation, by building — see [Findings by phase](#findings-by-phase) for why that
+split is worth noticing.
 
 ## Table of Contents
 
 - [Method](#method)
+- [Findings by phase](#findings-by-phase)
 - [Disposition Summary](#disposition-summary)
 - [Critical Findings](#critical-findings)
 - [Build-Blocking Findings](#build-blocking-findings)
@@ -21,6 +27,8 @@ owns the work.
 ---
 
 ## Method
+
+### Phase 1 — static review (F1–F43)
 
 - Full read of every application source file, both CMake trees, the linker script and the
   build/IDE configuration.
@@ -36,7 +44,43 @@ owns the work.
   (2026-03-06). The website documents whatever is current on `master`; where the two
   disagree, the pinned source wins — see [F37](#f37) and [F38](#f38).
 
-Not done: no compilation (the tree does not yet configure — see [F10](#f10)), no hardware.
+### Phase 2 — implementation (F44 onward)
+
+- Every stage from 5 onward verified by compiling, with the Arm GNU toolchain 15.3.rel1
+  fetched into `toolchains/`. Stage gates: HAL library at 8, `main.c` at 10, full link
+  at 15.
+- Where a file could not yet be compiled in place because of a dependency on a later
+  stage, it was verified in isolation using a throwaway shim header outside the repo
+  rather than by reordering stages (see Stage 10).
+- Linked-image checks: memory-region usage, entry point, and the first two vector-table
+  words against the linker script.
+
+Still not done: **no hardware**. Nothing here has executed on a device. Every claim in this
+document is a static or build-time one.
+
+---
+
+## Findings by phase
+
+| Phase | Findings | Found by |
+|---|---|---|
+| Static review | F1–F43 (43) | Reading code, headers and documentation |
+| Implementation | F44–F50 (7) | Configuring, compiling and linking |
+
+The split is worth recording, because the two phases caught different *kinds* of problem
+and the second kind was not reachable by inspection:
+
+- **F45** (inverted clock-divider namespaces) is a silent miscompile. It was caught only
+  because the neighbouring APB lines failed loudly first — inspection had not flagged it.
+- **F47, F48, F49** all trace to one root cause the static review did identify (the
+  submodule pins diverge from the H743 reference) but whose *consequences* only became
+  visible once the library compiled.
+- **F50** did not appear until **link**, after every translation unit had compiled
+  cleanly. For a port of this kind, "it compiles" is a weak signal.
+
+A useful calibration: the static review found 43 issues and was thorough enough that
+Stage 12's register audit came out exactly as predicted — but it still missed seven, four
+of them blocking. Reviewing a port and building it are not substitutes for each other.
 
 ---
 
@@ -517,6 +561,17 @@ Negative results, recorded so they are not re-investigated.
 | Required H5 symbols exist | `FLASH_LATENCY_5`, `RCC_HSE_BYPASS`, `GPIO_AF11_ETH` (= `0x0B`), `ETH_IRQn` (= 106), `PWR_REGULATOR_VOLTAGE_SCALE0`, `PWR_FLAG_VOSRDY`. |
 | SRAM sizing | SRAM1: ~30 KB FreeRTOS heap + `.data`/`.bss` + 2.5 KB stack/heap in 256 KB. SRAM3: ~73 KB ETH buffers + 1.5 KB descriptors + 16 KB lwIP heap in 320 KB. Comfortable. |
 | Repository state | Working tree clean; four commits matching Stages 1–4; `docs/` tracked. |
+
+Added during the implementation phase:
+
+| Check | Result |
+|---|---|
+| ETH register audit, in practice | Confirmed: Stage 12 needed **zero** register or descriptor-bit changes. `mac_drv.c` compiled against the H5 headers unmodified apart from peripheral plumbing, exactly as the static review predicted. |
+| Vector table correctness | Linked image: word 0 = `0x20040000` (top of SRAM1, matching the linker script), word 1 = entry point `0x080024a9` with the Thumb bit set. |
+| Memory footprint | FLASH 10.6%, SRAM1 50.9%, SRAM3 22.9%, SRAM2 unused. The Stage 4 sizing assumptions held; no region is close to full. |
+| Addend arithmetic, in practice | The core computes `PTP_ADDEND_INIT` = 3435973836 (`0xCCCCCCCC`), matching [ptp_clock.md](ptp_clock.md) exactly. |
+| FreeRTOS port selection | The CM33 NTZ non-secure `port.c.obj` is the object actually built — verified from the build tree, not inferred from the CMake variable. |
+| Toolchain ABI | `readelf` reports hard-float EABI on the linked image, consistent with `-mfloat-abi=hard` throughout. |
 
 ---
 
