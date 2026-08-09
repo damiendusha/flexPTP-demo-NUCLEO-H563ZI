@@ -129,7 +129,8 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F39 | flexPTP has never been ported to Cortex-M33 / ARMv8-M | Risk | plan Open Items |
 | F40 | No OS-binding macro selected; silently defaults to `FLEXPTP_FREERTOS` | Build (latent) | plan Stage 13 |
 | F41 | `PTP_UPDATE_CLOCK` dead; `ETHHW_UpdatePTPTime()` unreachable and suspect | Minor + latent bug | plan Stage 12 |
-| F42 | **lwIP never delivers Delay_Resp** — selective drop below the PTP stack | **OPEN, localised to one hop** | measured layer by layer |
+| F42 | **Delay_Resp never reaches the MAC RX descriptor ring** — below all software | **OPEN, localised to hardware/wire** | measured layer by layer |
+| F58 | `eth_drv_lwip.c` RX copy never advances the source pointer across a chained pbuf | Latent bug | open |
 | F43 | `PTP_ACCURACY_LIMIT_NS` (100 ns) is the implicit LOCKED criterion | Minor | plan Stage 20 |
 | F44 | `CMakePresets.json` requires Ninja; not documented as a prerequisite | Minor | plan Stage 19 |
 | F45 | H5 inverts the H7 clock-divider namespaces; the H7 spelling compiles but misconfigures | Critical (silent) | plan Stage 10 (fixed) |
@@ -543,7 +544,45 @@ Del_Req #261 (~4.5 minutes) without recovering, versus 40–60 s with independen
 That is suggestive but was observed once, and one run does not distinguish it from
 variance.
 
-### Localised to one hop: lwIP never delivers Delay_Resp
+### Localised below software: the MAC never receives it
+
+Instrumenting `ETHHW_ReadCallback()` — every frame the MAC hands up, classified by UDP port
+and PTP message type, plus a count of frames dropped because `rx_msg_q` was full:
+
+| Measure | Value |
+|---|---|
+| Frames offered by the MAC | 239 |
+| UDP 319 (event) / 320 (general) | 69 / 103 |
+| Sync (0x0) | 69 |
+| Follow_Up (0x8) | 69 |
+| Announce (0xB) | 34 |
+| **Delay_Resp (0x9)** | **0** |
+| Dropped, `rx_msg_q` full | **0** |
+
+The frame never enters the descriptor ring. Every software layer is therefore exonerated:
+flexPTP, the NSD, lwIP, the queue between the ISR and the RX thread, and the MAC driver.
+Frames to the *same* multicast MAC arrive normally in both directions.
+
+### Hypotheses, ranked
+
+1. **The frame never reaches this board.** `tcpdump` was run on the *host*, so it proves the
+   host transmitted — not that the switch forwarded it to the board's port. Other messages
+   in the same group do arrive, which argues against it, but it has not been tested from
+   the board's side.
+2. **The MAC's address/perfect filter rejects it.** `mac_drv.c` sets `ETH_MACPFR_PM`
+   (pass all multicast) and `HPF`, which should preclude this. Directly testable by
+   enabling promiscuous mode (`ETH_MACPFR_PR`).
+3. **PTP snapshot configuration is filtering reception.** `ETHHW_EnablePTPTimeStamping()`
+   writes `SNAPTYPSEL = 0b01` with `TSIPV4ENA | TSIPENA | TSVER2ENA`. *Weak a priori:*
+   RM0481 describes these bits as selecting which messages are **timestamped**, not which
+   are received. Worth testing because the failure correlates with enabling timestamping —
+   DHCP and ARP work before `flexptp` runs — but the documented function does not support
+   the mechanism.
+
+**Promiscuous mode is the decisive discriminator**: it separates "the MAC filtered it" from
+"it never arrived", which no amount of register inspection can.
+
+### Earlier localisation: lwIP never delivers Delay_Resp
 
 Instrumenting `ptp_receive_cb()` — what lwIP actually hands to the PTP network-stack
 driver — is decisive:
@@ -801,6 +840,23 @@ descriptor is released *before* the callback runs so it cannot be observed twice
 
 **This is a real latent bug and the fix is worth keeping, but it is not the cause of F42** —
 the counters read 125/125 after the change, with the failure unaffected.
+
+### F58 — RX pbuf copy never advances the source pointer
+
+`eth_drv_lwip.c`, copying a received frame into a pbuf chain:
+
+```c
+for (q = p; (q != NULL) && (size_left > 0); q = q->next) {
+    u16_t copy_size = MIN(size_left, q->len);
+    memcpy(q->payload, evt.data.rx.payload, copy_size);   /* source never advances */
+    size_left -= copy_size;
+}
+```
+
+Every segment is filled from the *start* of the frame, so any chained pbuf is corrupted.
+Latent as configured — `PBUF_POOL_BUFSIZE` is 1528 and `ETH_BUFFER_SIZE` is 1528, so a
+frame never spans two pool buffers — but it would corrupt traffic immediately if either
+were reduced. Inherited from the H743 project. Unrelated to F42.
 
 ### F54 — unbounded wait in `ETHHW_SetPTPAddend()`
 

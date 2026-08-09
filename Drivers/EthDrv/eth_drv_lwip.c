@@ -328,13 +328,43 @@ static void rx_thread(void *arg) {
     }
 }
 
+/* ---- TEMPORARY INSTRUMENTATION (F42). ----
+ * Counts frames as the MAC delivers them, and how many are dropped because rx_msg_q is
+ * full. Parses far enough to classify PTP messages by type so a per-type drop can be seen. */
+volatile struct {
+    uint32_t frames;         // frames offered by the MAC
+    uint32_t udp319;         // ... UDP dest port 319 (event)
+    uint32_t udp320;         // ... UDP dest port 320 (general)
+    uint32_t ptpByType[16];  // PTP messageType nibble, for 319/320 frames
+    uint32_t qFull;          // frames dropped because rx_msg_q was full
+    uint32_t qFullByType[16];// ... classified by PTP messageType
+} rxdbg = {0};
+
 int ETHHW_ReadCallback(ETHHW_EventDesc *evt) {
     // packet reception
     if (evt->type != ETHHW_EVT_RX_READ) {
         return 0;
     }
 
+    /* classify the frame: eth(14) + IPv4(20) + UDP(8) => PTP header at offset 42 */
+    int ptpType = -1;
+    const uint8_t *f = (const uint8_t *)evt->data.rx.payload;
+    uint16_t sz = evt->data.rx.size;
+    rxdbg.frames++;
+    if ((f != NULL) && (sz >= 44U) &&
+        (f[12] == 0x08U) && (f[13] == 0x00U) &&   /* EtherType IPv4 */
+        (f[23] == 17U)) {                          /* protocol UDP  */
+        uint16_t dport = ((uint16_t)f[36] << 8) | f[37];
+        if (dport == 319U || dport == 320U) {
+            if (dport == 319U) { rxdbg.udp319++; } else { rxdbg.udp320++; }
+            ptpType = f[42] & 0x0F;
+            rxdbg.ptpByType[ptpType]++;
+        }
+    }
+
     if (osMessageQueuePut(rx_msg_q, evt, 0, 0) != osOK) {
+        rxdbg.qFull++;
+        if (ptpType >= 0) { rxdbg.qFullByType[ptpType]++; }
         return ETHHW_RET_RX_PROCESSED; // this frame has been dropped
     } else {
         return 0; // the buffer will be passed to the processing thread
