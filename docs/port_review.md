@@ -129,7 +129,8 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F39 | flexPTP has never been ported to Cortex-M33 / ARMv8-M | Risk | plan Open Items |
 | F40 | No OS-binding macro selected; silently defaults to `FLEXPTP_FREERTOS` | Build (latent) | plan Stage 13 |
 | F41 | `PTP_UPDATE_CLOCK` dead; `ETHHW_UpdatePTPTime()` unreachable and suspect | Minor + latent bug | plan Stage 12 |
-| F42 | **Delay_Resp never reaches the MAC RX descriptor ring** — below all software | **OPEN, localised to hardware/wire** | measured layer by layer |
+| F42 | **The switch silently discarded PTP Delay_Resp** — nothing in the port was at fault | **RESOLVED** | proven by direct cable |
+| F59 | Servo never engages after a prolonged delay-exchange failure until `ptp reset` | **OPEN** | offset diverges with `corr_ppb` = 0 |
 | F58 | `eth_drv_lwip.c` RX copy never advances the source pointer across a chained pbuf | Latent bug | open |
 | F43 | `PTP_ACCURACY_LIMIT_NS` (100 ns) is the implicit LOCKED criterion | Minor | plan Stage 20 |
 | F44 | `CMakePresets.json` requires Ninja; not documented as a prerequisite | Minor | plan Stage 19 |
@@ -544,7 +545,33 @@ Del_Req #261 (~4.5 minutes) without recovering, versus 40–60 s with independen
 That is suggestive but was observed once, and one run does not distinguish it from
 variance.
 
-### Localised below software: the MAC never receives it
+### RESOLVED: the network was discarding Delay_Resp
+
+Connecting the host NIC directly to the board, removing the switch and changing nothing
+else, settles it:
+
+| Path | Delay_Resp received | Failures |
+|---|---|---|
+| Through the site switch | **0** | 1 per second, indefinitely |
+| **Direct cable** | **65** (≈1/s) | **0** |
+
+The switch was forwarding Sync, Follow_Up and Announce to the same multicast group
+(224.0.1.129) and the same destination MAC, while discarding Delay_Resp. Nothing in this
+port was ever at fault.
+
+**This also explains the intermittency, and every false attribution.** The switch forwarded
+Delay_Resp *occasionally*. Twice the board synchronised through it, each time shortly after
+a code change, and each time the change was credited with the fix — the ISR `else if`, then
+the `ETHHW_ProcessTx()` rewrite. Both were coincidence: an external, intermittent cause
+produced apparent confirmation for whatever had just been altered. Reverting disproved each
+in turn, but the pattern kept recurring because the real variable was outside the system
+under test entirely.
+
+Confirmed in passing: the board's DHCP lease on the direct link reported MAC
+`56:00:1e:00:04:51`, exactly the address derived from the device UID — **F51's fix verified
+end to end**.
+
+### Earlier localisation: the MAC never receives it
 
 Instrumenting `ETHHW_ReadCallback()` — every frame the MAC hands up, classified by UDP port
 and PTP message type, plus a count of frames dropped because `rx_msg_q` was full:
@@ -874,6 +901,29 @@ descriptor is released *before* the callback runs so it cannot be observed twice
 
 **This is a real latent bug and the fix is worth keeping, but it is not the cause of F42** —
 the counters read 125/125 after the change, with the failure unaffected.
+
+### F59 — the servo does not engage without `ptp reset` *(OPEN)*
+
+With the delay exchange finally working, the board reached SLAVE, identified the correct
+master, and computed a valid offset — yet applied **no correction at all**:
+
+| | Before `ptp reset` | After `ptp reset` |
+|---|---|---|
+| Offset | 2.18 → 3.62 ms, **diverging** | 5.19 ms → **−45 µs**, converged |
+| Addend | frozen at 3435894134 | tuned, Δ −40815 |
+| `corr_ppb` | **0 of 77** samples | **50 of 67** non-zero |
+
+The drift rate while uncorrected was ~18.7 ppm — the free-running oscillator error, exactly
+what the servo exists to remove.
+
+Issuing `ptp reset` fixed it immediately and completely. The likely explanation is servo or
+BMCA state left over from the long preceding period of failed delay exchanges, but that is
+**a hypothesis, not a measurement**.
+
+This matters more than it looks: the stack presents as entirely healthy — SLAVE state,
+correct master clock ID, delay exchange flowing, offsets computed and logged — while
+silently never disciplining the clock. Anyone watching only the state machine would believe
+PTP was working.
 
 ### F58 — RX pbuf copy never advances the source pointer
 

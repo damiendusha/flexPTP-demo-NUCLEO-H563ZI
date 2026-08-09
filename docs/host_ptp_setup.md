@@ -130,6 +130,7 @@ Symptoms are usually silence rather than errors, because L2 PTP has no handshake
 |---|---|
 | Are frames leaving the host? | `sudo tcpdump -i <iface> -e ether proto 0x88f7` |
 | Is the board on the same physical segment? | PTP is L2 — it does not cross routers |
+| Sync arrives but Delay_Resp never does | **A switch may silently discard PTP Delay_Resp** while forwarding Sync/Announce on the same multicast group. Verified on this setup. Test with a direct cable. |
 | Did BMCA pick the wrong grandmaster? | `pmc ... 'GET PARENT_DATA_SET'`; lower `--priority1` |
 | Right destination MAC? | tcpdump should show `01:80:c2:00:00:0e`, not `01:1b:19:...` |
 | Is the target's PTP stack running? | `flexptp` at the CLI; look for *"Turning PTP on!"* |

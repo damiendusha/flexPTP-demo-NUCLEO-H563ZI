@@ -603,12 +603,13 @@ Tested against `linuxptp` 4.4 on a Linux host.
   of **−535 ns**, best sample −69 ns, with the addend actively tuned around `0xCCCCCCCC`
   and settling ~41 ppb below nominal — the ST-Link MCO's real frequency error. The ±83 µs
   spread is host-side software timestamping, not the board.
-- **F42 open — PTP lock is intermittent.** Some runs synchronise and hold (mean −535 ns
-  over 150 samples); others report *"no response received"* for every Delay_Req
-  indefinitely. Four candidate causes were investigated and all four were **disproven by
-  measurement**: the ETH ISR `else if`, debugger-halt perturbation, a flexPTP
-  message-buffer mismatch, and duplicate dispatch in `ETHHW_ProcessTx()`. The MAC driver is
-  measured clean — exactly one timestamp dispatched per request, `uid` and tag correct on
-  both halves. The remaining lead is duplicate `---> uid` reports generated *inside*
-  flexPTP. See [port_review.md](port_review.md).
-
+- **F42 resolved: the switch was discarding Delay_Resp.** Direct cable, nothing else
+  changed: 65 Delay_Resp received (≈1/s) and zero failures, versus 0 and continuous failure
+  through the switch. Sync, Follow_Up and Announce crossed the switch normally on the same
+  multicast group and MAC. Nothing in this port was at fault. See
+  [port_review.md](port_review.md).
+- **PTP locks on a direct link.** After `ptp reset`, offset converged 5.19 ms → −45 µs with
+  the addend actively tuned and 50 of 67 samples applying a correction. The residual
+  ±10–50 µs is the host's software-timestamping floor, not the board.
+- **F59 open**: the servo does not engage on its own after a prolonged delay-exchange
+  failure — offset diverged at ~18.7 ppm with `corr_ppb` exactly 0 until `ptp reset`.
