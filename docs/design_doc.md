@@ -407,3 +407,24 @@ resolved unchanged. The work was entirely peripheral plumbing:
 - Left `FLEXPTP_SNPRINTF` alone — the porting guide calls it `SPRINTF`, but the code does
   not (F38)
 
+### Stage 14 — flexPTP H563 hardware port
+- Created `Src/flexptp_port/ptp_port_stm32h563.{c,h}`, derived from the bundled
+  `ptp_port_stm32h743_lwip.c`. The derivation is deliberately minimal — six changes —
+  so it stays diffable against its ancestor:
+  header include, `stm32h5xx_hal.h`, `+#include <math.h>`, dropped the unused
+  `extern ETH_HandleTypeDef EthHandle` and its commented-out user, and
+  `GPIO_SPEED_HIGH` → `GPIO_SPEED_FREQ_HIGH` (F46, as predicted at Stage 11)
+- **PPS stays on PG8 / AF11**, unchanged from the H743 port. This file is now the only
+  place PPS GPIO is configured
+- `ptphw_gettime()` takes `TimestampU *`, and the header says why (F37: the published
+  porting guide says `TimestampI *`, but every call site in the core passes `TimestampU *`)
+- Wired via flexPTP's custom-port path: `FLEXPTP_HWPORT_SRC` set to an absolute path and
+  `FLEXPTP_HWPORT` left unmatched, so the library reports
+  *"flexPTP: custom hardware port defined"* and uses the file verbatim
+- Two integration defects surfaced only once the library actually compiled — see
+  [port_review.md](port_review.md) F47 and F48. Both trace to the same root cause: the
+  flexPTP submodule is pinned newer (`76aaf67`) than the commit the H743 demo uses
+  (`62fc906`), so this port integrates a library the reference project never did
+- After both fixes the flexPTP library, its lwIP network-stack driver and the Kalman servo
+  all compile. The only remaining build errors are the Stage 15 header sweep
+

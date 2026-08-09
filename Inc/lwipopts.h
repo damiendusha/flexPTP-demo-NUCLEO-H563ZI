@@ -99,7 +99,9 @@ a lot of data that needs to be copied, this should be set high. */
    /** Ingress/egress timestamp nanoseconds part */ \
    u32_t time_ns; \
    /** Transmit callback pointer */ \
-   void (*tx_cb)(uint32_t, uint32_t, uint32_t); \
+   /* NOTE: the third argument is the tag. flexPTP's nsd_lwip.c declares
+      ptp_transmit_cb() as (uint32_t, uint32_t, void *); this must match it. */ \
+   void (*tx_cb)(uint32_t, uint32_t, void *); \
    /** Custom tag */ \
    void * tag;
 

@@ -43,6 +43,7 @@ set(sources_SRCS
 set(include_DIRS 
     ${CMAKE_SOURCE_DIR}/Inc
     ${CMAKE_SOURCE_DIR}/Src
+    ${CMAKE_SOURCE_DIR}/Src/flexptp_port
     ${CMAKE_SOURCE_DIR})
 
 # Include directories for each compiler

@@ -90,6 +90,8 @@ Not done: no compilation (the tree does not yet configure — see [F10](#f10)), 
 | F44 | `CMakePresets.json` requires Ninja; not documented as a prerequisite | Minor | plan Stage 19 |
 | F45 | H5 inverts the H7 clock-divider namespaces; the H7 spelling compiles but misconfigures | Critical (silent) | plan Stage 10 (fixed) |
 | F46 | `GPIO_SPEED_HIGH` legacy alias does not exist on H5 | Minor | plan Stages 11 (fixed) & 14 |
+| F47 | flexPTP uses `__PRI64_PREFIX`, a glibc-internal macro; breaks every newlib build | Blocking | plan Stage 14 (worked around) |
+| F48 | `tx_cb` signature drift between pinned flexPTP and this project's `lwipopts.h` | Blocking | plan Stage 14 (fixed) |
 
 **Every finding is tracked.** F33 and F34 are recorded here only because they are
 observations about upstream code that require no action — noted so a future reader does not
@@ -328,6 +330,57 @@ Stage 12 rewrites the code immediately around that machinery and Stage 15 touche
 `eth_drv_lwip.c` only for header renames, so nothing confirms the path still works. A
 silently broken TX-timestamp path presents as "PTP runs but never converges", which is the
 hardest symptom to attribute correctly. Explicit checks added to Stages 14 and 20.
+
+### F47 — flexPTP uses a glibc-internal macro
+
+`cli_cmds.c`, `master.c` and `slave.c` use `__PRI64_PREFIX` directly (12 occurrences).
+That is a **glibc implementation detail**, not a standard macro; newlib does not define it
+and instead spells the same thing `__INT64` (in `sys/_intsup.h`). So the library does not
+compile for `arm-none-eabi` at all:
+
+```
+error: expected ')' before '__PRI64_PREFIX'
+    MSG("%" __PRI64_PREFIX "u %u\n", t.sec, t.nanosec);
+```
+
+This is an **upstream regression, not something inherited**. The commit the H743 demo pins,
+`62fc906`, has zero occurrences; they entered at `a60190f` ("Linux and OS-less working
+mode"), where glibc spellings leaked into shared code.
+
+Worked around without patching the submodule, by mapping the macro onto newlib's
+equivalent via `FLEXPTP_COMPILE_DEFS`:
+
+```cmake
+set(FLEXPTP_COMPILE_DEFS ${symbols_c_SYMB} __PRI64_PREFIX=__INT64)
+```
+
+`__INT64` is used rather than a hardcoded `"ll"` so it follows whatever type the target
+uses for `int64_t`; all three affected files include `<inttypes.h>` before first use.
+Worth reporting upstream — any newlib target is affected, not just this one.
+
+### F48 — TX timestamp callback signature drift
+
+`Inc/lwipopts.h` injects `tx_cb` and `tag` into `struct pbuf` through lwIP's
+`LWIP_PBUF_CUSTOM_DATA` hook — this is the "instrumented lwIP driver" flexPTP's README
+requires. The declared signature had drifted from what the pinned flexPTP assigns to it:
+
+| | signature |
+|---|---|
+| `lwipopts.h` (from the H743 project) | `void (*)(uint32_t, uint32_t, uint32_t)` |
+| pinned flexPTP `ptp_transmit_cb` | `void (*)(uint32_t, uint32_t, void *)` |
+
+Fixed by aligning `lwipopts.h` to the library and updating the call site in
+`mac_drv.c`, which casts the stored pointer before invoking it. The descriptor extension
+still carries the tag as a `uint32_t`, which is fine on a 32-bit target but is now
+explicitly cast rather than implicitly punned.
+
+This is precisely the plumbing F42 warned was unverified by any stage. It failed at compile
+time here; had the signatures merely differed in the tag's *meaning* rather than its type,
+it would have failed silently at run time as "PTP syncs but never locks".
+
+**Common root cause with F47:** Stage 1 added the flexPTP submodule at then-current
+`master` (`76aaf67`) rather than the commit the H743 demo pins (`62fc906`), so this port
+integrates a newer library than the reference project ever did.
 
 ### F46 — `GPIO_SPEED_HIGH` is an H7-only legacy alias
 

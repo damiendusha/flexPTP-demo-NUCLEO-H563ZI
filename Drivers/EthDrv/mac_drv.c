@@ -447,7 +447,9 @@ void ETHHW_ProcessTx(ETH_TypeDef *eth) {
             uint32_t ts_ns = bd->desc.DES0;
 
             if (bd->ext.tsCbPtr != 0) {
-                ((void (*)(uint32_t, uint32_t, uint32_t))(bd->ext.tsCbPtr))(ts_s, ts_ns, bd->ext.tsCbArg);
+                // Signature must match lwipopts.h's tx_cb and flexPTP's ptp_transmit_cb:
+                // the tag is a void *, carried through the descriptor extension as a uint32_t.
+                ((void (*)(uint32_t, uint32_t, void *))(bd->ext.tsCbPtr))(ts_s, ts_ns, (void *)bd->ext.tsCbArg);
             }
 
             // clear descriptor
