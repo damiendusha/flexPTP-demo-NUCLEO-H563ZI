@@ -129,7 +129,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F39 | flexPTP has never been ported to Cortex-M33 / ARMv8-M | Risk | plan Open Items |
 | F40 | No OS-binding macro selected; silently defaults to `FLEXPTP_FREERTOS` | Build (latent) | plan Stage 13 |
 | F41 | `PTP_UPDATE_CLOCK` dead; `ETHHW_UpdatePTPTime()` unreachable and suspect | Minor + latent bug | plan Stage 12 |
-| F42 | **Delay_Resp never reaches flexPTP** — dropped below the library, in lwIP/UDP receive | **OPEN, localised** | measured layer by layer |
+| F42 | **lwIP never delivers Delay_Resp** — selective drop below the PTP stack | **OPEN, localised to one hop** | measured layer by layer |
 | F43 | `PTP_ACCURACY_LIMIT_NS` (100 ns) is the implicit LOCKED criterion | Minor | plan Stage 20 |
 | F44 | `CMakePresets.json` requires Ninja; not documented as a prerequisite | Minor | plan Stage 19 |
 | F45 | H5 inverts the H7 clock-divider namespaces; the H7 spelling compiles but misconfigures | Critical (silent) | plan Stage 10 (fixed) |
@@ -543,7 +543,37 @@ Del_Req #261 (~4.5 minutes) without recovering, versus 40–60 s with independen
 That is suggestive but was observed once, and one run does not distinguish it from
 variance.
 
-### Root cause localised: the Delay_Resp never reaches flexPTP
+### Localised to one hop: lwIP never delivers Delay_Resp
+
+Instrumenting `ptp_receive_cb()` — what lwIP actually hands to the PTP network-stack
+driver — is decisive:
+
+| Message | Type | Delivered | Port |
+|---|---|---|---|
+| Sync | 0x0 | 65 | 319 (event) |
+| Follow_Up | 0x8 | 65 | 320 (general) |
+| Announce | 0xB | 33 | 320 (general) |
+| **Delay_Resp** | **0x9** | **0** | — |
+
+163 callbacks, `shortPkt` = 0, `onOther` = 0. **The general socket on port 320 works** — it
+delivers 98 packets — yet not one is a Delay_Resp, while `tcpdump` shows them on the wire
+~200 µs after each Delay_Req.
+
+The drop is therefore *below* the network-stack driver, inside lwIP or the Ethernet receive
+path, and it is **selective**: same socket, same port, same multicast group, one message
+type discarded.
+
+This eliminates an entire class of causes at once — the PTP stack, the NSD, socket binding,
+IGMP membership and the domain/`transportSpecific` gate. None of them can discriminate
+between two messages arriving on the same PCB.
+
+What distinguishes Delay_Resp from Follow_Up at packet level: it is the only inbound
+message this node *solicits*, arriving hard on the heels of our own transmit, and it is a
+different length (54 vs 44 bytes of PTP payload). A pbuf or RX-descriptor interaction with
+the transmit path fits that shape — which returns attention to `eth_drv_lwip.c` and
+`mac_drv.c`, but on the **receive** side, which has not been instrumented at all.
+
+### Earlier localisation: the Delay_Resp never reaches flexPTP
 
 Measured layer by layer, from the wire downwards:
 

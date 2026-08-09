@@ -1,3 +1,42 @@
+diff --git a/src/flexptp/port/example_netstack_drivers/nsd_lwip.c b/src/flexptp/port/example_netstack_drivers/nsd_lwip.c
+index 35b717e..0bb266f 100644
+--- a/src/flexptp/port/example_netstack_drivers/nsd_lwip.c
++++ b/src/flexptp/port/example_netstack_drivers/nsd_lwip.c
+@@ -88,7 +88,34 @@ void ptp_nsd_init(PtpTransportType tp, PtpDelayMechanism dm) {
+     UNLOCK_TCPIP_CORE();
+ }
+ 
++/* ---- TEMPORARY INSTRUMENTATION (F42). ----
++ * Counts what lwIP actually hands to the PTP network-stack driver. If byType[0x9]
++ * (Delay_Resp) stays zero while tcpdump shows the frame on the wire, the packet is being
++ * dropped inside lwIP/UDP and never reaches this callback at all. */
++volatile struct {
++    uint32_t cbCalls;    // ptp_receive_cb() invocations
++    uint32_t onEvent;    // ... on the event PCB (UDP 319)
++    uint32_t onGeneral;  // ... on the general PCB (UDP 320)
++    uint32_t onOther;    // ... on neither (should never happen)
++    uint32_t shortPkt;   // payload too short to contain a PTP header
++    uint32_t byType[16]; // indexed by the messageType nibble; Delay_Resp is 0x9
++} nsddbg = {0};
++
+ static void ptp_receive_cb(void *pArg, struct udp_pcb *pPCB, struct pbuf *pP, const ip_addr_t *pAddr, uint16_t port) {
++    nsddbg.cbCalls++;
++    if (pPCB == PTP_L4_EVENT) {
++        nsddbg.onEvent++;
++    } else if (pPCB == PTP_L4_GENERAL) {
++        nsddbg.onGeneral++;
++    } else {
++        nsddbg.onOther++;
++    }
++    if (pP->len >= 34U) {
++        nsddbg.byType[((uint8_t *)pP->payload)[0] & 0x0FU]++;
++    } else {
++        nsddbg.shortPkt++;
++    }
++
+     // put msg into the queue
+     ptp_receive_enqueue(pP->payload, pP->len, pP->time_s, pP->time_ns, PTP_TP_IPv4);
+ 
 diff --git a/src/flexptp/ptp_core.c b/src/flexptp/ptp_core.c
 index 879d97a..a3e8a07 100644
 --- a/src/flexptp/ptp_core.c

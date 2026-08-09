@@ -30,6 +30,7 @@ Adds three volatile debug structs, readable over SWD, with no behavioural change
 | `ptpdbg` | `task_ptp.c` | transmit-timestamp callbacks, `PTN_TRANSMIT_DONE` handling, `msgb` uid/tag hits and misses |
 | `slvdbg` | `slave.c` | messages entering the slave handler, Delay_Resp arrivals, delay-mechanism and sequence-ID matching |
 | `coredbg` | `ptp_core.c` | messages reaching the core dispatcher, Delay_Resp arrivals, domain/`transportSpecific` filtering |
+| `nsddbg` | `port/example_netstack_drivers/nsd_lwip.c` | what lwIP hands to the driver: callback count, PCB (event/general), and a per-message-type histogram |
 
 Read them with, e.g.:
 
