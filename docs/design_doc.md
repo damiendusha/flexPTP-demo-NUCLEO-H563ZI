@@ -217,3 +217,18 @@ This section will provide a detailed comparison of:
 - Verified: a TU including `stm32h5xx_hal.h` + `stm32h5xx_ll_rng.h` compiles clean under
   `-Wall -Wextra`, and `FLASH_LATENCY_5` / `RCC_HSE_BYPASS` / `ETH_MAC_ADDR1` all resolve
 
+### Stage 7 — Consolidate build configuration into CMakeLists.txt
+- Absorbed `cmake/vscode_generated.cmake` into `CMakeLists.txt` and deleted it, along
+  with its `include()`. The file was headed "shall not be touched by user", so leaving
+  the MCU configuration there meant one extension regeneration could silently revert it
+- Values carried across **verbatim** (still Cortex-M7 / H735 at this point) so the diff
+  is purely structural; retargeting is Stage 8
+- Absorbed: `cpu_PARAMS`, `sources_SRCS`, `include_c_DIRS`, `linker_script_SRC`.
+  The remaining appends were all empty and were dropped
+- Removed `list(APPEND CMAKE_MODULE_PATH "{{sr:cmake_path}}")` — an unsubstituted
+  template placeholder inherited from upstream (F31)
+- Removed two include paths pointing at directories that do not exist (F32):
+  `Middlewares/Inc` in `CMakeLists.txt`, `${LWIP_PORT_DIR}/include` in `Modules/CMakeLists.txt`
+- `.vscode` CMake integration no longer feeds the build; a regenerated file would simply
+  be ignored since nothing includes it
+

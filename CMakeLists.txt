@@ -4,7 +4,6 @@ cmake_minimum_required(VERSION 3.22)
 # User is free to modify the file as much as necessary
 #
 
-list(APPEND CMAKE_MODULE_PATH "{{sr:cmake_path}}")
 include("cmake/gcc-arm-none-eabi.cmake")
 message("Build CMAKE_MODULE_PATH: " ${CMAKE_MODULE_PATH})
 
@@ -22,10 +21,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 
 # Core MCU flags, CPU type, instruction set and FPU setup
-set(cpu_PARAMS 
-    # Other parameters
-    # -mthumb
-    # -mcpu, -mfloat, -mfloat-abi, ...
+set(cpu_PARAMS
+    -mthumb
+    -mcpu=cortex-m7
+    -mfpu=fpv5-d16
+    -mfloat-abi=hard
 )
 
 # Set MCU type
@@ -33,17 +33,22 @@ set(MCU_TYPE STM32H743xx)
 
 # Sources
 set(sources_SRCS
+    ${CMAKE_SOURCE_DIR}/Src/main.c
+    ${CMAKE_SOURCE_DIR}/Src/syscall.c
+    ${CMAKE_SOURCE_DIR}/Src/sysmem.c
+    ${CMAKE_SOURCE_DIR}/Startup/startup_stm32h735igkx.s
 )
 
 # Include directories for all compilers
 set(include_DIRS 
     ${CMAKE_SOURCE_DIR}/Inc
-    ${CMAKE_SOURCE_DIR}/Middlewares/Inc
     ${CMAKE_SOURCE_DIR}/Src
     ${CMAKE_SOURCE_DIR})
 
 # Include directories for each compiler
-set(include_c_DIRS)
+set(include_c_DIRS
+    ${CMAKE_SOURCE_DIR}/Inc
+)
 set(include_cxx_DIRS)
 set(include_asm_DIRS)
 
@@ -60,18 +65,15 @@ set(link_DIRS)
 set(link_LIBS freertos_kernel)
 
 # Linker script
-set(linker_script_SRC)
+set(linker_script_SRC
+    ${CMAKE_SOURCE_DIR}/stm32h735igkx_FLASH.ld
+)
 
 # Compiler options
 set(compiler_OPTS)
 
 # Linker options
 set(linker_OPTS) 
-
-# Now call generated cmake
-# This will add script generated
-# information to the project
-include("cmake/vscode_generated.cmake")
 
 # Link directories setup
 # Must be before executable is added

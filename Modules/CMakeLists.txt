@@ -55,7 +55,7 @@ endif()
 
 set(FLEXPTP_NSD ${ETH_STACK})
 set(FLEXPTP_SERVO "KALMAN")
-set(FLEXPTP_INCLUDES ${include_dirs} ${LWIP_DIR}/src/include ${LWIP_PORT_DIR}/include)
+set(FLEXPTP_INCLUDES ${include_dirs} ${LWIP_DIR}/src/include ${LWIP_PORT_DIR})
 set(FLEXPTP_CPU_PARAMS ${cpu_PARAMS})
 set(FLEXPTP_COMPILE_DEFS ${symbols_c_SYMB})
 add_subdirectory(flexptp)

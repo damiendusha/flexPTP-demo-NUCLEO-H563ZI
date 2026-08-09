@@ -16,7 +16,7 @@
 - [x] **Stage 4** — New linker script (flat SRAM layout)
 - [x] **Stage 5** — New startup file (H563 vector table)
 - [x] **Stage 6** — `stm32h5xx_hal_conf.h`
-- [ ] **Stage 7** — Consolidate build config into `CMakeLists.txt` 🆕
+- [x] **Stage 7** — Consolidate build config into `CMakeLists.txt` 🆕
 - [ ] **Stage 8** — Build-system retarget (CMake, MCU flags, HAL sources) 🆕
 - [ ] **Stage 9** — FreeRTOS configuration + kernel port selection
 - [ ] **Stage 10** — Clock & power init (`main.c`)
