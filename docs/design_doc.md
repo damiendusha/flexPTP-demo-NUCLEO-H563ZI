@@ -17,7 +17,8 @@ NUCLEO-H563ZI (STM32H563, Cortex-M33).
 - [mac_drv.c Comparison](#mac_drvc-comparison)
 - [Stage Log](#stage-log)
 
-Companion documents: [ptp_clock.md](ptp_clock.md) (PTP clock derivation) ·
+Companion documents: [architecture.md](architecture.md) (module stack, threads, interrupts) ·
+[ptp_clock.md](ptp_clock.md) (PTP clock derivation) ·
 [port_review.md](port_review.md) (review findings and verified-clean audit) ·
 [implementation_plan.md](implementation_plan.md) (staged work plan)
 
