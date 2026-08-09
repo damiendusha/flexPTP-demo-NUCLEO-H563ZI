@@ -2,9 +2,9 @@
 
 How to set up a Linux host as a PTP grandmaster for this demo, using `linuxptp`.
 
-> **Currently blocked.** The target's PTP timestamp counter is not clocked — see finding
-> F53 in [port_review.md](port_review.md). The host side below is correct and will work
-> once that is fixed, but the board will not respond to Sync messages until then.
+> **Target status:** the PTP timestamp clock runs (F53 resolved — `PLL1QEN` had never been
+> enabled, so `pll1_q_ck` was absent). The board should now respond to Sync messages.
+> End-to-end lock has not yet been demonstrated against a grandmaster.
 
 ## What the target expects
 
@@ -76,8 +76,8 @@ The flags that are not in the stock config file:
 On the host, in a second terminal:
 
 ```bash
-sudo pmc -u -b 0 -f /usr/share/doc/linuxptp/configs/gPTP.cfg 'GET PORT_DATA_SET'
-sudo pmc -u -b 0 -f /usr/share/doc/linuxptp/configs/gPTP.cfg 'GET TIME_STATUS_NP'
+sudo pmc -u -b 0 -f /etc/linuxptp/flexptp-gm.cfg 'GET PORT_DATA_SET'
+sudo pmc -u -b 0 -f /etc/linuxptp/flexptp-gm.cfg 'GET TIME_STATUS_NP'
 ```
 
 On the target, over the ST-Link VCP (`/dev/ttyACM0`, 115200 8N1):
@@ -100,8 +100,12 @@ nanoseconds, but only against a hardware-timestamping master.
 
 Two further limits are inherent to this board and unrelated to the host:
 
-- The MCU clock is sourced from the ST-Link's MCO, which the project README describes as
-  noisy. Fitting an 8 MHz crystal at X3 is the recommended fix.
+- The MCU clock is sourced from the ST-Link's MCO at 8 MHz, which the project README
+  describes as noisy. The X3 crystal is the better reference — but note it is **already
+  fitted on MB1404 and is 25 MHz**, selected with SB3/SB4 ON and SB49 OFF, and using it
+  requires `HSE_VALUE` = 25000000 with a re-derived `PLLM`. The firmware's welcome message
+  still repeats the H743 project's "solder an 8 MHz oscillator" advice, which is wrong for
+  this board (finding F55).
 - Timestamp granularity is 5 ns, set by the PTP subsecond increment and not improvable on
   this part — see [ptp_clock.md](ptp_clock.md).
 
