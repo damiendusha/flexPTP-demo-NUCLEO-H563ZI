@@ -502,8 +502,9 @@ void ETHHW_ISR(ETH_TypeDef *eth) {
             ETHHW_EventCallback(&evt);
         }
 
-        // NOTE: this was "else if" -- a combined RI+TI interrupt serviced only RX.
-        // Made independent so a coincident TX completion is never skipped.
+        // Independent of the RX branch: with "else if", a combined RI+TI interrupt serviced
+        // only RX. Measured NOT to be the cause of F42 (the TX path delivers 100% of
+        // timestamps either way), but the exclusive form is latently wrong under load.
         if (csr & ETH_DMACSR_TI) { // Transmit Interrupt
             ethdbg.isrTi++;
             SET_BIT(ETH->DMACSR, ETH_DMACSR_TI);
