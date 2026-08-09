@@ -190,15 +190,25 @@ in voltage and temperature.*/
 #define ETH_TX_DESC_CNT         24 /* number of Ethernet Tx DMA descriptors */
 #define ETH_RX_DESC_CNT         24 /* number of Ethernet Rx DMA descriptors */
 
-/* STM32H563 unique device ID base (RM0481). Was 0x1FF1E800 on the STM32H743. */
-#define UNIQUE_DEV_ID_BASE ((const uint8_t *)0x08FFF800)
+/* STM32H563 unique device ID base (RM0481, UID_BASE). Was 0x1FF1E800 on the STM32H743.
+ *
+ * IMPORTANT: this region must be read 32 bits at a time. Unlike the H743's UID, the H563's
+ * rejects byte accesses -- a byte read raises a precise bus fault, which escalates to
+ * HardFault. Verified over SWD: word and half-word reads succeed, byte reads fail.
+ * The H743 project indexed this pointer as (const uint8_t *), which is why the MAC address
+ * bytes are now extracted from word reads in software instead. */
+#define UNIQUE_DEV_ID_BASE ((const uint32_t *)0x08FFF800)
 
-#define ETH_MAC_ADDR0    ((uint8_t)0x02 | (UNIQUE_DEV_ID_BASE[0] & 0xFE))
-#define ETH_MAC_ADDR1    ((uint8_t)UNIQUE_DEV_ID_BASE[1])
-#define ETH_MAC_ADDR2    ((uint8_t)UNIQUE_DEV_ID_BASE[2])
-#define ETH_MAC_ADDR3    ((uint8_t)UNIQUE_DEV_ID_BASE[3])
-#define ETH_MAC_ADDR4    ((uint8_t)UNIQUE_DEV_ID_BASE[4])
-#define ETH_MAC_ADDR5    ((uint8_t)UNIQUE_DEV_ID_BASE[5])
+/* Extract byte n of the 96-bit UID using 32-bit accesses only. */
+#define UNIQUE_DEV_ID_BYTE(n) \
+  ((uint8_t)((UNIQUE_DEV_ID_BASE[(n) >> 2] >> (((n) & 3U) * 8U)) & 0xFFU))
+
+#define ETH_MAC_ADDR0    ((uint8_t)0x02 | (UNIQUE_DEV_ID_BYTE(0) & 0xFE))
+#define ETH_MAC_ADDR1    UNIQUE_DEV_ID_BYTE(1)
+#define ETH_MAC_ADDR2    UNIQUE_DEV_ID_BYTE(2)
+#define ETH_MAC_ADDR3    UNIQUE_DEV_ID_BYTE(3)
+#define ETH_MAC_ADDR4    UNIQUE_DEV_ID_BYTE(4)
+#define ETH_MAC_ADDR5    UNIQUE_DEV_ID_BYTE(5)
 
 /* ############################################ Assert Selection #################################################### */
 /**

@@ -532,3 +532,34 @@ resolved unchanged. The work was entirely peripheral plumbing:
   point, hard-float EABI
 - One warning remains project-wide (`ETHHW_PrintRingBufStatus` unused) — Stage 16
 
+### Hardware bring-up (partial Stage 20)
+Flashed via the ST-Link mass-storage volume; console read from the ST-Link VCP on
+`/dev/ttyACM0` (USART3 routes there by default on this board, so no external wiring is
+needed). Debugging via ST's OpenOCD fork built in Stage 18.
+
+**Confirmed working on silicon:**
+
+| Area | Evidence |
+|---|---|
+| Startup, vector table | Reaches `main()`; banner prints |
+| Clock tree | `RCC_CFGR1` SWS = PLL1, `PLL1DIVR` M=4/N=250/P=2 → SYSCLK 250 MHz, `CFGR2` HPRE=0 → HCLK 250 MHz, PPRE1/2/3=÷2 → 125 MHz |
+| Power / flash | `VOSCR` = `0x30` (VOS0), `VOSSR` VOSRDY+ACTVOSRDY set, `FLASH_ACR` latency 5 |
+| FreeRTOS on M33 | Scheduler runs; banner prints from a task |
+| GPDMA console | Full 1561-byte banner transmits |
+| MDIO divider fix (F8) | PHY enumerated: *SMSC LAN8742A (rev. 1) @0* |
+| RMII incl. PB13→PB15 | *ETH LINK: UP (100 Mbps, FULL duplex)* |
+| Ethernet TX+RX, MAC addr | **DHCP lease acquired: 192.168.1.113** |
+| PTP addend derivation | `ETH->MACTSAR` = `0xCCCCCCCC`, matching [ptp_clock.md](ptp_clock.md) exactly |
+
+**Two hardware-only defects found and fixed:** F51 (UID region rejects byte reads) and
+F52 (PTP addend/increment ordering). Both compiled and linked cleanly and were invisible
+to static review.
+
+**Open:** F53 — the PTP timestamp counter is not clocked, so PTP cannot yet synchronise.
+Everything beneath it works.
+
+**PTP transport:** the app loads the `gPTP` preset, which is `PTP_TP_802_3` (Layer 2,
+ethertype 0x88F7) with `PTP_DM_P2P` — not UDP/IPv4. A linuxptp master must therefore use
+the gPTP profile, e.g.
+`ptp4l -f /usr/share/doc/linuxptp/configs/gPTP.cfg -i <iface> -S -m --serverOnly=1 --priority1=100`.
+

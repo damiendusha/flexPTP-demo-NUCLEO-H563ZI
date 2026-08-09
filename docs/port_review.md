@@ -138,6 +138,9 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F48 | `tx_cb` signature drift between pinned flexPTP and this project's `lwipopts.h` | Blocking | plan Stage 14 (fixed) |
 | F49 | `task_ptp_is_operating()` renamed to `is_flexPTP_operating()` upstream | Blocking | plan Stage 15 (fixed) |
 | F50 | ARMv8-M port names exception handlers directly; the H7-era remaps break the tick | Blocking | plan Stage 15 (fixed) |
+| F51 | H563 UID region rejects **byte** reads; `ETH_MAC_ADDR*` byte-indexed it → HardFault | Critical | fixed, verified on hardware |
+| F52 | `ptphw_init()` set the PTP addend before the subsecond increment → TSADDREG never clears | Critical | fixed, verified on hardware |
+| F53 | PTP timestamp counter is not clocked; MACSTSR/MACSTNR frozen at 0 | **OPEN** | blocks PTP sync |
 
 **Every finding is tracked.** F33 and F34 are recorded here only because they are
 observations about upstream code that require no action — noted so a future reader does not
@@ -376,6 +379,66 @@ Stage 12 rewrites the code immediately around that machinery and Stage 15 touche
 `eth_drv_lwip.c` only for header renames, so nothing confirms the path still works. A
 silently broken TX-timestamp path presents as "PTP runs but never converges", which is the
 hardest symptom to attribute correctly. Explicit checks added to Stages 14 and 20.
+
+### F51 — the H563 UID region rejects byte accesses
+
+`ETH_MAC_ADDR0..5` derive the MAC address by indexing
+`((const uint8_t *)UNIQUE_DEV_ID_BASE)[0..5]`. On the H743 that worked. On the H563 it
+raises a **precise bus fault** which escalates to HardFault, wedging the firmware — the
+console died mid-banner at exactly 256 bytes because the `serialio` thread was left waiting
+on a TX-complete that could never arrive.
+
+Diagnosed over SWD: `CFSR` = `0x00008200` (PRECISERR | BFARVALID), `BFAR` = `0x08FFF800`
+— the UID base itself. Access width is the discriminator:
+
+| Access | Result |
+|---|---|
+| word (`mdw`) | ✅ `001e0055 30355104` |
+| half-word (`mdh`) | ✅ `0055 001e` |
+| **byte (`mdb`)** | ❌ bus error |
+
+The address was right; the *access width* assumption was carried over from the H7 without
+being questioned. Fixed by reading the UID as `uint32_t` and extracting bytes in software
+via `UNIQUE_DEV_ID_BYTE(n)`. Verified: full banner, PHY detected, link up, DHCP lease.
+
+**Generalisable:** a peripheral or information-block address being *correct* says nothing
+about which access widths it supports. This class of bug is invisible to review, compiles
+clean, links clean, and only appears on silicon.
+
+### F52 — PTP addend must be programmed after the subsecond increment
+
+`ptphw_init()`, inherited from the H743 port, programmed `MACTSAR` (addend) before
+`MACSSIR` (subsecond increment). Writing `MACTSAR` sets `TSADDREG`, which the hardware only
+self-clears once the timestamp counter is running — and with `MACSSIR` still zero it never
+runs. `ETHHW_SetPTPAddend()` therefore spun with `MACSSIR` = 0 and `MACSTSR` frozen.
+
+ST's own `HAL_ETH_PTP_SetConfig()` confirms the required order: `TSENA` → `MACSSIR` →
+`MACTSAR` → `TSADDREG`. `ptphw_init()` now follows that sequence. Verified on hardware:
+`MACSSIR` = `0x00050000` and `MACTSAR` = `0xCCCCCCCC` are both programmed correctly after
+the fix.
+
+### F53 — PTP timestamp counter is not clocked *(OPEN)*
+
+After F52, both PTP registers hold their intended values — `MACSSIR` = `0x00050000`,
+`MACTSAR` = `0xCCCCCCCC`, exactly as derived in [ptp_clock.md](ptp_clock.md) — but the
+counter does not advance: `MACSTSR` and `MACSTNR` both read 0 and are unchanged over a
+2-second sampling interval, and `MACTSCR.TSADDREG` never clears.
+
+**This is not a firmware-logic issue.** Setting `TSADDREG` directly from the debugger, with
+the core halted, also fails to clear it. The timestamp unit has no clock.
+
+What is already ruled out:
+
+- There is no separate PTP clock enable: `RCC_AHB1ENR` offers only `ETHEN`, `ETHTXEN` and
+  `ETHRXEN`, and all three are enabled.
+- There is no ETH PTP clock mux on this device (F3), so it cannot be mis-routed.
+- The MAC itself is fully functional — link up at 100 Mbps full duplex, and DHCP completes,
+  so ETH is clocked and both directions work.
+- `MACTSCR` is otherwise correct: `TSENA` and `TSCFUPDT` set, `TSINIT` completed.
+
+Next step is RM0481's PTP clocking section: something gates `eth_ptp_ker_ck` that this port
+does not yet configure. Until it is resolved, PTP will not synchronise, though everything
+below it works.
 
 ### F49 — `task_ptp_is_operating()` renamed upstream
 

@@ -104,22 +104,31 @@ static void ptphw_register_cli_commands() {
 void ptphw_init(uint32_t increment, uint32_t addend) {
     MSG("Turning PTP on!");
 
-    // enable PTP timestamping
+    // Initialisation order matters, and differs from the H743 port this file derives
+    // from. RM0481 requires the subsecond increment to be programmed BEFORE the addend:
+    // writing MACTSAR sets TSADDREG, which the hardware only self-clears once the
+    // timestamp counter is actually running. With MACSSIR still zero the counter never
+    // advances, TSADDREG never clears, and ETHHW_SetPTPAddend() spins forever.
+    //
+    // The H743 set the addend first and got away with it; on the H563 it hangs the PTP
+    // task with MACSSIR = 0 and MACSTSR frozen at 0. Verified on hardware.
+
+    // 1. enable PTP timestamping (TSENA)
     ETHHW_EnablePTPTimeStamping(ETH);
 
     vTaskDelay(pdMS_TO_TICKS(10));
 
-    // initialize PTP time
-    ETHHW_InitPTPTime(ETH, 0, 0);
+    // 2. programme the subsecond increment (MACSSIR) -- must precede the addend
+    ETHHW_SetPTPSubsecondIncrement(ETH, increment);
 
-    // enable fine correction
+    // 3. select fine correction (TSCFUPDT)
     ETHHW_EnablePTPFineCorr(ETH, true);
 
-    // set addend register value
+    // 4. programme the addend (MACTSAR + TSADDREG)
     ETHHW_SetPTPAddend(ETH, addend);
 
-    // set increment register value
-    ETHHW_SetPTPSubsecondIncrement(ETH, increment);
+    // 5. initialise PTP time (TSINIT)
+    ETHHW_InitPTPTime(ETH, 0, 0);
 
     ptphw_set_pps_freq(1.0);
 
