@@ -603,7 +603,9 @@ Tested against `linuxptp` 4.4 on a Linux host.
   of **−535 ns**, best sample −69 ns, with the addend actively tuned around `0xCCCCCCCC`
   and settling ~41 ppb below nominal — the ST-Link MCO's real frequency error. The ±83 µs
   spread is host-side software timestamping, not the board.
-- **F42 resolved** by making the ETH ISR's receive and transmit branches independent rather
-  than `else if`; the exclusive form starved `ETHHW_ProcessTx()` of transmit timestamps.
-  Attribution is not yet proven by reverting — see [port_review.md](port_review.md).
+- **F42 partially understood.** Synchronisation is preceded by a 40–60 s window in which
+  every Delay_Req reports *"no response received"*; it then locks and stays locked. The
+  cause is not identified. The ETH ISR `else if` was tried as an explanation and
+  **disproven by reverting** — the transmit path delivers 100 % of timestamps either way.
+  See [port_review.md](port_review.md).
 

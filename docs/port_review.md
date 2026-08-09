@@ -129,7 +129,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F39 | flexPTP has never been ported to Cortex-M33 / ARMv8-M | Risk | plan Open Items |
 | F40 | No OS-binding macro selected; silently defaults to `FLEXPTP_FREERTOS` | Build (latent) | plan Stage 13 |
 | F41 | `PTP_UPDATE_CLOCK` dead; `ETHHW_UpdatePTPTime()` unreachable and suspect | Minor + latent bug | plan Stage 12 |
-| F42 | TX timestamps starved by the ETH ISR servicing RX exclusively — **PTP now synchronises** | **RESOLVED (attribution pending)** | fixed; confirmation experiment outstanding |
+| F42 | PTP synchronises, but only after a 40–60 s delay from start; cause not identified | **PARTIALLY UNDERSTOOD** | syncs reliably once locked; startup failure unexplained |
 | F43 | `PTP_ACCURACY_LIMIT_NS` (100 ns) is the implicit LOCKED criterion | Minor | plan Stage 20 |
 | F44 | `CMakePresets.json` requires Ninja; not documented as a prerequisite | Minor | plan Stage 19 |
 | F45 | H5 inverts the H7 clock-divider namespaces; the H7 spelling compiles but misconfigures | Critical (silent) | plan Stage 10 (fixed) |
@@ -499,26 +499,54 @@ The ±83 µs spread is **host-side, not the board**. The test NIC has no PHC, so
 master timestamps in software at the mercy of kernel scheduling. The −69 ns sample shows
 what the hardware achieves when that jitter happens to cancel.
 
-### Probable cause: the ISR serviced RX exclusively
+### The ISR `else if` was NOT the cause — disproven by experiment
 
-`ETHHW_ISR()` used `else if` between its receive and transmit branches:
+`ETHHW_ISR()` used `else if` between its receive and transmit branches, so a combined
+RI+TI interrupt serviced only RX. That looked like an excellent explanation. **It is wrong.**
 
-```c
-if (csr & ETH_DMACSR_RI) { ... }
-else if (csr & ETH_DMACSR_TI) { ETHHW_ProcessTx(eth); }   // skipped whenever RI is also set
-```
+Reverting the change and re-testing showed the instrumentation counters unchanged:
+**187 of 187** transmit timestamps requested, captured, found and dispatched, with
+`isrBoth` = 0. The transmit path is unaffected by the branch structure. The change is kept
+because the exclusive form is latently wrong under load, not because it fixes anything.
 
-Once transmit servicing fell behind, `RI` and `TI` coincided on every entry, receive always
-won, and `ETHHW_ProcessTx()` was never reached — so no transmit timestamps, no T3, and
-every Delay_Resp discarded. Making the branches independent clears `TI` promptly, which is
-why `isrBoth` now reads **0**.
+A second hypothesis — that halting the core over SWD was perturbing the system into working
+— was also tested and disproven: a halt/resume in the failing state changed nothing.
 
-> **Attribution not yet proven.** This is the only functional change between the
-> persistently-failing state and the working one, and the mechanism is self-consistent, but
-> it has not been confirmed by reverting. Note also that `isrBoth = 0` was initially read as
-> evidence *against* this explanation — wrongly, since the counter was introduced in the
-> same build as the fix and therefore only ever measured the post-fix world. A
-> revert-and-retest is outstanding.
+> **Two wrong attributions in a row, and the reason is worth recording.** `isrBoth = 0` was
+> first read as evidence *against* the ISR theory, then the theory was adopted anyway when
+> the symptom disappeared after a reflash. The counter had shipped in the same build as the
+> fix, so it only ever measured the post-fix world, and the symptom's disappearance was
+> coincidental. Correlation across a reflash is not evidence; only the revert experiment
+> was.
+
+### What is actually established
+
+- **PTP does synchronise.** Two independent sessions, servo running and holding:
+  mean time error −535 ns over 150 samples in the first, best single samples of −69 ns and
+  −2634 ns. The addend is tuned around the derived `0xCCCCCCCC`, settling ~41 ppb below
+  nominal — the ST-Link MCO's real frequency error, measured and corrected.
+- **The ±83–120 µs spread is host-side**, from software timestamping on a NIC with no PHC.
+- **There is a startup failure lasting 40–60 s.** From `flexptp` start, every Delay_Req
+  reports *"no response received"*, then synchronisation begins and is stable thereafter.
+  Observed in 2 of 2 sessions with the current build.
+- **The transmit timestamp path is not at fault** — 100 % delivery in both builds.
+- **The Delay_Resp is on the wire and correct** — verified by `tcpdump`.
+
+So the failure is in flexPTP's matching of a delivered timestamp to the Delay_Req that
+requested it (`msgb_get_by_uid` / `msgb_get_sent_by_tag`), and it is **transient**: whatever
+state blocks the match clears itself within a minute.
+
+*One observation not yet followed up:* with `else if` restored the failure persisted through
+Del_Req #261 (~4.5 minutes) without recovering, versus 40–60 s with independent branches.
+That is suggestive but was observed once, and one run does not distinguish it from
+variance.
+
+### Next step
+
+Run `ptp log transmission on` **during the failing window** — within the first 40 s of
+`flexptp` starting. It prints both halves of the match, `uid (tag) --->` on send and
+`---> uid` on timestamp arrival. Both attempts so far enabled it too late, after
+synchronisation had already begun.
 
 ### Superseded diagnosis
 
