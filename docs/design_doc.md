@@ -340,3 +340,25 @@ This section will provide a detailed comparison of:
   throwaway shim header, because `main.c` → `flexptp_options.h` → `mac_drv.h` still
   includes `stm32h7xx.h` until Stage 12 — a gate dependency the plan had not anticipated
 
+### Stage 11 — Serial I/O GPDMA rewrite
+- `__HAL_RCC_DMA1_CLK_ENABLE()` → `__HAL_RCC_GPDMA1_CLK_ENABLE()`
+- `DMA1_Stream0` → `GPDMA1_Channel0`; `DMA_REQUEST_USART3_TX` → `GPDMA1_REQUEST_USART3_TX`
+- `DMA1_Stream0_IRQHandler` → `GPDMA1_Channel0_IRQHandler` (matches the Stage 5 vector
+  table, where GPDMA1_Channel0 is slot 43)
+- The H5 `DMA_InitTypeDef` is a different structure, not a renamed one. Field mapping:
+
+  | H7 (stream) | H5 (GPDMA) |
+  |---|---|
+  | `PeriphInc` / `MemInc` | `DestInc` / `SrcInc` (direction-dependent) |
+  | `PeriphDataAlignment` / `MemDataAlignment` | `DestDataWidth` / `SrcDataWidth` |
+  | `MemBurst` / `PeriphBurst` | `SrcBurstLength` / `DestBurstLength` — a beat count, 1..64 |
+  | `FIFOMode` / `FIFOThreshold` | no equivalent; dropped |
+  | `Priority` = `DMA_PRIORITY_VERY_HIGH` | `DMA_HIGH_PRIORITY` |
+  | — | `BlkHWRequest`, `TransferAllocatedPort`, `TransferEventMode` (new, mandatory) |
+
+- For memory→peripheral: `SrcInc = DMA_SINC_INCREMENTED` walks the buffer,
+  `DestInc = DMA_DINC_FIXED` holds `USART3->TDR`
+- `GPIO_SPEED_HIGH` → `GPIO_SPEED_FREQ_HIGH`; the short alias is H7-only (F46)
+- USART3 setup otherwise unchanged: PD8/PD9, AF7, 115200 8N1, register callbacks
+- Verified: compiles clean, zero warnings
+

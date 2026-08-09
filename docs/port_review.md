@@ -89,6 +89,7 @@ Not done: no compilation (the tree does not yet configure — see [F10](#f10)), 
 | F43 | `PTP_ACCURACY_LIMIT_NS` (100 ns) is the implicit LOCKED criterion | Minor | plan Stage 20 |
 | F44 | `CMakePresets.json` requires Ninja; not documented as a prerequisite | Minor | plan Stage 19 |
 | F45 | H5 inverts the H7 clock-divider namespaces; the H7 spelling compiles but misconfigures | Critical (silent) | plan Stage 10 (fixed) |
+| F46 | `GPIO_SPEED_HIGH` legacy alias does not exist on H5 | Minor | plan Stages 11 (fixed) & 14 |
 
 **Every finding is tracked.** F33 and F34 are recorded here only because they are
 observations about upstream code that require no action — noted so a future reader does not
@@ -327,6 +328,16 @@ Stage 12 rewrites the code immediately around that machinery and Stage 15 touche
 `eth_drv_lwip.c` only for header renames, so nothing confirms the path still works. A
 silently broken TX-timestamp path presents as "PTP runs but never converges", which is the
 hardest symptom to attribute correctly. Explicit checks added to Stages 14 and 20.
+
+### F46 — `GPIO_SPEED_HIGH` is an H7-only legacy alias
+
+H5 provides only `GPIO_SPEED_FREQ_HIGH`; the shorter `GPIO_SPEED_HIGH` spelling used
+throughout the H743 project does not exist. Unlike F45 this fails loudly, so it is a
+nuisance rather than a hazard. Fixed in `serial_io.c` at Stage 11.
+
+**It will recur at Stage 14.** The flexPTP hardware port being derived from,
+`ptp_port_stm32h743_lwip.c:134`, uses the same spelling for the PPS pin setup, as do the
+F407 and H743-EtherLib ports. `mac_drv.c` happens to use the long form already.
 
 ### F45 — inverted clock-divider namespaces between H7 and H5
 
