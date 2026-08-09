@@ -58,13 +58,21 @@ void init_pll() {
 	osc.PLL.PLLFRACN = 0;
 	osc.PLL.PLLP = 2;
 	osc.PLL.PLLR = 2;
-	osc.PLL.PLLQ = 4;
+	// PLL1Q feeds the Ethernet PTP timestamp unit on this device -- clk_ptp_ref_i is
+	// hardwired to pll1_q_ck (RM0481 Table 121; the ETHPTPCLKSEL mux exists only on
+	// STM32H543/553xx). VCO is 500 MHz, so Q = 2 gives 250 MHz. See docs/ptp_clock.md.
+	osc.PLL.PLLQ = 2;
 
 	osc.PLL.PLLVCOSEL = RCC_PLL1_VCORANGE_WIDE; // VCO = 500 MHz, inside 192..836 MHz
 	osc.PLL.PLLRGE = RCC_PLL1_VCIRANGE_1;       // VCI = 2 MHz, inside 2..4 MHz
 
 
     HAL_RCC_OscConfig(&osc);
+
+    // Enable the PLL1Q output. HAL_RCC_OscConfig() programmes the divider but leaves the
+    // output gated; without this pll1_q_ck is never generated and the PTP timestamp
+    // counter simply never advances (finding F53).
+    __HAL_RCC_PLL1_CLKOUT_ENABLE(RCC_PLL1_DIVQ);
 
     // initialize clock tree
     clk.ClockType = (RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_HCLK |

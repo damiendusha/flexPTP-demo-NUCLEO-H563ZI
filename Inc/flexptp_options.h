@@ -53,10 +53,12 @@
 // macro is defined, but the porting guide asks for it to be stated.
 #define PTP_ADDEND_INTERFACE
 
-// The STM32H563 has no ETH PTP clock mux (no RCC_CCIPR5.ETHPTPCLKSEL), so the timestamp
-// unit is fed from HCLK. The increment must exceed the 4 ns HCLK period, which makes 5 ns
-// the smallest usable value. Yields addend = 2^32 / 1.25 = 3435973836 (0xCCCCCCCC) with
-// 25% frequency-tuning headroom. Full derivation in docs/ptp_clock.md.
+// The STM32H563 has no ETH PTP clock mux (RCC_CCIPR5.ETHPTPCLKSEL exists only on
+// STM32H543/553xx), so clk_ptp_ref_i is hardwired to pll1_q_ck -- NOT to HCLK.
+// init_pll() configures PLL1Q for 250 MHz and enables the output. The increment must
+// exceed the 4 ns clock period, making 5 ns the smallest usable value, and yielding
+// addend = 2^32 / 1.25 = 3435973836 (0xCCCCCCCC) with 25% tuning headroom.
+// Full derivation in docs/ptp_clock.md.
 #define PTP_MAIN_OSCILLATOR_FREQ_HZ (250000000)
 #define PTP_INCREMENT_NSEC (5)
 

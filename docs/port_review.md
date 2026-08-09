@@ -90,7 +90,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 |---|---|---|---|
 | F1 | PTP baseline misstated: H743 uses 240 MHz, not 200 MHz | Critical | [ptp_clock.md](ptp_clock.md#history) |
 | F2 | Both planned PTP configs have K = 1.0 → addend of 0 | Critical | [ptp_clock.md](ptp_clock.md#the-k--1-constraint), plan Stage 13 |
-| F3 | H563 has no ETH PTP clock mux at all | Critical | [ptp_clock.md](ptp_clock.md#why-there-is-no-clock-source-to-choose), design doc, plan diff table |
+| F3 | H563 has no ETH PTP clock mux — **but the fixed source is `pll1_q_ck`, not HCLK** (partly wrong; corrected) | Critical | [ptp_clock.md](ptp_clock.md#why-there-is-no-clock-source-to-choose), design doc, plan diff table |
 | F4 | PLL1_Q cannot produce 200 MHz alongside 250 MHz SYSCLK | Critical | [ptp_clock.md](ptp_clock.md#pll-arithmetic-for-reference) |
 | F5 | A 4 ns increment is unreachable on this device | Critical | [ptp_clock.md](ptp_clock.md#why-a-4-ns-increment-is-unreachable) |
 | F6 | AHB prescaler must change `DIV2` → `DIV1` | Critical | plan Stage 10, [ptp_clock.md](ptp_clock.md#coupled-decisions) |
@@ -140,7 +140,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F50 | ARMv8-M port names exception handlers directly; the H7-era remaps break the tick | Blocking | plan Stage 15 (fixed) |
 | F51 | H563 UID region rejects **byte** reads; `ETH_MAC_ADDR*` byte-indexed it → HardFault | Critical | fixed, verified on hardware |
 | F52 | `ptphw_init()` set the PTP addend before the subsecond increment → TSADDREG never clears | Critical | fixed, verified on hardware |
-| F53 | PTP timestamp counter is not clocked; MACSTSR/MACSTNR frozen at 0 | **OPEN** | blocks PTP sync |
+| F53 | PTP timestamp counter is not clocked — PLL1Q output never enabled | **RESOLVED** | fixed, verified on hardware |
 | F54 | `ETHHW_SetPTPAddend()` waits unbounded, turning any PTP clock fault into a silent hang | Robustness | open |
 
 **Every finding is tracked.** F33 and F34 are recorded here only because they are
@@ -182,6 +182,23 @@ exist in `stm32h563xx.h`. The HAL guards all ETHPTP clock-selection code with
 **Generalisable lesson:** `stm32h5xx_hal_rcc_ex.h` is a *family* header covering devices up
 to the H5F5/H5E5 series. Reading it alone will suggest peripherals and clock paths the
 H563 does not have. Verify every RCC/peripheral capability against `stm32h563xx.h`.
+
+> ### ⚠ Correction (hardware bring-up, 2026-08-09)
+>
+> The *absence of the mux* is correct. The conclusion drawn from it — that the PTP clock
+> therefore defaults to **HCLK** — was **wrong**, and it caused F53.
+>
+> RM0481 Table 121 *(Kernel clock distribution overview)* carries two rows for the PTP
+> clock: one gated by `ETHPTPCLKSEL` and marked *"available only on STM32H543/553xx"*, and
+> a second, selector-less row whose source column is **`pll1_q_ck`**. The mux-less parts —
+> including the H563 — are hardwired to `pll1_q_ck`.
+>
+> The header evidence supported "no mux" but said nothing about the fixed source; the
+> device header cannot express that, only the reference manual can. Acting on the HCLK
+> inference left `PLL1QEN` clear, so the PTP counter never ran.
+>
+> **The original implementation plan's instinct — "PTP clock: PLL1_Q" — was right**, and
+> this review overrode it. Only the plan's 200 MHz figure was unattainable.
 
 ### F4 — PLL1_Q cannot produce 200 MHz
 
@@ -418,7 +435,24 @@ ST's own `HAL_ETH_PTP_SetConfig()` confirms the required order: `TSENA` → `MAC
 `MACSSIR` = `0x00050000` and `MACTSAR` = `0xCCCCCCCC` are both programmed correctly after
 the fix.
 
-### F53 — PTP timestamp counter is not clocked *(OPEN)*
+### F53 — PTP timestamp counter is not clocked *(RESOLVED)*
+
+**Root cause: `PLL1QEN` was never set, so `pll1_q_ck` — the PTP reference clock on this
+device — was never generated.** `HAL_RCC_OscConfig()` programmes the `PLLQ` divider but
+leaves the output gate closed; `__HAL_RCC_PLL1_CLKOUT_ENABLE(RCC_PLL1_DIVQ)` is required.
+This follows directly from the F3 correction above: the port had been built on the belief
+that PTP ran from HCLK, so nothing ever enabled PLL1Q.
+
+**Fix:** `PLLQ` 4 → 2 (VCO 500 MHz → `pll1_q_ck` 250 MHz) plus the output enable, in
+`init_pll()`. Every derived quantity in [ptp_clock.md](ptp_clock.md) survived unchanged,
+because PLL1Q is configured to the same 250 MHz that HCLK happens to run at.
+
+**Verified on hardware:** `RCC_PLL1CFGR` = `0x00030417` (`PLL1QEN` set), `MACTSCR` =
+`0x00012e03` (`TSADDREG` clear — the addend update now completes), and `MACSTSR` advancing
+7 → 11 across ~4 s of wall clock.
+
+*Original investigation, retained because the elimination was what pointed at the clock:*
+
 
 After F52, both PTP registers hold their intended values — `MACSSIR` = `0x00050000` and
 `MACTSAR` = `0xCCCCCCCC`, exactly as derived in [ptp_clock.md](ptp_clock.md) — but the

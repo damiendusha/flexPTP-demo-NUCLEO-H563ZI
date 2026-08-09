@@ -31,8 +31,8 @@ Companion documents: [architecture.md](architecture.md) (module stack, threads, 
 **Target**: NUCLEO-H563ZI — STM32H563ZI, Cortex-M33 @ 250 MHz, SP-FPU, stm32h5xx HAL
 
 Key decisions:
-- PTP clock: HCLK 250 MHz / 5 ns increment (no clock mux exists on this device — see
-  [PTP Clock](#ptp-clock))
+- PTP clock: **`pll1_q_ck` 250 MHz** / 5 ns increment (fixed source, no mux on this
+  device — see [PTP Clock](#ptp-clock))
 - HSE: Bypass mode (stock Nucleo, ST-Link MCO at 8 MHz)
 - FPU: Keep `double` in Kalman filter, accept software emulation
 - Network stack: LwIP only (initial port)
@@ -118,7 +118,7 @@ workarounds — and re-apply the `ptphw_gettime()` atomicity fix by hand, or acc
 ## System Clock Tree
 
 **SYSCLK = 250 MHz, HCLK = 250 MHz.** This is the H563's maximum, and on this part it is
-also the PTP timestamp clock, so it is not merely a performance choice.
+the CPU/AHB clock. The PTP timestamp clock is separate — `pll1_q_ck`, also 250 MHz.
 
 ```
 HSE 8 MHz (RCC_HSE_BYPASS — ST-Link MCO, no crystal fitted)
@@ -134,7 +134,8 @@ HSE 8 MHz (RCC_HSE_BYPASS — ST-Link MCO, no crystal fitted)
 ```
 
 Comparison with the source project: the H743 ran SYSCLK 480 MHz with `RCC_HCLK_DIV2`,
-giving HCLK — and therefore a PTP clock — of 240 MHz.
+giving HCLK of 240 MHz, which on that part *was* also the PTP clock. On the H563 the two
+are independent.
 
 ### Why these values
 
@@ -142,10 +143,12 @@ giving HCLK — and therefore a PTP clock — of 240 MHz.
 range is 192–836 MHz. For SYSCLK = 250 MHz, `PLLP = 2` (VCO 500) is the only solution;
 `PLLP = 4` would need a 1000 MHz VCO, above the ceiling.
 
-**`AHBCLKDivider` must be `RCC_HCLK_DIV1`.** The H563 has no Ethernet PTP clock
-multiplexer, so the timestamp unit is fed from HCLK directly. Carrying over the H743's
-`RCC_HCLK_DIV2` would give HCLK 125 MHz and a PTP clock running at 0.375× real time —
-a silent failure rather than an obvious one. See [ptp_clock.md](ptp_clock.md).
+**`AHBCLKDivider` = `RCC_SYSCLK_DIV1`** keeps HCLK at the full 250 MHz. This is a
+performance and MDIO-divider decision, *not* a PTP one — on the H563 the PTP clock is
+`pll1_q_ck`, independent of the AHB divider.
+
+**`PLLQ` = 2 with the output enabled** is the PTP-critical setting: `pll1_q_ck` is the
+timestamp clock. See [ptp_clock.md](ptp_clock.md).
 
 **`PLLN = TARGET_SYSCLK_MHZ` is exact, not approximate.** Because VCI is 2 MHz and
 `PLLP` is 2, SYSCLK in MHz equals `PLLN` numerically. The H743 project relied on the same
@@ -170,7 +173,7 @@ increment.
 
 | Parameter | Value |
 |---|---|
-| `PTP_MAIN_OSCILLATOR_FREQ_HZ` | 250 000 000 (= HCLK) |
+| `PTP_MAIN_OSCILLATOR_FREQ_HZ` | 250 000 000 (= `pll1_q_ck`) |
 | `PTP_INCREMENT_NSEC` | 5 |
 | Initial addend | 3435973836 (`0xCCCCCCCC`) |
 | Timestamp granularity | 5 ns |
@@ -179,11 +182,12 @@ increment.
 
 Three things are worth knowing without reading further:
 
-1. **There is nothing to configure.** The STM32H563 has no Ethernet PTP kernel-clock
-   multiplexer (`RCC_CCIPR5.ETHPTPCLKSEL` does not exist on this device, only on later
-   H5 parts). `ptp_ker_ck` is hardwired to HCLK, so no `HAL_RCCEx_PeriphCLKConfig()` call
-   is required — or possible.
-2. **The subsecond increment must exceed the PTP clock period.** With a 4 ns HCLK period,
+1. **The source is fixed, the frequency is not.** The H563 has no PTP clock mux
+   (`RCC_CCIPR5.ETHPTPCLKSEL` exists only on STM32H543/553xx), and RM0481 Table 121 shows
+   the mux-less devices are hardwired to **`pll1_q_ck`** — *not* HCLK. So no
+   `HAL_RCCEx_PeriphCLKConfig()` call is possible, but PLL1Q must be set to 250 MHz **and
+   its output enabled** with `__HAL_RCC_PLL1_CLKOUT_ENABLE(RCC_PLL1_DIVQ)`.
+2. **The subsecond increment must exceed the PTP clock period.** With a 4 ns clock period,
    5 ns is the smallest usable increment. Choosing 4 ns produces an addend that does not
    fit in 32 bits and a clock that never ticks.
 3. **Timestamp granularity is 5 ns — the same as the H743 source project — and cannot be
@@ -404,7 +408,7 @@ This section will provide a detailed comparison of:
   `RCC_PLL1VCOWIDE` → `RCC_PLL1_VCORANGE_WIDE`, `RCC_PLL1VCIRANGE_1` → `RCC_PLL1_VCIRANGE_1`
 - Clock tree: dropped `SYSCLKDivider`, `APB4CLKDivider`, `RCC_CLOCKTYPE_D1PCLK1`/`D3PCLK1`;
   added `RCC_CLOCKTYPE_PCLK3`
-- **`AHBCLKDivider` = `RCC_SYSCLK_DIV1`** (HCLK 250 MHz, also the PTP clock) and APB
+- **`AHBCLKDivider` = `RCC_SYSCLK_DIV1`** (HCLK 250 MHz) and APB
   dividers = `RCC_HCLK_DIV2`. The H5 divider namespaces are *inverted* relative to the H7 —
   see finding F45 in [port_review.md](port_review.md); this is a silent-miscompile trap
 - `FLASH_LATENCY_4` → **`FLASH_LATENCY_5`** for 250 MHz at VOS0
@@ -469,7 +473,7 @@ resolved unchanged. The work was entirely peripheral plumbing:
 - Verified: `mac_drv.c` and `phy_common.c` both compile clean, zero warnings
 
 ### Stage 13 — flexPTP options
-- `PTP_MAIN_OSCILLATOR_FREQ_HZ` 240 MHz → **250 MHz** (= HCLK), `PTP_INCREMENT_NSEC` 5.
+- `PTP_MAIN_OSCILLATOR_FREQ_HZ` 240 MHz → **250 MHz** (= `pll1_q_ck`), `PTP_INCREMENT_NSEC` 5.
   Confirmed the core computes `PTP_ADDEND_INIT` = 3435973836 (`0xCCCCCCCC`), K = 1.25,
   ≈0.29 ppb tuning resolution — matching [ptp_clock.md](ptp_clock.md) exactly
 - Added `#define PTP_ADDEND_INTERFACE` explicitly (it was auto-selected; the porting guide
@@ -556,9 +560,12 @@ needed). Debugging via ST's OpenOCD fork built in Stage 18.
 F52 (PTP addend/increment ordering). Both compiled and linked cleanly and were invisible
 to static review.
 
+**F53 resolved.** The PTP timestamp counter is now running: `PLL1QEN` was never set, so
+`pll1_q_ck` — the PTP reference clock on this device — was never generated. Fixed by
+`PLLQ` 4 → 2 plus `__HAL_RCC_PLL1_CLKOUT_ENABLE(RCC_PLL1_DIVQ)`. Verified:
+`MACSTSR` advances 7 → 11 across ~4 s, `TSADDREG` clears, `MACTSAR` = `0xCCCCCCCC`.
+
 **Open:**
-- **F53** — the PTP timestamp counter is not clocked, so PTP cannot yet synchronise.
-  Everything beneath it works.
 - **F54** — `ETHHW_SetPTPAddend()` waits on `TSADDREG` with no timeout, eight times over.
   This is what turned F53 from "PTP does not lock" into a silent hang of the `ptp` thread,
   taking the PTP CLI commands down with it. Inherited from the H743 driver, where the wait

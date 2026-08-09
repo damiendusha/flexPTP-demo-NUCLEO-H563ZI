@@ -34,7 +34,7 @@ needs access to the DMA descriptors that the HAL driver abstracts away.
 | RTOS | FreeRTOS V11.3.0, `ARM_CM33_NTZ` non-secure port, heap_4 |
 | RTOS API | CMSIS-RTOS2 shim for application threads; flexPTP calls FreeRTOS directly |
 | Network stack | lwIP 2.2.1 |
-| PTP | flexPTP, Kalman servo, ADDEND clock interface |
+| PTP | flexPTP, Kalman servo, ADDEND clock interface; timestamp clock is `pll1_q_ck` at 250 MHz |
 | Console | USART3 → ST-Link VCP, 115200 8N1, TX via GPDMA |
 | PHY | LAN8742A over RMII |
 

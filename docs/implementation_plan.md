@@ -22,7 +22,7 @@
 - [x] **Stage 10** — Clock & power init (`main.c`)
 - [x] **Stage 11** — `serial_io.c` (GPDMA rewrite)
 - [x] **Stage 12** — `mac_drv.c/h` (register audit + port)
-- [x] **Stage 13** — `flexptp_options.h` (PTP HCLK 250 MHz / 5 ns)
+- [x] **Stage 13** — `flexptp_options.h` (PTP `pll1_q_ck` 250 MHz / 5 ns)
 - [x] **Stage 14** — flexPTP H563 hardware port 🆕
 - [x] **Stage 15** — Global HAL header sweep
 - [ ] **Stage 16** — Build & warning cleanup
@@ -83,7 +83,7 @@ build at each of these points and do not proceed until it passes:
 | **ETH_TXD1** | PB13 (AF11) | **PB15** (AF11) — must be changed in `mac_drv.c` |
 | **PPS Pin** | PG8 (AF11, set by flexPTP port); PB5 also configured in `mac_drv.c` | **PG8** (AF11), set by the flexPTP port only — PB5 dropped |
 | **RXER Pin** | PG2 (AF11) | **Dropped** — not connected on H563 Nucleo |
-| **ETH PTP clock** | HCLK (240 MHz) | HCLK (250 MHz) — **no `ETHPTPCLKSEL` mux on this device** |
+| **ETH PTP clock** | HCLK (240 MHz) | **`pll1_q_ck` (250 MHz)** — no `ETHPTPCLKSEL` mux on this device; RM0481 Table 121 hardwires mux-less parts to `pll1_q_ck`. PLL1Q output must be explicitly enabled. |
 | **DMA Architecture** | DMA1/DMA2 (stream-based) | GPDMA (channel-based, linked-list) |
 | **Eth Clock Enables** | `ETH1MAC`, `ETH1TX`, `ETH1RX` | `ETH`, `ETHTX`, `ETHRX` (H5 naming) |
 | **SYSCFG** | `SYSCFG` (`__HAL_RCC_SYSCFG_CLK_ENABLE`, `HAL_SYSCFG_*`) | Renamed **`SBS`** (`__HAL_RCC_SBS_CLK_ENABLE`, `HAL_SBS_*`) |
@@ -297,11 +297,12 @@ Rewrite clock/power sections of `Src/main.c`:
   `HAL_EnableCompensationCell()` → `HAL_SBS_EnableVddIO1CompensationCell()` /
   `…VddIO2…`
 - `init_pll()`: target 250 MHz SYSCLK (VCO 500 MHz, `PLLP` = 2), `FLASH_LATENCY_5`
-- `init_pll()`: **`AHBCLKDivider` = `RCC_HCLK_DIV1`** (was `DIV2`) — HCLK *is* the PTP clock
+- `init_pll()`: **`AHBCLKDivider` = `RCC_SYSCLK_DIV1`** (was `DIV2`) — HCLK 250 MHz
+- `init_pll()`: **`PLLQ` = 2** and `__HAL_RCC_PLL1_CLKOUT_ENABLE(RCC_PLL1_DIVQ)` — `pll1_q_ck` is the PTP clock
 - `init_pll()`: drop `SYSCLKDivider`, `APB4CLKDivider`, `RCC_CLOCKTYPE_D1PCLK1`/`D3PCLK1`
   (→ `RCC_CLOCKTYPE_PCLK3`); rename `RCC_PLLSOURCE_HSE` → `RCC_PLL1_SOURCE_HSE`,
   `RCC_PLL1VCOWIDE` → `RCC_PLL1_VCORANGE_WIDE`, `RCC_PLL1VCIRANGE_1` → `RCC_PLL1_VCIRANGE_1`
-- No PTP clock routing is needed: the H563 has no `ETHPTPCLKSEL` mux
+- No PTP clock *mux* to programme, but PLL1Q must be configured and its output enabled
 - `init_randomizer()`: update RNG clock enable for H5
 - `init_mpu()`: ARMv8-M MPU disable
 - Update HAL header includes (`stm32h7xx_hal.h`, `stm32h7xx_ll_rng.h`)
@@ -376,8 +377,8 @@ Synopsys QoS core. The real work is peripheral plumbing, not registers:
 ### Stage 13 — flexPTP options
 
 Update `Inc/flexptp_options.h`:
-- `PTP_MAIN_OSCILLATOR_FREQ_HZ` = `250000000` (= HCLK; no ETH PTP clock mux on this device)
-- `PTP_INCREMENT_NSEC` = `5` (must exceed the 4 ns HCLK period — see [ptp_clock.md](ptp_clock.md))
+- `PTP_MAIN_OSCILLATOR_FREQ_HZ` = `250000000` (= `pll1_q_ck`; no mux on this device)
+- `PTP_INCREMENT_NSEC` = `5` (must exceed the 4 ns clock period — see [ptp_clock.md](ptp_clock.md))
 - Confirm the resulting addend is 3435973836 (`0xCCCCCCCC`), not 0
 - Repoint the hardware-port include at the new H563 port from Stage 14
 - Add `#define PTP_ADDEND_INTERFACE` explicitly. It is auto-selected today; the porting
