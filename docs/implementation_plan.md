@@ -18,7 +18,7 @@
 - [x] **Stage 6** — `stm32h5xx_hal_conf.h`
 - [x] **Stage 7** — Consolidate build config into `CMakeLists.txt` 🆕
 - [x] **Stage 8** — Build-system retarget (CMake, MCU flags, HAL sources) 🆕
-- [ ] **Stage 9** — FreeRTOS configuration + kernel port selection
+- [x] **Stage 9** — FreeRTOS configuration + kernel port selection
 - [ ] **Stage 10** — Clock & power init (`main.c`)
 - [ ] **Stage 11** — `serial_io.c` (GPDMA rewrite)
 - [ ] **Stage 12** — `mac_drv.c/h` (register audit + port)
@@ -277,7 +277,8 @@ done here if convenient.
   `xPortSysTickHandler` → `OS_Tick_Handler`) against the CM33 port
 
 **`Middlewares/CMakeLists.txt`** — not previously owned by any stage:
-- `FREERTOS_PORT` `GCC_ARM_CM7` → `GCC_ARM_CM33_NTZ`
+- `FREERTOS_PORT` `GCC_ARM_CM7` → `GCC_ARM_CM33_NTZ_NONSECURE` (the kernel's actual
+  option name; `GCC_ARM_CM33_NTZ` is not accepted)
 - Include path `portable/GCC/ARM_CM7/r0p1` → `portable/GCC/ARM_CM33_NTZ/non_secure`
 - `device_header` variable → the CM33_NTZ `portmacro.h`
 - **Pin `GIT_TAG`** to a FreeRTOS-Kernel release tag instead of `main`

@@ -298,3 +298,24 @@ This section will provide a detailed comparison of:
 - Note: the preset requires the Ninja generator (F44); `build.sh` uses the CMake default
   instead, so the two build paths have different prerequisites
 
+### Stage 9 — FreeRTOS configuration & kernel port
+- `configCPU_CLOCK_HZ` 480 MHz → **250 MHz**. This also drives the PLL: `init_pll()`
+  computes `PLLN` from it, so it is the single source of truth for SYSCLK
+  (see [System Clock Tree](#system-clock-tree))
+- Added the ARMv8-M block the CM33 port hard-`#error`s without:
+  `configENABLE_TRUSTZONE 0`, `configRUN_FREERTOS_SECURE_ONLY 0`,
+  `configENABLE_FPU 1`, `configENABLE_MPU 0`
+- `configENABLE_MVE` deliberately **left undefined** — the CM33 port errors out unless it
+  is absent or 0
+- Pre-existing settings that turned out to already be correct: `configUSE_16_BIT_TICKS 0`
+  (satisfies FreeRTOS 11's tick-width requirement, so `configTICK_TYPE_WIDTH_IN_BITS` is
+  not needed) and `configUSE_PORT_OPTIMISED_TASK_SELECTION 0` (mandatory here, since
+  `configMAX_PRIORITIES` is 56 and the optimised selector caps at 32)
+- `Middlewares/CMakeLists.txt`: `FREERTOS_PORT` → **`GCC_ARM_CM33_NTZ_NONSECURE`**. Note
+  the plan said `GCC_ARM_CM33_NTZ`; that is not one of the kernel's option names.
+  Include path and exported `device_header` → `portable/GCC/ARM_CM33_NTZ/non_secure`
+- **Kernel pinned to `V11.3.0`**, replacing `GIT_TAG main`. Tracking a moving branch while
+  changing the port was a reproducibility hazard (F24)
+- **Gate passed**: kernel builds clean; the object produced is
+  `portable/GCC/ARM_CM33_NTZ/non_secure/port.c.obj`, confirming the CM33 port is selected
+

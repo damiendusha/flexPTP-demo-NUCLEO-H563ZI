@@ -47,9 +47,18 @@
 #define configUSE_PREEMPTION			1
 #define configUSE_IDLE_HOOK				1
 #define configUSE_TICK_HOOK				1
-#define configCPU_CLOCK_HZ				( 480000000 )
+#define configCPU_CLOCK_HZ				( 250000000 )
 #define configTICK_RATE_HZ				( ( TickType_t ) 1000 )
 #define configMAX_PRIORITIES			( 56 )
+
+/* ARMv8-M (Cortex-M33) port configuration.
+ * The CM33 port hard-#errors if configENABLE_FPU, configENABLE_MPU or
+ * configENABLE_TRUSTZONE are undefined. configENABLE_MVE is deliberately left
+ * undefined: the port requires it to be absent or 0 on the Cortex-M33. */
+#define configENABLE_TRUSTZONE			0
+#define configRUN_FREERTOS_SECURE_ONLY	0
+#define configENABLE_FPU				1
+#define configENABLE_MPU				0
 #define configMINIMAL_STACK_SIZE		( ( unsigned short ) 130 )
 #define configTOTAL_HEAP_SIZE			( ( size_t ) ( 30 * 1024 ) )
 #define configAPPLICATION_ALLOCATED_HEAP 1 
