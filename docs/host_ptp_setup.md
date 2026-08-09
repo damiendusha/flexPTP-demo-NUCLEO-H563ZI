@@ -2,26 +2,33 @@
 
 How to set up a Linux host as a PTP grandmaster for this demo, using `linuxptp`.
 
-> **Target status:** the PTP timestamp clock runs (F53 resolved — `PLL1QEN` had never been
-> enabled, so `pll1_q_ck` was absent). The board should now respond to Sync messages.
-> End-to-end lock has not yet been demonstrated against a grandmaster.
+> **Target status: locked and disciplining the clock.** Verified against `ptp4l` on a
+> directly-connected host with the **`default`** profile: 190 of 191 samples applying a
+> correction, offset holding at a mean of 519 ns with an 83 µs peak. The residual is the
+> host's software-timestamping floor, not the board — see
+> [Accuracy expectations](#accuracy-expectations).
 
-## What the target expects
+## Two routes
 
-The application loads the `gPTP` profile at startup (`FLEXPTP_INITIAL_PROFILE` in
-`Src/main.c`), so the host **must** match these:
+The board ships with the `gPTP` profile loaded at startup (`FLEXPTP_INITIAL_PROFILE` in
+[`Src/main.c`](../Src/main.c)), but it will run either profile. Pick one and match both ends:
 
-| Parameter | Value | Why it matters |
+| | **`default`** — plain IEEE 1588 | **`gPTP`** — 802.1AS |
 |---|---|---|
-| Transport | **Layer 2** (`PTP_TP_802_3`), ethertype 0x88F7 | Not UDP/IPv4. An L4 master is invisible to the board. |
-| Destination MAC | **`01:80:C2:00:00:0E`** | 802.1AS uses this, *not* the `01:1B:19:00:00:00` of default L2 PTP. |
-| `transportSpecific` | **`0x1`** | 802.1AS sets the majorSdoId to 1; frames with 0 are discarded. |
-| Delay mechanism | **P2P** (peer delay) | The board is `PTP_DM_P2P`. E2E will not interoperate. |
-| `logSyncInterval` | `-3` (8 Sync/s) | Matches the board's preset. |
-| Board `priority1` | 128 | The host must be **numerically lower** to win BMCA. |
+| Transport | UDP/IPv4, multicast 224.0.1.129 | Raw Layer 2, ethertype 0x88F7 |
+| Delay mechanism | E2E | P2P |
+| Host command | plain `ptp4l`, no config file | `ptp4l -f /etc/linuxptp/gPTP.cfg` |
+| Board command | **`ptp profile preset default`** | loaded at boot, nothing to do |
+| Status | **proven on this port** | not yet exercised end to end |
 
-The first three are the ones that cause silent failure: everything looks healthy on the
-host, and the board simply never sees a packet.
+The `default` route is the one below in [Command](#command); the gPTP route is
+[further down](#alternative-the-gptp-profile). They do not interoperate in any combination —
+a mismatch is silent on both sides.
+
+> **A reflash resets the board to `gPTP`.** The profile is not persisted, so
+> `ptp profile preset default` must be re-issued after every flash. Symptom if you forget:
+> the board reports `LISTENING -> PRE_MASTER -> MASTER` because it never hears an Announce
+> it recognises, and the host sees nothing at all.
 
 ## Prerequisites
 
@@ -34,7 +41,66 @@ ethtool -T <iface> | grep -i "PTP Hardware Clock"
 If that last command reports `PTP Hardware Clock: none`, your NIC has no hardware
 timestamping and you must add `-S` (software timestamping) below.
 
+### On a direct cable
+
+The `default` route runs over UDP, so the board needs an address. A switch is worth avoiding
+outright — one silently discarded every Delay_Resp here (F42) — but a direct cable means
+serving DHCP yourself. Give the NIC an address and run `dnsmasq` on that interface alone:
+
+```bash
+sudo ip addr add 192.168.2.1/24 dev enp5s0 && sudo ip link set enp5s0 up
+sudo dnsmasq -d -i enp5s0 --bind-interfaces --dhcp-range=192.168.2.100,192.168.2.200,1h
+```
+
+The lease it logs confirms two things at once: the link works, and the MAC is the one
+derived from the device UID (`56:00:1e:...` here — see F51). The board prints its address as
+`IP-address: …` once DHCP completes; nothing PTP will work before that line appears.
+
 ## Command
+
+For the **`default`** profile there is no config file and nothing to override — every
+setting that matters is already `ptp4l`'s default:
+
+```bash
+sudo ptp4l -i enp5s0 -S -m --serverOnly=1 --priority1=100
+```
+
+and on the target, over the ST-Link VCP:
+
+```
+flexptp
+ptp profile preset default
+ptp log def on
+```
+
+The board should go `LISTENING -> UNCALIBRATED -> SLAVE` within a couple of seconds and
+begin printing one line per Sync:
+
+```
+T1 [s] | T1 [ns] | T4 [s] | T4 [ns] | Dt [s] | Dt [ns] | Dt [tick] | addend | corr_ppb | mpd_ns | sync_period_ns
+1786314408 145267096 1786314407 144... 0  -10692  -2138  3435821352   658.7748  50702  1000140100
+```
+
+Watch two columns. `Dt [ns]` is the offset and should collapse toward zero. **`corr_ppb` is
+the one that matters**: if it is `0.0000` on every line while the offset drifts, the servo is
+not running — the clock is free-running and PTP is doing nothing, however healthy the state
+machine looks. That was [F59](port_review.md#f59--one-duplicated-sync-cycle-latches-the-servo-into-nan-for-ever-resolved).
+
+## Alternative: the gPTP profile
+
+The host **must** match these:
+
+| Parameter | Value | Why it matters |
+|---|---|---|
+| Transport | **Layer 2** (`PTP_TP_802_3`), ethertype 0x88F7 | Not UDP/IPv4. An L4 master is invisible to the board. |
+| Destination MAC | **`01:80:C2:00:00:0E`** | 802.1AS uses this, *not* the `01:1B:19:00:00:00` of default L2 PTP. |
+| `transportSpecific` | **`0x1`** | 802.1AS sets the majorSdoId to 1; frames with 0 are discarded. |
+| Delay mechanism | **P2P** (peer delay) | The board is `PTP_DM_P2P`. E2E will not interoperate. |
+| `logSyncInterval` | `-3` (8 Sync/s) | Matches the board's preset. |
+| Board `priority1` | 128 | The host must be **numerically lower** to win BMCA. |
+
+The first three are the ones that cause silent failure: everything looks healthy on the
+host, and the board simply never sees a packet.
 
 > **The config must live in `/etc/linuxptp/`.** Ubuntu ships an AppArmor profile at
 > `/etc/apparmor.d/usr.sbin.ptp4l` confining ptp4l's config reads to
@@ -88,17 +154,20 @@ above is the one to prefer.
 On the host, in a second terminal:
 
 ```bash
-sudo pmc -u -b 0 -f /etc/linuxptp/gPTP.cfg 'GET PORT_DATA_SET'
-sudo pmc -u -b 0 -f /etc/linuxptp/gPTP.cfg 'GET TIME_STATUS_NP'
-sudo pmc -u -b 0 -f /etc/linuxptp/gPTP.cfg 'GET PARENT_DATA_SET'   # who won BMCA
+sudo pmc -u -b 0 'GET PORT_DATA_SET'
+sudo pmc -u -b 0 'GET TIME_STATUS_NP'
+sudo pmc -u -b 0 'GET PARENT_DATA_SET'    # who won BMCA
 ```
+
+For the gPTP route add `-f /etc/linuxptp/gPTP.cfg` to each.
 
 On the target, over the ST-Link VCP (`/dev/ttyACM0`, 115200 8N1):
 
 ```
-flexptp        # start the stack if it is not already running
-ptp log        # watch the offset converge
-ptp info       # show the current profile and master
+flexptp                          # start the stack if it is not already running
+ptp profile preset default       # re-issue after every flash
+ptp log def on                   # watch the offset converge
+ptp info                         # show the current profile and master
 ```
 
 A healthy slave shows the offset shrinking toward zero and the state reaching
@@ -124,16 +193,20 @@ Two further limits are inherent to this board and unrelated to the host:
 
 ## If nothing happens
 
-Symptoms are usually silence rather than errors, because L2 PTP has no handshake.
+Symptoms are usually silence rather than errors: PTP has no handshake, so a mismatch looks
+identical to an absent peer.
 
-| Check | Command |
+| Symptom | Check |
 |---|---|
-| Are frames leaving the host? | `sudo tcpdump -i <iface> -e ether proto 0x88f7` |
-| Is the board on the same physical segment? | PTP is L2 — it does not cross routers |
-| Sync arrives but Delay_Resp never does | **A switch may silently discard PTP Delay_Resp** while forwarding Sync/Announce on the same multicast group. Verified on this setup. Test with a direct cable. |
-| Did BMCA pick the wrong grandmaster? | `pmc ... 'GET PARENT_DATA_SET'`; lower `--priority1` |
-| Right destination MAC? | tcpdump should show `01:80:c2:00:00:0e`, not `01:1b:19:...` |
+| Board reports `LISTENING -> PRE_MASTER -> MASTER` | **Profile mismatch** — it heard no Announce it recognised, so it elected itself. Almost always a `default`/`gPTP` mix-up, and the usual cause is a reflash reverting the board to `gPTP`. Re-issue `ptp profile preset default`. |
+| Nothing at all on the board | Are frames leaving the host? `sudo tcpdump -i <iface> -e ether proto 0x88f7` for gPTP, `sudo tcpdump -i <iface> udp port 319 or udp port 320` for `default` |
+| Sync arrives but Delay_Resp never does | **A switch may silently discard PTP Delay_Resp** while forwarding Sync/Announce on the same multicast group. Verified on this setup — it cost days. Test with a direct cable ([F42](port_review.md)). |
+| Offset drifts while `corr_ppb` stays `0.0000` | The servo is not running; the clock is free-running ([F59](port_review.md)). `ptp reset` restores it. |
+| Board is on a different segment | PTP multicast does not cross routers, and the gPTP profile is below IP entirely |
+| Did BMCA pick the wrong grandmaster? | `sudo pmc -u -b 0 'GET PARENT_DATA_SET'`; lower `--priority1` |
+| Right destination MAC? (gPTP) | tcpdump should show `01:80:c2:00:00:0e`, not `01:1b:19:...` |
 | Is the target's PTP stack running? | `flexptp` at the CLI; look for *"Turning PTP on!"* |
 | `-f` fails with "Permission denied" as root | AppArmor: the config must be under `/etc/linuxptp/` |
 
-Note that firewall rules are irrelevant here: this is raw Ethernet, below IP.
+Firewall rules are irrelevant for the gPTP route — that is raw Ethernet, below IP. For the
+`default` route they are not: it is UDP on ports 319 and 320.
