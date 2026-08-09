@@ -201,3 +201,19 @@ This section will provide a detailed comparison of:
   GPDMA1_Channel0 at index 43, USART3 at 76, USB_DRD_FS at 90, ETH at 122
 - No H7 startup file existed in this repo to delete (`Startup/` was empty from Stage 1)
 
+### Stage 6 — HAL configuration header
+- Created `Inc/stm32h5xx_hal_conf.h` by transforming the HAL submodule's
+  `stm32h5xx_hal_conf_template.h` programmatically, so it stays close to ST's baseline
+- Modules enabled (mirroring the H743 project): CORTEX, CRC, DMA, ETH, FLASH, GPIO,
+  HASH, PWR, RCC, RNG, TIM, UART. The other 49 are commented out.
+- `HSE_VALUE` 25 MHz (template default) → **8 MHz** (Nucleo ST-Link MCO)
+- `USE_HAL_UART_REGISTER_CALLBACKS` 0 → **1** — mandatory, `serial_io.c` calls
+  `HAL_UART_RegisterCallback()`; the H743 project also sets this
+- Ethernet block carried over from the H743 conf with the H5 unique-ID base:
+  `UNIQUE_DEV_ID_BASE` `0x1FF1E800` → **`0x08FFF800`**, which feeds `ETH_MAC_ADDR0..5`
+- `ETH_TX_DESC_CNT` / `ETH_RX_DESC_CNT` = 24 (H5 HAL defaults to 4, so this override
+  is required, not cosmetic)
+- No H7 HAL conf existed in this repo to delete (deliberately not copied in Stage 1)
+- Verified: a TU including `stm32h5xx_hal.h` + `stm32h5xx_ll_rng.h` compiles clean under
+  `-Wall -Wextra`, and `FLASH_LATENCY_5` / `RCC_HSE_BYPASS` / `ETH_MAC_ADDR1` all resolve
+
