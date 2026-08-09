@@ -604,6 +604,8 @@ graph TD
 | Item | Stage | Notes |
 |---|---|---|
 | PTP timestamp clock (F53) | 20 | **Blocking for PTP.** `MACSSIR`/`MACTSAR` programme correctly but the counter never advances and `TSADDREG` never clears — reproduced from the debugger with the core halted, so it is not firmware logic. Next: ETH chapter clock/reset requirements, then the errata sheet. |
+| **Temporary instrumentation to remove** | 12 | `ethdbg` counters in `mac_drv.c`/`.h`, and the forced `ptp_log_enable(PTP_LOG_TRANSMISSION/INFO)` in `main.c`. All marked TEMPORARY; they exist only for the F42 investigation and must not ship. |
+| PTP intermittent lock (F42) | 20 | **Open.** PTP synchronises in some runs (mean −535 ns) and in others reports "no response received" indefinitely. Driver measured clean at 1 dispatch per request; duplication observed inside flexPTP. Next measurement is inside the submodule. |
 | Unbounded driver waits (F54) | 12 | `ETHHW_SetPTPAddend()` spins on `TSADDREG` with no timeout, so a PTP clock fault hangs the `ptp` thread silently instead of reporting. Fix as a bounded wait that returns an error — not a silent timeout. |
 | flexPTP on ARMv8-M | 16, 20 | This is flexPTP's first Cortex-M33 target — the library is documented as tested on Cortex-M4/M7 only. No specific defect is known; treat unexplained core-level misbehaviour as potentially an ARMv7-M assumption rather than a port bug (F39). |
 | CMSIS Core version | 16 | `Drivers/CMSIS/Include` is CMSIS Core 5.6, carried over from the H7 project. CMSIS device pack is 1.7.0. Expected to work with `core_cm33.h`, but a version bump is the first thing to try if odd core-header errors appear. |

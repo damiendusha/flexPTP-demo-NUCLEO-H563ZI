@@ -230,6 +230,12 @@ void flexptp_user_event_cb(PtpUserEventCode uev) {
 
         ptp_log_enable(PTP_LOG_DEF, true);
         ptp_log_enable(PTP_LOG_BMCA, true);
+        // TEMPORARY (F42 investigation): PTP_LOG_TRANSMISSION has no CLI switch --
+        // "ptp log" only accepts {def|corr|ts|info|locked|bmca} -- so it can only be
+        // turned on programmatically. It prints both halves of the transmit-timestamp
+        // match: "uid (tag) --->" on send and "---> uid" on timestamp arrival.
+        ptp_log_enable(PTP_LOG_TRANSMISSION, true);
+        ptp_log_enable(PTP_LOG_INFO, true);
         break;
     default:
         break;

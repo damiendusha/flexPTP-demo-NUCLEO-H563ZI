@@ -143,6 +143,8 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F53 | PTP timestamp counter is not clocked — PLL1Q output never enabled | **RESOLVED** | fixed, verified on hardware |
 | F54 | `ETHHW_SetPTPAddend()` waits unbounded, turning any PTP clock fault into a silent hang | Robustness | open |
 | F55 | Welcome message tells users to fit an **8 MHz** oscillator at X3; on MB1404 X3 is **25 MHz** | Wrong advice | plan Stage 19 |
+| F56 | `PTP_LOG_TRANSMISSION` exists in flexPTP's enum but has no CLI switch | Minor (cost hours) | documented |
+| F57 | `ETHHW_ProcessTx()` never reset its per-pass descriptor count — could re-dispatch a stale index | Latent bug | fixed |
 
 **Every finding is tracked.** F33 and F34 are recorded here only because they are
 observations about upstream code that require no action — noted so a future reader does not
@@ -541,12 +543,45 @@ Del_Req #261 (~4.5 minutes) without recovering, versus 40–60 s with independen
 That is suggestive but was observed once, and one run does not distinguish it from
 variance.
 
-### Next step
+### Measured facts (stable across many runs)
 
-Run `ptp log transmission on` **during the failing window** — within the first 40 s of
-`flexptp` starting. It prints both halves of the match, `uid (tag) --->` on send and
-`---> uid` on timestamp arrival. Both attempts so far enabled it too late, after
-synchronisation had already begun.
+| Fact | Method |
+|---|---|
+| Driver dispatches **exactly one** timestamp per request — 125/125, `cbPtrNull` = 0 | SWD counters |
+| `uid` and tag (2 = `RPMT_DELAY_REQ`) correct on **both** halves of the match | `PTP_LOG_TRANSMISSION` |
+| Delay_Resp correct on the wire, answered in ~192 µs | `tcpdump` |
+| flexPTP emits ~**1.15** `---> uid` lines per send — duplicates like `---> 3` at ticks 306 *and* 309 | console log |
+| PTP *does* synchronise sometimes: mean −535 ns over 150 samples, best −69 ns | servo log |
+
+The duplicates come from **separate ISR invocations**, not one loop iterating twice, and the
+driver counters prove it dispatches once. So the duplication is generated inside flexPTP,
+downstream of a clean dispatch — `ptp_transmit_timestamp_cb()` writes `sTxCbFIFO` and posts
+`PTN_TRANSMIT_DONE` as two independent queue operations, and the handler that drains them
+prints the `---> uid` line. More prints than dispatches means the notification count and the
+FIFO depth have drifted apart, so the handler re-reads a stale entry.
+
+### Four disproven attributions — and why
+
+Each was plausible, each was disproven by measurement, and the pattern is worth recording
+because it recurred:
+
+| Attribution | Disproved by |
+|---|---|
+| ETH ISR `else if` starving TX | Revert: still 187/187 timestamps delivered |
+| Debugger halt perturbing the system | Halt/resume in the failing state changed nothing |
+| flexPTP message-buffer `uid`/tag mismatch | `PTP_LOG_TRANSMISSION`: both halves match correctly |
+| `ETHHW_ProcessTx()` double-dispatching | Counters after the rewrite: 125/125, still failing |
+
+**The recurring error was treating "changed something, then it worked" as confirmation.**
+Twice the symptom disappeared after a reflash and was credited to the change; both times a
+revert showed the change was irrelevant. Only the experiments that *reproduced the failure
+on demand* produced reliable information.
+
+### Status
+
+F42 is **open**. The next measurement — counting `PTN_TRANSMIT_DONE` handler entries against
+`sTxCbFIFO` depth — is inside the flexPTP submodule, so it needs a decision about
+instrumenting vendored code.
 
 ### Superseded diagnosis
 
@@ -677,6 +712,32 @@ following the current text would fit the wrong part.
 Acting on it also requires firmware changes: `HSE_VALUE` becomes 25000000, and `PLLM` must
 be re-derived, since `init_pll()` assumes `HSE_VALUE / 2000000` yields an integer in the
 2–4 MHz `RCC_PLL1_VCIRANGE_1` window (25/2 = 12.5 does not).
+
+### F56 — `PTP_LOG_TRANSMISSION` has no CLI switch
+
+`logging.h` defines `PTP_LOG_TRANSMISSION`, but `cli_cmds.c` registers only
+`ptp log {def|corr|ts|info|locked|bmca}`. Attempting to enable it returns *"Unknown command
+or bad parameter"*, silently — the CLI reports the whole command as unrecognised rather
+than the channel name.
+
+This cost real time: two separate sessions appeared to "start working when transmission
+logging was enabled", when in fact the command had been rejected and the sync starting was
+coincidence. It can only be enabled programmatically, via
+`ptp_log_enable(PTP_LOG_TRANSMISSION, true)` from `flexptp_user_event_cb()`.
+
+### F57 — `ETHHW_ProcessTx()` never reset its per-pass descriptor count
+
+`descsWithTimestamp` was declared outside the `do…while` and never reset per pass, so each
+re-scan *added* to the previous count instead of replacing it. The count stayed positive
+after the ring drained, and the loop ran again with `firstIteration` still true and `minIdx`
+left over from the previous pass — dispatching a descriptor that had already been processed
+and cleared.
+
+Rewritten: the scan state is per-pass, the loop exits when a pass finds nothing, and the
+descriptor is released *before* the callback runs so it cannot be observed twice.
+
+**This is a real latent bug and the fix is worth keeping, but it is not the cause of F42** —
+the counters read 125/125 after the change, with the failure unaffected.
 
 ### F54 — unbounded wait in `ETHHW_SetPTPAddend()`
 

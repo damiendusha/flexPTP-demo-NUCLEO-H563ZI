@@ -404,81 +404,84 @@ void ETHHW_ProcessRx(ETH_TypeDef *eth) {
 }
 
 void ETHHW_ProcessTx(ETH_TypeDef *eth) {
-    //    ETHHW_PrintRingBufStatus(eth, ETHHW_RINGBUF_TX);
-
     uint16_t ringLen = eth->DMACTDRLR + 1;
 
-    ETHHW_State *state = ETHHW_GetState(ETH);
-    uint16_t minIdx = 0;
-    int32_t minDelta = 0;
+    ETHHW_State *state = ETHHW_GetState(eth);
     ETHHW_DescFull *ring = (ETHHW_DescFull *)eth->DMACTDLAR;
-
-    uint16_t descsWithTimestamp = 0;
 
     ethdbg.procTxCalls++;
 
-    do {
-        // search for oldest timestamp-carrying descriptor
-        bool firstIteration = true;
+    /* One descriptor is retired per pass, oldest first.
+     *
+     * FIXED: the counter of timestamp-carrying descriptors used to be declared outside
+     * this loop and was never reset per pass, so each re-scan ADDED to the previous
+     * count instead of replacing it. The count therefore stayed positive after the ring
+     * had been drained, and the loop ran again with `firstIteration` still true and
+     * `minIdx` left over from the previous pass -- re-dispatching a descriptor that had
+     * already been processed and cleared. That produced duplicate transmit-timestamp
+     * callbacks for the same uid, which flexPTP's slave.c then mismatched against its
+     * Delay_Req, discarding the Delay_Resp ("no response received"). See finding F42.
+     *
+     * The descriptor is also cleared BEFORE the callback is invoked, so it cannot be
+     * observed a second time even if this function re-enters. */
+    for (;;) {
+        uint16_t found = 0;
+        uint16_t minIdx = 0;
+        int32_t minDelta = 0;
+        bool first = true;
+
+        // search for the oldest timestamp-carrying descriptor
         for (uint16_t i = 0; i < ringLen; i++) {
             uint16_t txCntr = ring[i].ext.txCntr;
             uint32_t DES3 = ring[i].desc.DES3;
-            if ((DES3 & ETH_DMATXNDESCWBF_TTSS) && !(DES3 & ETH_DMATXNDESCWBF_OWN)) { // examine only descriptors holding a timestamp
-                descsWithTimestamp++;                                                 // desc found with timestamp
+
+            if ((DES3 & ETH_DMATXNDESCWBF_TTSS) && !(DES3 & ETH_DMATXNDESCWBF_OWN)) {
+                found++;
                 ethdbg.descWithTs++;
                 int32_t delta = (int32_t)txCntr - (int32_t)state->txCntAcked;
 
-                if (firstIteration) { // initialize variables with valid data
-                    firstIteration = false;
+                if (first) {
+                    first = false;
                     minDelta = delta;
                     minIdx = i;
-                    continue;
-                }
-
-                if (delta == 1) { // consecutive packets found, stop search
+                } else if (delta == 1) { // consecutive packet, stop searching further
                     minIdx = i;
                     minDelta = 1;
-                } else { // search for minimum "distance"
-                    if (delta < minDelta) {
-                        minIdx = i;
-                        minDelta = delta;
-                    }
+                } else if (delta < minDelta) {
+                    minIdx = i;
+                    minDelta = delta;
                 }
             }
         }
 
-        if (descsWithTimestamp > 0) {
-            // invoke callback (the descriptor certainly contains a valid callback
-            // address, see transmit function why)
-            ETHHW_DescFull *bd = ring + minIdx;
-            uint32_t ts_s = bd->desc.DES1;
-            uint32_t ts_ns = bd->desc.DES0;
-
-            ethdbg.cbCandidates++;
-            if (bd->ext.tsCbPtr == 0) {
-                ethdbg.cbPtrNull++;
-            }
-            if (bd->ext.tsCbPtr != 0) {
-                ethdbg.cbDispatched++;
-                // Signature must match lwipopts.h's tx_cb and flexPTP's ptp_transmit_cb:
-                // the tag is a void *, carried through the descriptor extension as a uint32_t.
-                ((void (*)(uint32_t, uint32_t, void *))(bd->ext.tsCbPtr))(ts_s, ts_ns, (void *)bd->ext.tsCbArg);
-            }
-
-            // clear descriptor
-            memset((void *)bd, 0, sizeof(ETHHW_Desc));
-            bd->ext.tsCbPtr = 0;
-            bd->ext.tsCbArg = 0;
-
-            // increment TX acknowledge counter
-            state->txCntAcked = bd->ext.txCntr;
-
-            // decrement number of remaining unprocessed descriptors carrying a
-            // timestamp
-            descsWithTimestamp--;
+        if (found == 0) {
+            break; // ring drained
         }
 
-    } while (descsWithTimestamp > 0);
+        ETHHW_DescFull *bd = ring + minIdx;
+
+        // snapshot everything needed before the descriptor is released
+        uint32_t ts_s = bd->desc.DES1;
+        uint32_t ts_ns = bd->desc.DES0;
+        uint32_t cbPtr = bd->ext.tsCbPtr;
+        uint32_t cbArg = bd->ext.tsCbArg;
+
+        // release the descriptor first, so it can never be dispatched twice
+        memset((void *)bd, 0, sizeof(ETHHW_Desc));
+        bd->ext.tsCbPtr = 0;
+        bd->ext.tsCbArg = 0;
+        state->txCntAcked = bd->ext.txCntr;
+
+        ethdbg.cbCandidates++;
+        if (cbPtr == 0) {
+            ethdbg.cbPtrNull++;
+        } else {
+            ethdbg.cbDispatched++;
+            // Signature must match lwipopts.h's tx_cb and flexPTP's ptp_transmit_cb:
+            // the tag is a void *, carried through the descriptor extension as a uint32_t.
+            ((void (*)(uint32_t, uint32_t, void *))cbPtr)(ts_s, ts_ns, (void *)cbArg);
+        }
+    }
 }
 
 void ETHHW_ISR(ETH_TypeDef *eth) {

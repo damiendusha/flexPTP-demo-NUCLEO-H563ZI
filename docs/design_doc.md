@@ -603,9 +603,12 @@ Tested against `linuxptp` 4.4 on a Linux host.
   of **−535 ns**, best sample −69 ns, with the addend actively tuned around `0xCCCCCCCC`
   and settling ~41 ppb below nominal — the ST-Link MCO's real frequency error. The ±83 µs
   spread is host-side software timestamping, not the board.
-- **F42 partially understood.** Synchronisation is preceded by a 40–60 s window in which
-  every Delay_Req reports *"no response received"*; it then locks and stays locked. The
-  cause is not identified. The ETH ISR `else if` was tried as an explanation and
-  **disproven by reverting** — the transmit path delivers 100 % of timestamps either way.
-  See [port_review.md](port_review.md).
+- **F42 open — PTP lock is intermittent.** Some runs synchronise and hold (mean −535 ns
+  over 150 samples); others report *"no response received"* for every Delay_Req
+  indefinitely. Four candidate causes were investigated and all four were **disproven by
+  measurement**: the ETH ISR `else if`, debugger-halt perturbation, a flexPTP
+  message-buffer mismatch, and duplicate dispatch in `ETHHW_ProcessTx()`. The MAC driver is
+  measured clean — exactly one timestamp dispatched per request, `uid` and tag correct on
+  both halves. The remaining lead is duplicate `---> uid` reports generated *inside*
+  flexPTP. See [port_review.md](port_review.md).
 
