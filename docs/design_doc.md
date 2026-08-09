@@ -7,6 +7,7 @@ NUCLEO-H563ZI (STM32H563, Cortex-M33).
 ## Table of Contents
 
 - [Port Overview](#port-overview)
+- [System Clock Tree](#system-clock-tree)
 - [PTP Clock](#ptp-clock) — full derivation in [ptp_clock.md](ptp_clock.md)
 - [EtherLib Porting Guide](#etherlib-porting-guide)
 - [TrustZone Migration Guide](#trustzone-migration-guide)
@@ -34,6 +35,54 @@ Key decisions:
 - Network stack: LwIP only (initial port)
 - TrustZone: Disabled (TZEN=0, ARM_CM33_NTZ)
 - mac_drv.c: Register-level port
+
+---
+
+## System Clock Tree
+
+**SYSCLK = 250 MHz, HCLK = 250 MHz.** This is the H563's maximum, and on this part it is
+also the PTP timestamp clock, so it is not merely a performance choice.
+
+```
+HSE 8 MHz (RCC_HSE_BYPASS — ST-Link MCO, no crystal fitted)
+  │
+  ├─ PLLM = HSE_VALUE / 2000000 = 4      →  VCI    =   2 MHz   (RCC_PLL1_VCIRANGE_1)
+  ├─ PLLN = TARGET_SYSCLK_MHZ  = 250     →  VCO    = 500 MHz   (RCC_PLL1_VCORANGE_WIDE)
+  └─ PLLP = 2                            →  SYSCLK = 250 MHz
+                                             │
+       AHBCLKDivider  = RCC_HCLK_DIV1     →  HCLK   = 250 MHz  ← also ptp_ker_ck
+       APB1/2/3 Div   = RCC_APBx_DIV2     →  PCLK   = 125 MHz
+
+  FLASH_LATENCY_5, voltage scaling VOS0
+```
+
+Comparison with the source project: the H743 ran SYSCLK 480 MHz with `RCC_HCLK_DIV2`,
+giving HCLK — and therefore a PTP clock — of 240 MHz.
+
+### Why these values
+
+**VCO is pinned at 500 MHz.** `PLLP` forbids odd division factors and the PLL1 wide VCO
+range is 192–836 MHz. For SYSCLK = 250 MHz, `PLLP = 2` (VCO 500) is the only solution;
+`PLLP = 4` would need a 1000 MHz VCO, above the ceiling.
+
+**`AHBCLKDivider` must be `RCC_HCLK_DIV1`.** The H563 has no Ethernet PTP clock
+multiplexer, so the timestamp unit is fed from HCLK directly. Carrying over the H743's
+`RCC_HCLK_DIV2` would give HCLK 125 MHz and a PTP clock running at 0.375× real time —
+a silent failure rather than an obvious one. See [ptp_clock.md](ptp_clock.md).
+
+**`PLLN = TARGET_SYSCLK_MHZ` is exact, not approximate.** Because VCI is 2 MHz and
+`PLLP` is 2, SYSCLK in MHz equals `PLLN` numerically. The H743 project relied on the same
+identity at 480. Consequently `configCPU_CLOCK_HZ` in `FreeRTOSConfig.h` is the single
+source of truth for the PLL: setting it to 250000000 drives the whole chain, and
+`init_pll()` needs no arithmetic change.
+
+**APB at DIV2 (125 MHz)** matches the H743 structure and is deliberate rather than
+inherited. The H563 would permit DIV1, but nothing in this project needs it: USART3's baud
+divisor is computed by the HAL from PCLK1, and the Ethernet MDIO `CR` divider keys off
+HCLK, not PCLK. DIV2 leaves headroom on the peripheral buses at no cost.
+
+**`FLASH_LATENCY_5` with VOS0** is required for 250 MHz; the H743 used
+`FLASH_LATENCY_4` at its own operating point.
 
 ---
 
