@@ -143,9 +143,16 @@ header file. */
 	
 /* Definitions that map the FreeRTOS port interrupt handlers to their CMSIS
 standard names. */
-#define vPortSVCHandler SVC_Handler
-#define xPortPendSVHandler PendSV_Handler
-#define xPortSysTickHandler OS_Tick_Handler
+/* The ARMv8-M port names its exception handlers SVC_Handler, PendSV_Handler and
+ * SysTick_Handler directly, unlike the Cortex-M7 port which used vPortSVCHandler,
+ * xPortPendSVHandler and xPortSysTickHandler. The H743 project remapped those three
+ * names here; on Cortex-M33 the remaps are unnecessary, and the SysTick one is actively
+ * harmful -- it renamed the CMSIS-RTOS2 shim's call to OS_Tick_Handler(), which nothing
+ * defines, producing an undefined reference at link time.
+ *
+ * Instead, tell the CMSIS-RTOS2 shim not to emit its own SysTick_Handler and let the
+ * FreeRTOS port own it. */
+#define USE_CUSTOM_SYSTICK_HANDLER_IMPLEMENTATION 1
 
 #define configRECORD_STACK_HIGH_ADDRESS 	1
 

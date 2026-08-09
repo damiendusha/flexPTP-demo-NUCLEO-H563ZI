@@ -4,7 +4,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <stm32h7xx_hal.h>
+#include <stm32h5xx_hal.h>
 
 #include "cmsis_os2.h"
 #include "lwip/arch.h"

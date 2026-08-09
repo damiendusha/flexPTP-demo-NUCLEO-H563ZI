@@ -34,7 +34,7 @@
 #include "freertos_mpool.h"             // osMemoryPool definitions
 #include "freertos_os2.h"               // Configuration check and setup
 
-#include "stm32h7xx.h"
+#include "stm32h5xx.h"
 
 /*---------------------------------------------------------------------------*/
 #ifndef __ARM_ARCH_6M__

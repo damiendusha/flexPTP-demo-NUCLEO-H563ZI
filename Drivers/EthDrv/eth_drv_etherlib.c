@@ -2,7 +2,7 @@
 
 #include <memory.h>
 
-#include <stm32h7xx_hal.h>
+#include <stm32h5xx_hal.h>
 
 #include "mac_drv.h"
 #include "phy_drv/phy_common.h"

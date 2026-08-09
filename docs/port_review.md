@@ -92,6 +92,8 @@ Not done: no compilation (the tree does not yet configure — see [F10](#f10)), 
 | F46 | `GPIO_SPEED_HIGH` legacy alias does not exist on H5 | Minor | plan Stages 11 (fixed) & 14 |
 | F47 | flexPTP uses `__PRI64_PREFIX`, a glibc-internal macro; breaks every newlib build | Blocking | plan Stage 14 (worked around) |
 | F48 | `tx_cb` signature drift between pinned flexPTP and this project's `lwipopts.h` | Blocking | plan Stage 14 (fixed) |
+| F49 | `task_ptp_is_operating()` renamed to `is_flexPTP_operating()` upstream | Blocking | plan Stage 15 (fixed) |
+| F50 | ARMv8-M port names exception handlers directly; the H7-era remaps break the tick | Blocking | plan Stage 15 (fixed) |
 
 **Every finding is tracked.** F33 and F34 are recorded here only because they are
 observations about upstream code that require no action — noted so a future reader does not
@@ -330,6 +332,36 @@ Stage 12 rewrites the code immediately around that machinery and Stage 15 touche
 `eth_drv_lwip.c` only for header renames, so nothing confirms the path still works. A
 silently broken TX-timestamp path presents as "PTP runs but never converges", which is the
 hardest symptom to attribute correctly. Explicit checks added to Stages 14 and 20.
+
+### F49 — `task_ptp_is_operating()` renamed upstream
+
+`Src/cmds.c` calls `task_ptp_is_operating()`, which existed at the H743-pinned `62fc906`
+but was renamed to `is_flexPTP_operating()` at `a60190f` — the same commit behind F47.
+Third consequence of the newer submodule pin, and the one that fails most gently:
+an implicit-declaration error rather than anything subtle.
+
+### F50 — ARMv8-M names its exception handlers differently
+
+The Cortex-M7 FreeRTOS port exports `vPortSVCHandler`, `xPortPendSVHandler` and
+`xPortSysTickHandler`, so the H743 project remapped them onto the CMSIS names in
+`FreeRTOSConfig.h`:
+
+```c
+#define vPortSVCHandler     SVC_Handler
+#define xPortPendSVHandler  PendSV_Handler
+#define xPortSysTickHandler OS_Tick_Handler
+```
+
+The ARMv8-M port instead defines `SVC_Handler`, `PendSV_Handler` and `SysTick_Handler`
+directly. Two of the three remaps therefore become no-ops, but the SysTick one is actively
+harmful: it renames the *call site* inside the CMSIS-RTOS2 shim to `OS_Tick_Handler()`,
+which nothing defines — `undefined reference to 'OS_Tick_Handler'` at link.
+
+Fixed by dropping all three remaps and setting
+`USE_CUSTOM_SYSTICK_HANDLER_IMPLEMENTATION 1`, so the shim does not emit its own
+`SysTick_Handler` and the FreeRTOS port owns it. Note this failure only appears at **link**
+time, after every translation unit has compiled — a reminder that "it compiles" is a weak
+signal for a port like this.
 
 ### F47 — flexPTP uses a glibc-internal macro
 

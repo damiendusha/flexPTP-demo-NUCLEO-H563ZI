@@ -503,3 +503,31 @@ resolved unchanged. The work was entirely peripheral plumbing:
 - After both fixes the flexPTP library, its lwIP network-stack driver and the Kalman servo
   all compile. The only remaining build errors are the Stage 15 header sweep
 
+### Stage 15 — Global HAL header sweep
+- `stm32h7xx_hal.h` → `stm32h5xx_hal.h` in `eth_drv_lwip.c`, `eth_drv_etherlib.c`,
+  `ethernet_etherlib.c`; `stm32h7xx.h` → `stm32h5xx.h` in `cmsis_os2.c`. The last two were
+  the files the original plan's Stage-12 list omitted (F17)
+- Remaining `STM32H7` matches in the tree are prose in comments only, kept as deliberate
+  historical references
+- Two further defects surfaced, both only after every TU compiled:
+  - **F49** — `task_ptp_is_operating()` → `is_flexPTP_operating()`, renamed upstream at
+    `a60190f`. Third consequence of the newer submodule pin
+  - **F50** — the ARMv8-M FreeRTOS port defines `SVC_Handler`, `PendSV_Handler` and
+    `SysTick_Handler` directly, so the H7-era remaps in `FreeRTOSConfig.h` were wrong.
+    The SysTick remap renamed the CMSIS-RTOS2 shim's *call* to `OS_Tick_Handler()`, which
+    nothing defines. Dropped all three remaps and set
+    `USE_CUSTOM_SYSTICK_HANDLER_IMPLEMENTATION 1` so the FreeRTOS port owns the handler
+- **The firmware links.** First complete build of this port:
+
+  | Region | Used | Size | % |
+  |---|---|---|---|
+  | FLASH | 221 552 B | 2 MB | 10.6 |
+  | SRAM1 | 133 328 B | 256 KB | 50.9 |
+  | SRAM2 | 0 B | 64 KB | 0.0 |
+  | SRAM3 | 74 888 B | 320 KB | 22.9 |
+
+- Image sanity-checked: entry point `0x080024a9` (Thumb bit set), vector word 0 =
+  `0x20040000` = top of SRAM1 exactly as the linker script specifies, word 1 = the entry
+  point, hard-float EABI
+- One warning remains project-wide (`ETHHW_PrintRingBufStatus` unused) — Stage 16
+

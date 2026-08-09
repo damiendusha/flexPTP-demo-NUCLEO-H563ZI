@@ -1,6 +1,6 @@
 #include "ethernet_etherlib.h"
 
-#include <stm32h7xx_hal.h>
+#include <stm32h5xx_hal.h>
 
 #include "etherlib/eth_interface.h"
 
