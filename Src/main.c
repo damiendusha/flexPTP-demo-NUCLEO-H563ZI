@@ -285,6 +285,37 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
     }
 }
 
+/* Decimal output for the panic paths. MSG() cannot be used here: it queues into a FIFO
+ * drained by a task that will never run again. */
+static void panic_write_ulong(unsigned long v) {
+    char buf[12];
+    unsigned i = sizeof(buf) - 1U;
+
+    buf[i] = '\0';
+    do {
+        buf[--i] = (char)('0' + (v % 10UL));
+        v /= 10UL;
+    } while ((v != 0UL) && (i > 0U));
+
+    serial_io_panic_write(&buf[i]);
+}
+
+/* Reached from configASSERT(). A failed FreeRTOS assertion is a programming error, and the
+ * previous definition halted with interrupts disabled and printed nothing -- indistinguishable
+ * from a hang, and the same signature that made F53 costly. Safe from an ISR: the writer
+ * polls rather than using the FIFO. */
+void vAssertCalled(const char *pcFile, unsigned long ulLine) {
+    taskDISABLE_INTERRUPTS();
+    serial_io_panic_write("\n\n*** FATAL: FreeRTOS assertion failed\n  ");
+    serial_io_panic_write((pcFile != NULL) ? pcFile : "<unknown>");
+    serial_io_panic_write(":");
+    panic_write_ulong(ulLine);
+    serial_io_panic_write("\nHalted.\n");
+
+    for (;;) {
+    }
+}
+
 void vApplicationMallocFailedHook(void) {
     taskDISABLE_INTERRUPTS();
     serial_io_panic_write("\n\n*** FATAL: FreeRTOS heap exhausted (pvPortMalloc returned NULL)\n"
