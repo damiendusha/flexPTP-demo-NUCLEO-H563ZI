@@ -315,7 +315,8 @@ static void get_line(char *pStr, size_t *pLen) {
     char c = '\0';          // currect character
     bool escString = false; // mark that we are processing an escape sequence
     uint8_t escPos = 0;     // escape sequence position
-    char escParam[4];       // escape sequence paramters
+    char escParam[4] = {0}; // escape sequence parameters; zeroed so a sequence that stores
+                            // nothing (ESC [ ~) cannot dispatch on uninitialised stack
     bool noMod = true;      // no modification happened to the input line so far
     int8_t histIdx = -1;    // history index
 
@@ -361,6 +362,20 @@ static void get_line(char *pStr, size_t *pLen) {
             } else if (escPos > 1) {           // we are scanning the parameter
                 uint8_t paramIdx = escPos - 2; // calculate parameter character index
 
+                /* Store BEFORE dispatching. The switch below used to read escParam[0] one
+                 * iteration before this assignment ran, so for a three-character sequence --
+                 * ESC [ A, i.e. every arrow key -- it dispatched on the *previous* sequence's
+                 * final letter, and on uninitialised stack for the first press of each line.
+                 * Up/Down history therefore acted one keypress behind.
+                 *
+                 * Bounded, too: paramIdx is escPos - 2 and the loop only leaves escape state
+                 * on '~' or an uppercase letter, so a longer sequence -- a bracketed paste
+                 * (ESC [ 200 ~), a cursor report (ESC [ 24;80 R), a multi-digit function key --
+                 * walked straight off the end of this four-byte stack array. */
+                if ((c != '~') && (paramIdx < (uint8_t)sizeof(escParam))) {
+                    escParam[paramIdx] = c;
+                }
+
                 // a number might be followed by another alphanumeric character, but no letter precedes further sections of the parameter
                 // tilde marks the end of the escape sequence
                 if ((c == '~') || ((c >= 'A') && (c <= 'Z'))) {
@@ -393,11 +408,6 @@ static void get_line(char *pStr, size_t *pLen) {
                         }
                     } break;
                     }
-                }
-
-                // receiving tilde means that we reached the end of the escape sequence, any other character is part of the paramter
-                if (c != '~') {
-                    escParam[paramIdx] = c;
                 }
             }
         }
