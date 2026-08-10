@@ -8,6 +8,12 @@ Every claim below was checked against the tree at `df3ee3d` — source, linker m
 shim and ST's HAL — not against the reviewed document's own reasoning. Where I disagree I say
 what I checked.
 
+> **Correction.** An earlier revision of this review stated that the F63 lwIP
+> `-Wstringop-overflow` warnings did not reproduce under toolchain 15.3.rel1. That was a
+> mis-measurement (a truncated build log). They do reproduce — four instances in
+> `Modules/lwip/src/core/ipv4/dhcp.c`. No finding in this review depends on that claim; it
+> affected only the build-verification note.
+
 ---
 
 ## Verdict

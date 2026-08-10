@@ -129,13 +129,16 @@ The report appears to have read F41's *description* of the defect and reported i
 condition without checking whether the disposition had been acted on. The corresponding
 action item — *"Delete `ETHHW_UpdatePTPTime()` and `PTP_UPDATE_CLOCK`"* — is a no-op.
 
-#### Finding 5 — caveat
+#### Finding 5 — agree
 
-Correct that F63 is documented and unreachable. Worth adding: I rebuilt both configurations
-from clean with the pinned toolchain (Arm GNU 15.3.rel1) and **the warning did not
-reproduce** — zero warnings in Debug and Release. Whatever emitted it was compiler-version
-specific. The finding is still worth carrying, but as history rather than a current
-condition.
+Correct that F63 is documented and unreachable in this configuration.
+
+**Correction to an earlier revision of this review.** This section previously claimed the
+warning did not reproduce under toolchain 15.3.rel1. That was a mis-measurement — the build
+log had been truncated before the warnings were counted. **F63 reproduces exactly as
+documented**: four `-Wstringop-overflow` instances in `Modules/lwip/src/core/ipv4/dhcp.c`,
+inlined into `dhcp_reboot`, `dhcp_discover`, `dhcp_select` and `dhcp_renew`. Pro 3.1's
+finding is a current condition, not history, and its framing was right.
 
 #### Findings 6, 7, 8 — agree
 

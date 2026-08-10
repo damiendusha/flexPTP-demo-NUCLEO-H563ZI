@@ -16,11 +16,22 @@ build-time.
 | Configuration | Result |
 |---|---|
 | `./build.sh -c -t Debug` | ✅ links, **0 warnings**, FLASH 223 032 B / SRAM1 133 328 B / SRAM3 74 888 B |
-| `./build.sh -c -t Release` | ✅ links, **0 warnings**, FLASH 176 288 B / SRAM1 133 120 B / SRAM3 74 888 B |
+| `./build.sh -c -t Release` | ✅ links, **4 warnings**, all F63 (see below), FLASH 176 288 B / SRAM1 133 120 B / SRAM3 74 888 B |
 | `patches/*` vs submodule working trees | ✅ both reverse-apply cleanly — the patch files are an exact record |
 
-The zero-warning claim in `design_doc.md` holds. The F63 lwIP `-Wstringop-overflow`
-warnings did **not** reproduce with toolchain 15.3.rel1 in either configuration.
+**Correction (recorded after an initial mis-measurement).** An earlier revision of this
+document reported 0 warnings for Release and concluded that F63 no longer reproduced. That
+was wrong: the build log had been truncated through `tail` before the warnings were counted,
+and the four `-Wstringop-overflow` instances occur about a quarter of the way through the
+build. **F63 reproduces exactly as documented** with toolchain 15.3.rel1 — four instances in
+`Modules/lwip/src/core/ipv4/dhcp.c`, inlined into `dhcp_reboot`, `dhcp_discover`,
+`dhcp_select` and `dhcp_renew`.
+
+Zero of the four are in first-party code (`Src/`, `Inc/`, `Drivers/EthDrv/`), so
+`design_doc.md`'s "0 warnings under `-Wall -Wextra`" claim still holds for the code this
+project owns — those flags are `target_compile_options` on the main target and are never
+applied to `lwipcore`. The correct statement of the build gate is therefore **Debug: 0
+warnings; Release: 4, all in vendored lwIP, none first-party**.
 
 ---
 
