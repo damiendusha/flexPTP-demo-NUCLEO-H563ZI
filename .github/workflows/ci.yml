@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build (${{ matrix.config }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [Debug, Release]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
+      # build.sh fetches the pinned toolchain into toolchains/ and, importantly, applies the
+      # two submodule patches -- omitting them produces a firmware that is silently wrong
+      # rather than one that fails to build (see README, "Get the sources").
+      - name: Cache the Arm toolchain
+        uses: actions/cache@v4
+        with:
+          path: toolchains/arm-gnu-toolchain-15.3.rel1-x86_64-arm-none-eabi
+          key: arm-gnu-15.3.rel1
+
+      - name: Build
+        run: ./build.sh -t ${{ matrix.config }} -b build/${{ matrix.config }} 2>&1 | tee build.log
+
+      # The gate is first-party warnings, not all warnings: vendored lwIP emits four
+      # -Wstringop-overflow instances in dhcp.c under optimisation (finding F63, documented
+      # and unreachable as configured), and lwipcore is not built with this project's flags.
+      - name: Fail on first-party warnings
+        run: |
+          total=$(grep -c 'warning:' build.log || true)
+          first=$(grep 'warning:' build.log | grep -cE '/(Src|Inc|Drivers/EthDrv)/' || true)
+          echo "warnings: $total total, $first first-party"
+          grep 'warning:' build.log | grep -E '/(Src|Inc|Drivers/EthDrv)/' || true
+          test "$first" -eq 0
+
+      - name: Check the patches really were applied
+        run: |
+          git -C Modules/embfmt  apply --check --reverse "$PWD/patches/embfmt/0001-formatting-fixes.patch"
+          git -C Modules/flexptp apply --check --reverse "$PWD/patches/flexptp/0002-servo-nan-latch-fix.patch"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flexptp-demo-${{ matrix.config }}
+          path: |
+            build/${{ matrix.config }}/flexptp-demo.elf
+            build/${{ matrix.config }}/flexptp-demo.map
+
+  docs:
+    name: Docs cross-references
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/ci/check_docs_links.py

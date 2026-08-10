@@ -80,9 +80,9 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 | | Count |
 |---|---|
 | Total distinct actions | **81** |
-| Open (☐) | 7 |
+| Open (☐) | 5 |
 | Partial (◐) | 0 |
-| Already done (✅) | 70 |
+| Already done (✅) | 72 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -172,7 +172,7 @@ defects.
 
 | Status | Flash 3.6 Verified | Pro 3.1 Verified | Opus 5.0 ID | Flash 3.6 ID | Pro 3.1 ID | Consensus | Description |
 |---|---|---|---|---|---|---|---|
-| ☐ | — | — | **P5.1** | — | — | 1/3 O | Add CI: clean Debug + Release build, zero warnings under `-Wall -Wextra` |
+| ✅ | — | — | **P5.1** | — | — | 1/3 O | Add CI: clean Debug + Release build, zero warnings under `-Wall -Wextra` — **DONE: `.github/workflows/ci.yml` builds Debug and Release via `build.sh` (so the patch-apply step is exercised too), gates on **first-party** warnings only — vendored lwIP's four F63 instances are expected — re-checks that the patches are applied, and uploads the ELF and map** |
 | ✅ | — | — | **P5.2** | ACT-14 (D2, I4) | — | 2/3 O+F | Remove the unconditional `DEBUG` from `CMakeLists.txt:93`; the `$<$<CONFIG:Debug>:DEBUG>` generator expression at line 132 already covers it — **DONE: `DEBUG` removed from the unconditional `compile_DEFS`; the `$<$<CONFIG:Debug>:DEBUG>` generator expression already covered it, so Release no longer defines it** |
 | ☐ | — | — | **P5.3** | ACT-15 (D3, I4) | — | **⚠ METHOD** | Decide whether `Release` should move from `-Og` to `-O2`/`-Os`; configure or delete the untested `relWithDebInfo` and `minSizeRel` presets. **Requires hardware re-verification** — see F62 |
 | ✅ | — | — | **P5.4** | — | — | 1/3 O | Use `bfifo_push_all()` in `serial_io_write()` — console output is silently truncated when the 16 KB FIFO fills — **DONE: `bfifo_push_all()`, so a full FIFO blocks the producer instead of truncating the message mid-word. Correct for every current caller (all threads); ISR-context output goes through `serial_io_panic_write()` instead, noted at the call** |
@@ -187,7 +187,7 @@ defects.
 | ✅ | — | — | **P5.13** | — | — | 1/3 O | Remove the inert MPU-wrapper settings from `FreeRTOSConfig.h:81-84`, or comment why they are kept with `configENABLE_MPU 0` — **DONE: kept, with a comment stating they are inert while `configENABLE_MPU` is 0 and are **not** evidence the MPU is in use. Deleting them would make turning the MPU on require rediscovering the set** |
 | ✅ | — | — | **P5.14** | — | — | 1/3 O | Exclude `Src/etherlib_options.c` from LWIP builds — **DONE: `etherlib_options.c` now compiled only when `ETH_STACK` is `ETHERLIB`. MAC address and networking unchanged — same DHCP lease, ping 0% loss** |
 | ☐ | — | — | **P5.15** | ACT-27 (I6) | items 1, 2 | **3/3** | File the upstream reports and patches: F47 (`__PRI64_PREFIX`), F59 (servo NaN latch), F60/F66 (embfmt) |
-| ☐ | — | — | **P5.16** | — | — | 1/3 O | Add a `docs/` cross-reference and anchor checker to CI |
+| ✅ | — | — | **P5.16** | — | — | 1/3 O | Add a `docs/` cross-reference and anchor checker to CI — **DONE: `tools/ci/check_docs_links.py` validates relative links and heading anchors across 21 Markdown files; wired into CI as a separate job. Currently **0 broken**. Writing it found one genuine break I had introduced in P4.4 by renaming a heading — and two bugs in the checker itself, since GitHub does not collapse whitespace runs and does not strip underscores** |
 | ✅ | — | — | **P5.17** | — | — | 1/3 O | Move `serial_io_init()`'s `osThreadNew()` after `osKernelInitialize()`, or record why the current order is safe — **DONE — resolved by recording why the order is safe. `osThreadNew()` before `osKernelInitialize()` is outside the CMSIS-RTOS2 contract, but the shim only checks IRQ context and `xTaskCreate()` is documented as callable before the scheduler starts. Reordering would mean splitting `serial_io_init()` or losing USART3 setup before the first print** |
 | ✅ | — | — | **P5.18** | — | — | 1/3 O | Comment `ETH_MAC_ADDR0`'s `0x02 \| (UNIQUE_DEV_ID_BYTE(0) & 0xFE)` so the locally-administered bit and the unicast mask read as two deliberate operations — **DONE: commented as two deliberate operations — `| 0x02` sets locally-administered (the UID is not an assigned OUI), `& 0xFE` clears the multicast bit so a UID with bit 0 set cannot produce an unroutable multicast source address** |
 | ✅ | — | — | **P5.19** | ACT-16 (D4, I4) *(part)* | — | 1/3 F | Remove `-u _printf_float` from `CMakeLists.txt:166` — verified as force-linking newlib's float formatter (25 references in the map) into a project that uses `embfmt` — **DONE (removed), but **the size claim was wrong**: a proper A/B — build, remove flag, rebuild — gives **0 bytes** difference, with `printf_float` absent from the map either way. My earlier "25 references" came from a grep that also matched `vfprintf`. Removed as a misleading dead flag, not as a saving; the cross-review is corrected accordingly** |

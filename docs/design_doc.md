@@ -210,7 +210,7 @@ Three things are worth knowing without reading further:
    improved here.** A finer increment needs a *faster* PTP clock (≥ 262 MHz for a marginal
    K = 1.05). That is reachable in principle — `PLLQ = 1` would give `pll1_q_ck` = 500 MHz
    — but it is not adopted, for the engineering reasons set out in
-   [ptp_clock.md](ptp_clock.md#why-a-4-ns-increment-is-unreachable). It is not blocked by
+   [ptp_clock.md](ptp_clock.md#why-a-4-ns-increment-is-not-adopted). It is not blocked by
    the 250 MHz HCLK ceiling, which has nothing to do with the PTP clock.
 
 One setting elsewhere is load-bearing for this: **`PLLQ` must be 2 and the PLL1Q output
