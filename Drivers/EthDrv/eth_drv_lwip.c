@@ -140,11 +140,22 @@ static void low_level_init(struct netif *netif) {
     // create receive event queue
     rx_msg_q = osMessageQueueNew(RX_MSG_Q_LEN, sizeof(ETHHW_EventDesc), NULL);
 
-    // start receive thread
+    /* Above the console, below tcpip_thread.
+     *
+     * Six of the nine threads used to share osPriorityNormal (24), including this one and
+     * both console producers ("cli" and "serialio"). rx_thread drains the Ethernet ring into
+     * lwIP, and every descriptor it has not yet restored is one the DMA cannot reuse -- so
+     * letting a burst of CLI output round-robin against it lengthens exactly the window that
+     * F61's inFlight marker exists to make safe. The marker fixes the correctness bug; this
+     * keeps the window short.
+     *
+     * AboveNormal (32) rather than High (40): tcpip_thread must stay the highest, since
+     * rx_thread hands frames to it and getting ahead of it only queues work. */
     osThreadAttr_t attr;
     memset(&attr, 0, sizeof(attr));
     attr.stack_size = 2048;
     attr.name = "rx";
+    attr.priority = osPriorityAboveNormal;
     osThreadNew(rx_thread, NULL, &attr);
 
     // -------------------------------------------------------------------

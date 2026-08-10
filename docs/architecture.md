@@ -227,7 +227,7 @@ FreeRTOS scales are the same numbers here — `osPriorityNormal` *is* 24.
 | `ptp` | **24** | 2048 B | `reg_task_ptp()`, on demand | flexPTP core: BMCA, servo, message handling |
 | `init` | 24 (default) | 2048 B | `main()` | One-shot bring-up, then idles at 1 Hz |
 | `cli` | 24 (default) | 2048 B | `cli_init()` | Console command parsing |
-| `rx` | 24 (default) | 2048 B | `eth_drv_lwip.c` | Drains the Ethernet RX ring into lwIP |
+| `rx` | **32** (`osPriorityAboveNormal`) | 2048 B | `eth_drv_lwip.c` | Drains the Ethernet RX ring into lwIP |
 | `serialio` | 24 (default) | 2048 B | `serial_io_init()` | FIFO → UART DMA; the only writer to USART3 |
 | `phy` | 24 (default) | 1024 B | `eth_drv_lwip.c` | PHY link-state polling |
 | `Tmr Svc` | 2 | 1040 B | FreeRTOS | Software timers; flexPTP's heartbeat runs here |
@@ -236,9 +236,15 @@ FreeRTOS scales are the same numbers here — `osPriorityNormal` *is* 24.
 Notes:
 
 - **Threads created with `attr.priority` left zero get `osPriorityNormal` (24)**, not
-  priority 0. `osPriorityNone` is 0 and the shim substitutes Normal. Six of the nine
-  threads rely on this default, so they are all peers at 24 and round-robin against each
-  other.
+  priority 0. `osPriorityNone` is 0 and the shim substitutes Normal. Five of the nine
+  threads rely on this default, so they are peers at 24 and round-robin against each other.
+- **`rx` sits above the console at 32**, so a burst of CLI output cannot round-robin against
+  the thread that restores RX descriptors to the DMA. This mirrors the interrupt ordering the
+  project already chose deliberately (ETH at 7 preempts the console at 12). Note that no
+  benefit was *measurable* on the bench: with `rx` at 24 and at 32, 400 pings at 1400 B under
+  continuous CLI load both gave 0% loss and ~0.40 ms mean RTT. A 115200-baud console cannot
+  generate enough load to starve it. The ordering is kept as correct-by-construction, not as
+  a demonstrated optimisation.
 - **`tcpip_thread` is the only thread above the pack.** Everything else at 24 can be
   preempted by it, which is what keeps the network stack responsive under console load.
 - **The `ptp` thread can be wedged by the MAC driver.** `ETHHW_SetPTPAddend()` waits on
