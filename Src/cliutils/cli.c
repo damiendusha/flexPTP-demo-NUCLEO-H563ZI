@@ -2,6 +2,7 @@
 
 #include <cmsis_os2.h>
 
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -42,6 +43,9 @@ static uint8_t sFifoMem[CLI_INPUT_FIFO_BUFSIZE]; // memory allocated for input F
 static bool sInitialized = false; // CLI is initialized
 
 static osMutexId_t modifyMtx = NULL; // mutex protecting the command database
+
+// removes a command; caller must already hold modifyMtx (see the definition for why)
+static void cli_remove_command_locked(int cmdIdx);
 
 // ---------------------------
 
@@ -503,7 +507,8 @@ int cli_register_command(char *pCmdParsHelp, uint8_t cmdTokCnt,
     }
 
     if (duplicate_idx > -1) {
-        cli_remove_command(duplicate_idx);
+        // NOT cli_remove_command(): modifyMtx is held here and is not recursive.
+        cli_remove_command_locked(duplicate_idx);
     }
 
     sCmdsTidy = false; // commands are untidy
@@ -514,23 +519,55 @@ int cli_register_command(char *pCmdParsHelp, uint8_t cmdTokCnt,
     return sCliCmdCnt - 1;
 }
 
+/* Remove a command from the table. The caller MUST already hold modifyMtx.
+ *
+ * This exists so that cli_register_command(), which removes a duplicate while holding the
+ * mutex, does not have to re-acquire it: modifyMtx is created with osMutexNew(NULL), which
+ * the CMSIS-RTOS2 shim maps onto xSemaphoreCreateMutex() -- a NON-recursive FreeRTOS mutex.
+ * Taking it a second time from the owning task blocks that task on itself for ever.
+ * (configUSE_RECURSIVE_MUTEXES enables the recursive API; it does not change what a plain
+ * mutex does.) */
+static void cli_remove_command_locked(int cmdIdx) {
+    if ((cmdIdx < 0) || (cmdIdx >= (int)sCliCmdCnt)) {
+        return;
+    }
+
+    uint8_t i;
+    for (i = cmdIdx; i < sCliCmdCnt - 1; i++) {
+        /* pHelp is an array *inside* the struct, and pHint/pPadding point into it, so a
+         * straight struct copy leaves them addressing the SOURCE slot's buffer. The
+         * padding fill in tidy_format_commands() would then write into a different
+         * command's help text.
+         *
+         * Rebase them onto the destination rather than clearing them: tidy_format_commands()
+         * replaces the '\t' delimiter with '\0' the first time it splits an entry, so it
+         * cannot re-derive a hint it has already formatted -- it would find no delimiter,
+         * take the "no hint" branch, and leave pPadding NULL for the padding loop to
+         * dereference. Offsets survive the copy; absolute pointers do not. */
+        const struct CliCommand *src = &spCliCmds[i + 1];
+        ptrdiff_t hintOff = (src->pHint != NULL) ? (src->pHint - src->pHelp) : -1;
+        ptrdiff_t padOff = (src->pPadding != NULL) ? (src->pPadding - src->pHelp) : -1;
+
+        memcpy(&spCliCmds[i], src, sizeof(struct CliCommand));
+
+        spCliCmds[i].pHint = (hintOff >= 0) ? (spCliCmds[i].pHelp + hintOff) : NULL;
+        spCliCmds[i].pPadding = (padOff >= 0) ? (spCliCmds[i].pHelp + padOff) : NULL;
+    }
+
+    sCliCmdCnt--;
+
+    // Column width is derived from the whole table, so dropping an entry can change it.
+    sCmdsTidy = false;
+}
+
 void cli_remove_command(int cmdIdx) {
     // acquire mutex
     osMutexAcquire(modifyMtx, osWaitForever);
 
-    // Range check inside the lock, with a single exit that always releases. The original
-    // returned from here while still holding the mutex, so one out-of-range index -- a
-    // stale handle passed to cli_remove_command_array(), say -- wedged the command
-    // database permanently: every later register/remove blocked for ever on a mutex whose
-    // owner had walked away.
-    if ((cmdIdx >= 0) && (cmdIdx < (int)sCliCmdCnt)) {
-        uint8_t i;
-        for (i = cmdIdx; i < sCliCmdCnt - 1; i++) {
-            memcpy(&spCliCmds[i], &spCliCmds[i + 1], sizeof(struct CliCommand));
-        }
-
-        sCliCmdCnt--;
-    }
+    // Single exit that always releases. The original range-checked *after* acquiring and
+    // returned from inside the critical section, so one out-of-range index wedged the
+    // command database permanently.
+    cli_remove_command_locked(cmdIdx);
 
     // release mutex
     osMutexRelease(modifyMtx);
