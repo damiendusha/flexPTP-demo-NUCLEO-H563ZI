@@ -202,7 +202,11 @@ int main(void) {
     // initialize MPU
     init_mpu();
 
-    // initialize standard output
+    // initialize standard output. MSG_init() must precede any MSG() call and must happen
+    // before the scheduler starts: cli_init() creates the "cli" task, whose first act is to
+    // print, while task_startup() goes on to print the banner -- both at priority 24, so
+    // they can interleave from the very first tick.
+    MSG_init();
     serial_io_init();
 
     // -------------

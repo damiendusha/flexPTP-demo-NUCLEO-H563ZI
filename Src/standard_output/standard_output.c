@@ -3,13 +3,53 @@
 #include "standard_output/serial_io.h"
 
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+
+#include <stm32h5xx.h> // __get_IPSR()
 
 #include <embfmt/embformat.h>
 
 #define STDIO_OUTPUT_LINEBUF_LEN (2048)
 static char lineBuf[STDIO_OUTPUT_LINEBUF_LEN + 1];
+
+/* lineBuf is a single shared buffer and MSG() is called from at least six threads: "cli",
+ * "ptp", "init", "tcpip_thread" (link_chg_cb), "Tmr Svc" (check_dhcp_state) and the PHY
+ * prints that reach it through tcpip_callback(). The FIFO underneath is serialised, but only
+ * inside bfifo_push() -- long after the formatting has already been done into this buffer, so
+ * two concurrent callers interleaved into it and corrupted each other's output.
+ *
+ * That matters more here than it normally would: this is the only diagnostic channel the
+ * firmware has, and it is what every failure in this project has had to be read through. */
+static osMutexId_t sMsgMtx = NULL;
+
+void MSG_init(void) {
+    if (sMsgMtx == NULL) {
+        sMsgMtx = osMutexNew(NULL);
+    }
+}
+
+/* Take the lock, reporting whether it was actually taken.
+ *
+ * Deliberately skips locking rather than blocking or failing when it cannot be held:
+ *   - from an ISR osMutexAcquire() returns osErrorISR. Nothing prints from an ISR today, but
+ *     mac_drv.c documents its timeout reports as ISR-callable, and a garbled message beats a
+ *     silently dropped one.
+ *   - before the scheduler runs there is only one context, so there is nothing to serialise.
+ *   - if creation failed, printing unserialised beats not printing at all. */
+static bool msg_lock(void) {
+    if ((sMsgMtx == NULL) || (__get_IPSR() != 0U) || (osKernelGetState() != osKernelRunning)) {
+        return false;
+    }
+    return (osMutexAcquire(sMsgMtx, osWaitForever) == osOK);
+}
+
+static void msg_unlock(bool locked) {
+    if (locked) {
+        osMutexRelease(sMsgMtx);
+    }
+}
 
 static uint32_t insert_carriage_return(char *str, uint32_t maxLen) {
     uint32_t len = strlen(str);
@@ -31,6 +71,10 @@ static uint32_t insert_carriage_return(char *str, uint32_t maxLen) {
 static char last_char = '\n';
 
 void MSG(const char *format, ...) {
+    // held across format, carriage-return insertion and the push, so a whole line reaches
+    // the FIFO before another thread may reuse lineBuf
+    bool locked = msg_lock();
+
     va_list vaArgP;
     va_start(vaArgP, format);
     uint32_t lineLen = vembfmt(lineBuf, STDIO_OUTPUT_LINEBUF_LEN, format, vaArgP);
@@ -40,6 +84,8 @@ void MSG(const char *format, ...) {
         serial_io_write(lineBuf, lineLen); // send line to the CDC
         last_char = lineBuf[lineLen - 1];
     }
+
+    msg_unlock(locked);
 }
 
 void MSGchar(int c) {
