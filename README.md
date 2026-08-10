@@ -226,8 +226,8 @@ ROOT
 > The flexPTP parameters are defined in the [flexptp_options.h](Inc/flexptp_options.h) header.
 
 Two submodules carry local changes, kept in [`patches/`](patches/) because the parent
-repository records only submodule commit pointers: a servo fix in flexPTP and two formatting
-fixes in embfmt. Both are described in [`docs/port_review.md`](docs/port_review.md) and are
+repository records only submodule commit pointers: a servo fix in flexPTP, and **four** defects across **two** findings, in **one** patch file: `%ll` conversions dropped ([F60](docs/port_review.md)), NaN rendered as `0.0000` (F60), small `%e` values swallowed by a pre-normalisation rounding constant ([F66](docs/port_review.md)), and a `%f`/`%e` rounding carry that subtracted 10 instead of 10^precision (F66)
+in embfmt. Both are described in [`docs/port_review.md`](docs/port_review.md) and are
 worth reporting upstream. **`./build.sh` applies them and will not build without them** —
 see [Get the sources](#get-the-sources) for why that matters.
 

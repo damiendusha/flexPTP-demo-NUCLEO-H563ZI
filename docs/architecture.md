@@ -49,8 +49,13 @@ source. Two submodules are the exception, and both changes are **permanent bug f
 
 > **Two submodules carry local patches**, both fixing real defects rather than instrumenting
 > anything: a servo fix in flexPTP ([F59](port_review.md#f59--one-duplicated-sync-cycle-latches-the-servo-into-nan-for-ever-resolved))
-> and three formatting fixes in embfmt ([F60](port_review.md#f60--embfmt-drops-ll-conversions-and-renders-nan-as-00000-resolved),
-> [F66](port_review.md#f66--embfmt-misreports-small-e-values-and-any-rounding-carry-resolved)).
+> and **four** formatting fixes in embfmt — `%ll` conversions dropped and NaN rendered as
+> `0.0000` ([F60](port_review.md#f60--embfmt-drops-ll-conversions-and-renders-nan-as-00000-resolved)),
+> plus small `%e` values swallowed by a pre-normalisation rounding constant and a `%f`/`%e`
+> rounding carry that subtracted 10 rather than 10^precision
+> ([F66](port_review.md#f66--embfmt-misreports-small-e-values-and-any-rounding-carry-resolved)).
+> Two findings, four defects, one patch file — the three counts that have been confused for
+> each other.
 > Because the parent repository records only a submodule's commit pointer, working-tree edits
 > inside `Modules/` are invisible to a clone and are destroyed by `git submodule update` —
 > which is why the patches are kept in-tree. Neither is target-specific; both are worth
