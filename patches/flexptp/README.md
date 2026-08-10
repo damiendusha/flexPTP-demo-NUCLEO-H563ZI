@@ -35,6 +35,13 @@ git -C Modules/flexptp checkout -- src/
 
 ## Contents
 
+> **Why there is no `0001-`.** The numbering is historical, not an index: `0001` was the
+> temporary F42/F61 instrumentation patch, dropped once both findings were resolved (see
+> [Removed](#removed) below). `0002` is deliberately *not* renumbered — the number is how the
+> patch is referred to in commit messages, `docs/port_review.md` and the recovery command
+> below, and renaming it would silently invalidate all of them to tidy a gap that costs
+> nothing.
+
 ### `0002-servo-nan-latch-fix.patch` — **permanent, keep**
 
 Makes the clock servo survive a repeated Sync cycle. Without it a single duplicated Sync

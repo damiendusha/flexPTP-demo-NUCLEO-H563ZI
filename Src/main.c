@@ -258,6 +258,20 @@ int main(void) {
 
     // -------------
 
+    /* Note on ordering: serial_io_init() above calls osThreadNew() to create "serialio",
+     * BEFORE osKernelInitialize(). That is outside the CMSIS-RTOS2 contract, which says
+     * osKernelInitialize() comes first.
+     *
+     * It works, and is left alone deliberately. The shim's osThreadNew() checks only for IRQ
+     * context, then calls xTaskCreate(), which is explicitly documented as callable before
+     * vTaskStartScheduler() -- the task is created and simply does not run until
+     * osKernelStart(). Reordering would mean either splitting serial_io_init() into hardware
+     * setup and thread creation, or moving all of it after osKernelInitialize() and giving up
+     * having USART3 configured before anything can want to print through it.
+     *
+     * Recorded rather than corrected, so the next reader does not have to re-derive that this
+     * is safe. */
+
     // initialize the FreeRTOS kernel
     osKernelInitialize();
 
