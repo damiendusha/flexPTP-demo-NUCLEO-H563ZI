@@ -512,7 +512,18 @@ int phy_get_link_state() {
 }
 
 const PHY_LinkStatus *phy_get_link_status() {
-    phyFetchLinkStatusCb(&linkStatus);
+    /* phyFetchLinkStatusCb is populated only when phy_populate_handlers() matched the PHY's
+     * OUI and model. An unrecognised part -- or a PHY ID read back as zero from a dead MDIO
+     * bus -- leaves it NULL, and fetch_link_properties() calls this from the "phy" thread
+     * every 500 ms, so without this guard an unknown PHY is a HardFault within half a second
+     * of boot. phy_get_event() and phy_refresh_link_status() already guard; this was the odd
+     * one out.
+     *
+     * On the unguarded path linkStatus keeps its zero-initialised value, which reports the
+     * link as down -- the correct answer when no PHY could be identified. */
+    if (phyFetchLinkStatusCb != NULL) {
+        phyFetchLinkStatusCb(&linkStatus);
+    }
     return &linkStatus;
 }
 
