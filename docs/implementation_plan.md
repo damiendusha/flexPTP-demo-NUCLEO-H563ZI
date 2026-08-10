@@ -714,7 +714,7 @@ into cleanup, bugs that are known but unfixed, and the five unfinished stages.
 | `ethdbg` volatile debug struct | `Drivers/EthDrv/mac_drv.c`, `mac_drv.h` | removed |
 | `rxdbg` volatile debug struct | `Drivers/EthDrv/eth_drv_lwip.c` | removed |
 | Forced `ptp_log_enable(PTP_LOG_TRANSMISSION/INFO)` | `Src/main.c` | removed — this was the console flood |
-| `slvdbg` / `coredbg` / `ptpdbg` / `nsddbg` | submodule | reverted; patch retained for F61 |
+| `slvdbg` / `coredbg` / `ptpdbg` / `nsddbg` | submodule | reverted, and the patch itself since **deleted** — F42 and F61 are both resolved. Recoverable from git; see `patches/flexptp/README.md` |
 | `ETHHW_PrintRingBufStatus` defined but not used | `Drivers/EthDrv/mac_drv.c` | kept as a diagnostic, marked `__attribute__((unused))` |
 
 The build is now clean — zero errors, zero warnings. `patches/flexptp/0002-servo-nan-latch-fix.patch`

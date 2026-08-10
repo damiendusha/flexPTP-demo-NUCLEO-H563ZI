@@ -47,30 +47,22 @@ clock free-runs. Full analysis in
 
 Report upstream: the defect is target-independent.
 
-### `0001-temporary-F42-instrumentation.patch` — **temporary, removed from the tree**
+## Removed
 
-Reverted from the submodule during the Stage 16 cleanup; the patch is kept because F61 is
-still open and this is most of the instrumentation needed to chase it. Reapply with the
-command under [Applying](#applying), and revert with
-`git -C Modules/flexptp checkout -- src/ && git -C Modules/flexptp apply "$PWD/patches/flexptp/0002-servo-nan-latch-fix.patch"`.
+`0001-temporary-F42-instrumentation.patch` added volatile debug counters to `task_ptp.c`,
+`slave.c`, `ptp_core.c` and `nsd_lwip.c` while F42, and later F61, were being chased. Both
+are resolved, so it was dropped rather than left to rot against a future submodule bump — a
+patch that no longer applies but is still listed is worse than no patch at all.
 
-
-Counters added while investigating F42 (PTP fails to complete the E2E delay exchange).
-Adds three volatile debug structs, readable over SWD, with no behavioural change:
-
-| Struct | File | Measures |
-|---|---|---|
-| `ptpdbg` | `task_ptp.c` | transmit-timestamp callbacks, `PTN_TRANSMIT_DONE` handling, `msgb` uid/tag hits and misses |
-| `slvdbg` | `slave.c` | messages entering the slave handler, Delay_Resp arrivals, delay-mechanism and sequence-ID matching |
-| `coredbg` | `ptp_core.c` | messages reaching the core dispatcher, Delay_Resp arrivals, domain/`transportSpecific` filtering |
-| `nsddbg` | `port/example_netstack_drivers/nsd_lwip.c` | what lwIP hands to the driver: callback count, PCB (event/general), and a per-message-type histogram |
-
-Read them with, e.g.:
+Nothing is lost. Recover it with:
 
 ```bash
-ADDR=$(arm-none-eabi-nm build/debug/flexptp-demo.elf | grep ' coredbg' | cut -d' ' -f1)
-toolchains/openocd/bin/openocd -f board/st_nucleo_h5.cfg \
-  -c init -c halt -c "mdw 0x$ADDR 8" -c resume -c shutdown
+git show 2963813:patches/flexptp/0001-temporary-F42-instrumentation.patch > /tmp/f42.patch
+git -C Modules/flexptp apply /tmp/f42.patch
 ```
 
-**This patch exists to diagnose a defect, not to fix one.** Drop it once F42 is resolved.
+It counted messages at four points in the receive path — what lwIP handed the driver, what
+reached the core dispatcher, what survived the domain and `transportSpecific` filter, and what
+the slave state machine did with it — plus the transmit-timestamp callback path in
+`task_ptp.c`. All four structs were `volatile` and read over SWD, so nothing printed from an
+ISR. If a future receive-path problem needs the same view, that is the shape to rebuild.

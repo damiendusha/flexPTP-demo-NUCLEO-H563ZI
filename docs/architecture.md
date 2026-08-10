@@ -45,14 +45,20 @@ needs access to the DMA descriptors that the HAL driver abstracts away.
 
 Every third-party component and its provenance. Where behaviour had to change, it was done
 through a supported extension point or a compile definition rather than by editing vendored
-source — with one **temporary** exception, noted below.
+source. Two submodules are the exception, and both changes are **permanent bug fixes**.
 
-> **flexPTP currently carries a local patch.** `patches/flexptp/0001-temporary-F42-instrumentation.patch`
-> adds debug counters while F42 is investigated. It changes no behaviour and must be dropped
-> once that finding is resolved. Because the parent repository records only the submodule's
-> commit pointer, working-tree edits inside `Modules/flexptp` are invisible to a clone and
-> are destroyed by `git submodule update` — which is why the patch is kept in-tree. See
-> [patches/flexptp/README.md](../patches/flexptp/README.md).
+> **Two submodules carry local patches**, both fixing real defects rather than instrumenting
+> anything: a servo fix in flexPTP ([F59](port_review.md#f59--one-duplicated-sync-cycle-latches-the-servo-into-nan-for-ever-resolved))
+> and three formatting fixes in embfmt ([F60](port_review.md#f60--embfmt-drops-ll-conversions-and-renders-nan-as-00000-resolved),
+> [F66](port_review.md#f66--embfmt-misreports-small-e-values-and-any-rounding-carry-resolved)).
+> Because the parent repository records only a submodule's commit pointer, working-tree edits
+> inside `Modules/` are invisible to a clone and are destroyed by `git submodule update` —
+> which is why the patches are kept in-tree. Neither is target-specific; both are worth
+> reporting upstream. See [patches/flexptp/README.md](../patches/flexptp/README.md) and
+> [patches/embfmt/README.md](../patches/embfmt/README.md).
+>
+> The temporary F42/F61 instrumentation patch that used to sit alongside them was **dropped**
+> once both findings were resolved. `patches/flexptp/README.md` records how to recover it.
 
 | Component | Version | How it is vendored | Modified? |
 |---|---|---|---|
@@ -62,7 +68,7 @@ source — with one **temporary** exception, noted below.
 | **CMSIS-RTOS2 shim** | ST distribution | in-tree, `Drivers/CMSIS/CMSIS_RTOS_V2` | **Patched — one `#include` directive.** In `cmsis_os2.c`, `#include "stm32h7xx.h"` became `#include "stm32h5xx.h"`. No header file was copied or rewritten; see the note below. Vendored copy, not a submodule, so the edit is in-repo and visible in git history |
 | **FreeRTOS-Kernel** | `V11.3.0` | CMake `FetchContent`, pinned tag | **As-is.** Configured by `Inc/FreeRTOSConfig.h` |
 | **lwIP** | `3d896ba` (`STABLE-2_2_1_RELEASE-34`) | git submodule | **As-is, but extended.** `Inc/lwipopts.h` injects four fields into `struct pbuf` via lwIP's `LWIP_PBUF_CUSTOM_DATA` hook — a supported extension point, not a patch. See [The PTP Timestamp Path](#the-ptp-timestamp-path) |
-| **flexPTP** | `76aaf67` (`RC1.0-11`) | git submodule | **Patched.** A permanent servo fix (F59, `patches/flexptp/0002-…`) plus temporary F42 instrumentation (see above), and two external workarounds. (1) `__PRI64_PREFIX=__INT64` compile definition, because flexPTP uses a glibc-internal macro newlib lacks (F47). (2) The STM32H5 hardware port is supplied by this project, since flexPTP ships none |
+| **flexPTP** | `76aaf67` (`RC1.0-11`) | git submodule | **Patched.** One permanent servo fix (F59, `patches/flexptp/0002-…`), and two external workarounds. (1) `__PRI64_PREFIX=__INT64` compile definition, because flexPTP uses a glibc-internal macro newlib lacks (F47). (2) The STM32H5 hardware port is supplied by this project, since flexPTP ships none |
 | **embfmt** | `670a349` | git submodule | **Patched.** Formatted-print backend for `MSG()`. `%ll` conversions were dropped entirely and NaN printed as `0.0000`; see [F60](port_review.md#f60--embfmt-drops-ll-conversions-and-renders-nan-as-00000-resolved) and `patches/embfmt/` |
 | **EtherLib** | `ec35be5` | git submodule | **Present but not compiled.** Alternative to lwIP, selectable via the `ETH_STACK` CMake variable |
 
