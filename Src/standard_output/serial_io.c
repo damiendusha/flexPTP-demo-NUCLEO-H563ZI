@@ -121,6 +121,38 @@ void serial_io_write(const char *str, uint32_t len) {
     bfifo_push(&fifo, (const uint8_t *)str, len);
 }
 
+/* Last-resort output for the paths where the normal console cannot work: fault handlers,
+ * FreeRTOS hooks and configASSERT all run with interrupts disabled or the scheduler stopped,
+ * so serial_io_write() -- which pushes into a FIFO drained by a task over DMA -- would queue
+ * the message and never emit it. That is why F53 and the stack-overflow path both presented
+ * as a board that simply went quiet.
+ *
+ * This touches no FIFO, no DMA and no RTOS object: it disables the UART's DMA request so it
+ * cannot race an in-flight transfer, then polls TXE and writes TDR directly. Safe from any
+ * context, at any interrupt priority. */
+void serial_io_panic_write(const char *str) {
+    if ((str == NULL) || ((USART3->CR1 & USART_CR1_UE) == 0U)) {
+        return; // never initialised -- polling TXE would hang instead of reporting
+    }
+
+    CLEAR_BIT(USART3->CR3, USART_CR3_DMAT);
+
+    while (*str != '\0') {
+        if (*str == '\n') { // the terminal needs CRLF; callers should not have to remember
+            while ((USART3->ISR & USART_ISR_TXE_TXFNF) == 0U) {
+            }
+            USART3->TDR = (uint8_t)'\r';
+        }
+
+        while ((USART3->ISR & USART_ISR_TXE_TXFNF) == 0U) {
+        }
+        USART3->TDR = (uint8_t)*str++;
+    }
+
+    while ((USART3->ISR & USART_ISR_TC) == 0U) { // drain before the caller halts
+    }
+}
+
 //  ----------
 
 #define SERIAL_IO_LINEBUF_LEN (256)

@@ -71,17 +71,18 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 
 | | Count |
 |---|---|
-| Total distinct actions | **79** |
-| Open (☐) | 73 |
+| Total distinct actions | **80** |
+| Open (☐) | 63 |
 | Partial (◐) | 1 |
-| Already done (✅) | 1 |
+| Already done (✅) | 12 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
 | Single-review, uncontested | 60 (Opus 45, Flash 11, Pro 4) |
 | **Rows in dispute (⚠)** | **11** — 5 outright, 6 contested boundaries |
+| Found during remediation (not from any review) | 1 |
 
-**Overlap is low.** Of 79 actions, only 14 were raised by more than one review — the three
+**Overlap is low.** Of 80 actions, only 14 were raised by more than one review — the three
 reports are far more complementary than redundant. Flash 3.6 dominates low-level driver
 defects (5 bugs no other review found); Opus 5.0 dominates documentation fidelity (12 of 14
 documentation actions); Pro 3.1 contributes 2 novel upstream-facing actions and no new
@@ -110,7 +111,7 @@ defects.
 
 | Status | Opus 5.0 ID | Flash 3.6 ID | Pro 3.1 ID | Consensus | Description |
 |---|---|---|---|---|---|
-| ☐ | **P2.1** | — | — | 1/3 O | Implement `vApplicationStackOverflowHook()` and `vApplicationMallocFailedHook()` with a polled-UART panic reporter. Both currently resolve to the shim's weak stubs, which call `configASSERT(0)` |
+| ✅ | **P2.1** | — | — | 1/3 O | Implement `vApplicationStackOverflowHook()` and `vApplicationMallocFailedHook()` with a polled-UART panic reporter. Both currently resolve to the shim's weak stubs, which call `configASSERT(0)` — **DONE:** added `serial_io_panic_write()` (polled USART3, no FIFO/DMA/RTOS, clears `CR3.DMAT` first) and both hooks. Heap exhaustion reproduced and reported on target. **Testing revealed the stack hook is largely unreachable on ARMv8-M** — the port programs `PSPLIM` per task, so hardware raises STKOF first; see **P2.14** |
 | ☐ | **P2.2** | — | — | 1/3 O | Make `configASSERT` report before halting — it is currently `taskDISABLE_INTERRUPTS(); for(;;);` |
 | ☐ | **P2.3** | ACT-03 (B2) | — | 2/3 O+F | Bound the ownership wait in `ETHHW_Transmit()`, `mac_drv.c:552`. Spins on `tcpip_thread` **while holding the lwIP core lock**; no watchdog exists to recover |
 | ☐ | **P2.4** | — | — | 1/3 O | Check `HAL_RCC_OscConfig()` / `HAL_RCC_ClockConfig()` return values; define `Error_Handler()`, which is declared at `main.c:31` and defined nowhere |
@@ -123,6 +124,7 @@ defects.
 | ☐ | **P2.11** | ACT-04 (B4) | — | 1/3 F | Fix the transmit-sequence delta in `ETHHW_ProcessTx()`, `mac_drv.c:473`, to `int16_t delta = (int16_t)(txCntr - state->txCntAcked);`. `txCntr` increments on *every* transmit, so the 16-bit wrap arrives in minutes on a busy link |
 | ☐ | **P2.12** | ACT-09 (B8) | — | 1/3 F | Bound the `phy_soft_reset()` handshake, `phy_common.c:441-448` — a seventh unbounded wait that F54 missed. Also initialise `r` before the loop |
 | ☐ | **P2.13** | ACT-11 (B11) | — | **⚠ METHOD** | Add a length guard in `low_level_output()` before concatenating into `concat_buf[1528]`. Drop the frame and return `ERR_OK`/`ERR_IF`, **not** `ERR_MEM` |
+| ☐ | **P2.14** | — | — | *new, found while testing P2.1* | Report faults instead of looping silently in `Default_Handler`. Measured on target: a task stack overflow raises **`CFSR` = `0x00100000` (UFSR.STKOF)** — the ARMv8-M hardware stack-limit fault — because the CM33 port programs `PSPLIM` on every context switch. UsageFault is not enabled in `SHCSR`, so it escalates to HardFault → `Default_Handler` → silent infinite loop. **`vApplicationStackOverflowHook()` therefore never runs for a real overflow**, which makes P2.1 alone insufficient for its own stated purpose |
 
 ### Priority 3 — verification and structure
 

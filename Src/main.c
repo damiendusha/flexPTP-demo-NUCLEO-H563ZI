@@ -8,6 +8,9 @@
 
 #include "FreeRTOSConfig.h"
 
+#include "FreeRTOS.h" // TaskHandle_t and taskDISABLE_INTERRUPTS() for the failure hooks
+#include "task.h"
+
 
 #include "cliutils/cli.h"
 #include "cmds.h"
@@ -259,6 +262,36 @@ void vApplicationTickHook(void) {
 
 void vApplicationIdleHook(void) {
     return;
+}
+
+/* configCHECK_FOR_STACK_OVERFLOW and configUSE_MALLOC_FAILED_HOOK are both enabled, but
+ * neither hook was implemented, so both resolved to the CMSIS-RTOS2 shim's __WEAK stubs --
+ * and those call configASSERT(0), which halts with interrupts disabled and prints nothing.
+ * The two most likely runtime failures in this firmware therefore presented exactly as F53
+ * did: a board that stops, with no clue why.
+ *
+ * Both report through the polled writer rather than MSG(), which cannot work here: it pushes
+ * into a FIFO drained by a task that will never run again. */
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
+    (void)xTask;
+
+    taskDISABLE_INTERRUPTS();
+    serial_io_panic_write("\n\n*** FATAL: stack overflow in task '");
+    serial_io_panic_write((pcTaskName != NULL) ? pcTaskName : "<unnamed>");
+    serial_io_panic_write("'\n"
+                          "Halted. Raise that task's stack_size; see docs/architecture.md#threads.\n");
+
+    for (;;) {
+    }
+}
+
+void vApplicationMallocFailedHook(void) {
+    taskDISABLE_INTERRUPTS();
+    serial_io_panic_write("\n\n*** FATAL: FreeRTOS heap exhausted (pvPortMalloc returned NULL)\n"
+                          "Halted. Raise configTOTAL_HEAP_SIZE; 'osinfo' reports the free space.\n");
+
+    for (;;) {
+    }
 }
 
 // --------
