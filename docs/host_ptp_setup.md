@@ -4,8 +4,10 @@ How to set up a Linux host as a PTP grandmaster for this demo, using `linuxptp`.
 
 > **Target status: locked and disciplining the clock.** Verified against `ptp4l` on a
 > directly-connected host with the **`default`** profile: 190 of 191 samples applying a
-> correction, offset holding at a mean of 519 ns with an 83 µs peak. The residual is the
-> host's software-timestamping floor, not the board — see
+> correction, and the offset centred on the master rather than drifting: **signed mean +40 ns**
+> over 60 samples, but a **typical magnitude of 26 µs** and an 87 µs peak. The near-zero
+> signed mean shows the servo is locked, not that the clock is accurate to 40 ns — the
+> spread is the host's software-timestamping floor, not the board — see
 > [Accuracy expectations](#accuracy-expectations).
 
 ## Two routes

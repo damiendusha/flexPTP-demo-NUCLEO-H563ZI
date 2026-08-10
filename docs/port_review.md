@@ -1017,7 +1017,7 @@ Reflashed, board on the direct link against `ptp4l -i enp5s0 -S -m --serverOnly=
 | | Before the fix | After the fix |
 |---|---|---|
 | Samples applying a correction | 0 of 77 | **190 of 191** (the one zero is the servo's own first cycle) |
-| Offset over the last 40 samples | diverging past 3.6 ms | mean **519 ns**, peak 83 µs |
+| Offset, last 60 samples | diverging past 3.6 ms | signed mean **+40 ns** (locked), magnitude 26 µs typical, 87 µs peak |
 | `mpd_ns` / `sync_period_ns` columns | printed as `d u` | `~30 µs` / `~1.0001 s` |
 
 The residual is the host's software-timestamping floor, not the board.

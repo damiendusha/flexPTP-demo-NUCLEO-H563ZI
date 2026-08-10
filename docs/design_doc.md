@@ -617,7 +617,8 @@ Tested against `linuxptp` 4.4 on a Linux host.
   Arm conversion behaviours hid it — NaN printed as `0.0000` and tuned the addend by zero,
   so every visible indicator stayed green while the clock free-ran at ~18.7 ppm. Fixed with
   three guards (`patches/flexptp/0002-…`); after the fix, 190 of 191 samples apply a
-  correction and the offset holds at a mean of 519 ns.
+  correction and the offset is centred on the master instead of drifting (signed mean
+  +40 ns, typical magnitude 26 µs — the host's software-timestamping floor).
 - **F60 resolved: embfmt could not print `%ll` and rendered NaN as `0.0000`.** The mean path
   delay and measured Sync period columns were blank on every servo line
   (`patches/embfmt/0001-…`).

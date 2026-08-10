@@ -605,20 +605,19 @@ The port works end to end: DHCP, link, PTP timestamping, delay exchange and a se
 disciplines the clock (see [port_review.md](port_review.md) F42/F59). What is left splits
 into cleanup, bugs that are known but unfixed, and the five unfinished stages.
 
-### 1. Cleanup — blocks anything shipping
+### 1. Cleanup — **done**
 
-| Item | Where |
-|---|---|
-| `ethdbg` volatile debug struct | `Drivers/EthDrv/mac_drv.c`, `mac_drv.h` |
-| `rxdbg` volatile debug struct | `Drivers/EthDrv/eth_drv_lwip.c` |
-| Forced `ptp_log_enable(PTP_LOG_TRANSMISSION/INFO)` | `Src/main.c` — this is what floods the console |
-| `slvdbg` / `coredbg` / `ptpdbg` / `nsddbg` | submodule, via `patches/flexptp/0001-temporary-F42-instrumentation.patch` |
-| `ETHHW_PrintRingBufStatus` defined but not used | `Drivers/EthDrv/mac_drv.c` — the only build warning |
+| Item | Where | |
+|---|---|---|
+| `ethdbg` volatile debug struct | `Drivers/EthDrv/mac_drv.c`, `mac_drv.h` | removed |
+| `rxdbg` volatile debug struct | `Drivers/EthDrv/eth_drv_lwip.c` | removed |
+| Forced `ptp_log_enable(PTP_LOG_TRANSMISSION/INFO)` | `Src/main.c` | removed — this was the console flood |
+| `slvdbg` / `coredbg` / `ptpdbg` / `nsddbg` | submodule | reverted; patch retained for F61 |
+| `ETHHW_PrintRingBufStatus` defined but not used | `Drivers/EthDrv/mac_drv.c` | kept as a diagnostic, marked `__attribute__((unused))` |
 
-**Keep** `patches/flexptp/0002-servo-nan-latch-fix.patch` and
-`patches/embfmt/0001-ll-length-modifier-and-non-finite-doubles.patch`: those are permanent
-fixes, not instrumentation. Reverting the submodule instrumentation costs nothing
-permanent — `0001` reapplies with one `git apply` when F61 is chased.
+The build is now clean — zero errors, zero warnings. `patches/flexptp/0002-servo-nan-latch-fix.patch`
+and `patches/embfmt/0001-ll-length-modifier-and-non-finite-doubles.patch` remain applied:
+those are permanent fixes, not instrumentation.
 
 ### 2. Known bugs, not yet fixed
 
@@ -640,7 +639,7 @@ done but has never been signed off against the [Verification Plan](#verification
 | Item | Why it is deferred |
 |---|---|
 | gPTP route end to end | Deliberate — the `default` profile is the proven one; switching was explicitly postponed |
-| Accuracy characterisation | The measured 519 ns mean is the **host's** software-timestamping floor, not the board's capability. Needs a hardware-timestamping NIC. The ST-Link MCO clock (noisy) and the 25 MHz X3 option are the other two variables |
+| Accuracy characterisation | The offset's **signed** mean is near zero (+40 ns), which shows lock; its **magnitude** is ~26 µs typical and ~87 µs peak, which is the **host's** software-timestamping floor, not the board's capability. Needs a hardware-timestamping NIC. The ST-Link MCO clock (noisy) and the 25 MHz X3 option are the other two variables |
 | Upstream reports owed | F47 (`__PRI64_PREFIX` breaks every newlib target), F59 (servo NaN latch), F60 (embfmt `%ll` and NaN). All three are target-independent |
 | flexPTP on ARMv8-M (F39) | First Cortex-M33 target for the library. No specific defect known; treat unexplained core-level misbehaviour as a possible ARMv7-M assumption rather than a port bug |
 | CMSIS Core 5.6 (F30) | Carried over from the H7 project against a 1.7.0 device pack. Works; a bump is the first thing to try if odd core-header errors appear |

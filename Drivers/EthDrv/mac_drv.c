@@ -6,11 +6,6 @@
 
 #include <stm32h5xx_hal.h>
 
-/* ---- TEMPORARY INSTRUMENTATION for finding F42 (TX timestamp path). ----
- * Plain volatile counters so they can be read over SWD without printing from an ISR.
- * Remove once the defect is understood. */
-volatile ETHHW_TxTsDebug ethdbg = {0};
-
 __weak uint32_t ETHHW_setupPHY(ETH_TypeDef *eth) {
     (void)eth;
     return MODEINIT_FULL_DUPLEX | MODEINIT_SPEED_100MBPS;
@@ -248,7 +243,9 @@ void ETHHW_RestoreRXDesc(ETHHW_DescFull *bd) {
 typedef enum { ETHHW_RINGBUF_RX,
                ETHHW_RINGBUF_TX } ETHHW_RingBufId;
 
-static void ETHHW_PrintRingBufStatus(ETH_TypeDef *eth,
+// Diagnostic dumper. Call sites below are commented out by default; kept because it is
+// the quickest way to inspect descriptor ownership when the rings misbehave.
+__attribute__((unused)) static void ETHHW_PrintRingBufStatus(ETH_TypeDef *eth,
                                      ETHHW_RingBufId ringBufId) {
     ETHHW_DescFull *ring = NULL;
     ETHHW_DescFull *currentPtr = NULL;
@@ -409,8 +406,6 @@ void ETHHW_ProcessTx(ETH_TypeDef *eth) {
     ETHHW_State *state = ETHHW_GetState(eth);
     ETHHW_DescFull *ring = (ETHHW_DescFull *)eth->DMACTDLAR;
 
-    ethdbg.procTxCalls++;
-
     /* One descriptor is retired per pass, oldest first.
      *
      * FIXED: the counter of timestamp-carrying descriptors used to be declared outside
@@ -437,7 +432,6 @@ void ETHHW_ProcessTx(ETH_TypeDef *eth) {
 
             if ((DES3 & ETH_DMATXNDESCWBF_TTSS) && !(DES3 & ETH_DMATXNDESCWBF_OWN)) {
                 found++;
-                ethdbg.descWithTs++;
                 int32_t delta = (int32_t)txCntr - (int32_t)state->txCntAcked;
 
                 if (first) {
@@ -472,11 +466,7 @@ void ETHHW_ProcessTx(ETH_TypeDef *eth) {
         bd->ext.tsCbArg = 0;
         state->txCntAcked = bd->ext.txCntr;
 
-        ethdbg.cbCandidates++;
-        if (cbPtr == 0) {
-            ethdbg.cbPtrNull++;
-        } else {
-            ethdbg.cbDispatched++;
+        if (cbPtr != 0) {
             // Signature must match lwipopts.h's tx_cb and flexPTP's ptp_transmit_cb:
             // the tag is a void *, carried through the descriptor extension as a uint32_t.
             ((void (*)(uint32_t, uint32_t, void *))cbPtr)(ts_s, ts_ns, (void *)cbArg);
@@ -490,13 +480,7 @@ void ETHHW_ISR(ETH_TypeDef *eth) {
     // MSG("ETH [0x%X]\n", csr);
 
     if (csr & ETH_DMACSR_NIS) {    // Normal Interrupt Summary
-        ethdbg.isrNis++;
-        if ((csr & ETH_DMACSR_RI) && (csr & ETH_DMACSR_TI)) {
-            ethdbg.isrBoth++;
-        }
-
-        if (csr & ETH_DMACSR_RI) { // Receive Interrupt
-            ethdbg.isrRi++;
+        if (csr & ETH_DMACSR_RI) {  // Receive Interrupt
             SET_BIT(ETH->DMACSR, ETH_DMACSR_RI);
             SET_BIT(ETH->DMACSR, ETH_DMACSR_NIS);
 
@@ -508,8 +492,7 @@ void ETHHW_ISR(ETH_TypeDef *eth) {
         // Independent of the RX branch: with "else if", a combined RI+TI interrupt serviced
         // only RX. Measured NOT to be the cause of F42 (the TX path delivers 100% of
         // timestamps either way), but the exclusive form is latently wrong under load.
-        if (csr & ETH_DMACSR_TI) { // Transmit Interrupt
-            ethdbg.isrTi++;
+        if (csr & ETH_DMACSR_TI) {  // Transmit Interrupt
             SET_BIT(ETH->DMACSR, ETH_DMACSR_TI);
 
             ETHHW_ProcessTx(eth);
@@ -542,7 +525,6 @@ void ETHHW_Transmit(ETH_TypeDef *eth, const uint8_t *buf, uint16_t len, uint8_t 
     if ((txOpts == ETHHW_TXOPT_CAPTURE_TS) &&
         (txOptArgs != NULL)) { // arguments are mandatory
         opts |= ETH_DMATXNDESCRF_TTSE;
-        ethdbg.txTsRequested++;
         ETHHW_OptArg_TxTsCap *arg = (ETHHW_OptArg_TxTsCap *)txOptArgs; // retrieve args
         bd->ext.tsCbPtr = arg->txTsCbPtr;                              // fill-in extension fields
         bd->ext.tsCbArg = arg->tag;

@@ -47,7 +47,13 @@ clock free-runs. Full analysis in
 
 Report upstream: the defect is target-independent.
 
-### `0001-temporary-F42-instrumentation.patch` — **temporary, do not ship**
+### `0001-temporary-F42-instrumentation.patch` — **temporary, removed from the tree**
+
+Reverted from the submodule during the Stage 16 cleanup; the patch is kept because F61 is
+still open and this is most of the instrumentation needed to chase it. Reapply with the
+command under [Applying](#applying), and revert with
+`git -C Modules/flexptp checkout -- src/ && git -C Modules/flexptp apply "$PWD/patches/flexptp/0002-servo-nan-latch-fix.patch"`.
+
 
 Counters added while investigating F42 (PTP fails to complete the E2E delay exchange).
 Adds three volatile debug structs, readable over SWD, with no behavioural change:
