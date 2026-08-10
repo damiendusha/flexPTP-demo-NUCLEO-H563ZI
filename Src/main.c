@@ -80,9 +80,13 @@ void init_pll() {
                      RCC_CLOCKTYPE_PCLK3);
     clk.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
 
-    // HCLK is also the Ethernet PTP timestamp clock on the STM32H563 -- there is no
-    // ETHPTPCLKSEL mux on this device. It must run at the full 250 MHz; dividing here
-    // would silently detune the PTP clock. See docs/ptp_clock.md.
+    // HCLK is the AHB bus clock and the MDIO CSR reference -- it is NOT the PTP timestamp
+    // clock. clk_ptp_ref_i is hardwired to pll1_q_ck on this device (see PLLQ above), so
+    // the AHB divider does not affect PTP at all. DIV1 is chosen for bus performance and
+    // because the MDIO CR divider is picked for a 250 MHz HCLK. See docs/ptp_clock.md.
+    //
+    // An earlier revision of this comment claimed HCLK was the PTP clock. That belief is
+    // what left PLL1Q disabled and the timestamp counter dead -- finding F53.
     // NOTE: the H5 divider namespaces are the inverse of the H7's. AHBCLKDivider takes
     // RCC_SYSCLK_DIVn (it divides SYSCLK); the APB dividers take RCC_HCLK_DIVn (they
     // divide HCLK). RCC_HCLK_DIVn exists on both families with different encodings, so

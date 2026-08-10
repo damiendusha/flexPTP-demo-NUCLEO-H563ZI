@@ -169,8 +169,9 @@ HCLK, not PCLK. DIV2 leaves headroom on the peripheral buses at no cost.
 
 ## PTP Clock
 
-The timestamp unit is clocked from **HCLK at 250 MHz** with a **5 ns** subsecond
-increment.
+The timestamp unit is clocked from **`pll1_q_ck` at 250 MHz** with a **5 ns** subsecond
+increment. It is *not* clocked from HCLK — see point 1 below, and finding F53 for what
+believing otherwise cost.
 
 | Parameter | Value |
 |---|---|
@@ -191,13 +192,16 @@ Three things are worth knowing without reading further:
 2. **The subsecond increment must exceed the PTP clock period.** With a 4 ns clock period,
    5 ns is the smallest usable increment. Choosing 4 ns produces an addend that does not
    fit in 32 bits and a clock that never ticks.
-3. **Timestamp granularity is 5 ns — the same as the H743 source project — and cannot be
-   improved on this part.** A finer increment would need a *faster* PTP clock (≥ 262 MHz),
-   which exceeds the device's 250 MHz HCLK ceiling.
+3. **Timestamp granularity is 5 ns, the same as the H743 source project, and is not
+   improved here.** A finer increment needs a *faster* PTP clock (≥ 262 MHz for a marginal
+   K = 1.05). That is reachable in principle — `PLLQ = 1` would give `pll1_q_ck` = 500 MHz
+   — but it is not adopted, for the engineering reasons set out in
+   [ptp_clock.md](ptp_clock.md#why-a-4-ns-increment-is-unreachable). It is not blocked by
+   the 250 MHz HCLK ceiling, which has nothing to do with the PTP clock.
 
-Two settings elsewhere are load-bearing for this: the AHB prescaler must be
-`RCC_HCLK_DIV1` (not the H743's `DIV2`), and the MDIO divider `CR = DIV102` is correct
-only for a 250 MHz HCLK.
+One setting elsewhere is load-bearing for this: **`PLLQ` must be 2 and the PLL1Q output
+must be enabled**. The AHB prescaler (`RCC_SYSCLK_DIV1`, the H5 spelling) and the MDIO
+divider `CR = DIV102` are paired with the 250 MHz *HCLK*, not with PTP.
 
 > **Full derivation, the `K > 1` constraint, the PLL arithmetic, and the record of why the
 > originally planned 200 MHz / PLL1_Q configuration was abandoned:

@@ -50,7 +50,7 @@ build at each of these points and do not proceed until it passes:
 | Decision | Resolution |
 |---|---|
 | **Repository** | New repository `flexPTP-demo-NUCLEO-H563ZI` |
-| **PTP Clock** | **HCLK 250 MHz, 5 ns increment.** The H563 has no ETH PTP clock mux, so HCLK is the only source; 5 ns is the smallest usable increment. Supersedes the earlier "200 MHz via PLL1_Q" decision — see [ptp_clock.md](ptp_clock.md). |
+| **PTP Clock** | **`pll1_q_ck` 250 MHz, 5 ns increment.** The H563 has no ETH PTP clock mux, but the mux-less parts are hardwired to `pll1_q_ck` (RM0481 Table 121) — **not** to HCLK. `PLLQ` = 2 and the PLL1Q output must be explicitly enabled. 5 ns is the smallest increment satisfying K > 1. *(Corrected: this row previously read "HCLK 250 MHz … HCLK is the only source", which is the inference that caused F53. The original plan's instinct to use PLL1_Q was right; only its 200 MHz figure was unattainable.)* — see [ptp_clock.md](ptp_clock.md). |
 | **HSE Mode** | `RCC_HSE_BYPASS` — stock Nucleo board (ST-Link MCO at 8 MHz) |
 | **Double-Precision FPU** | Keep `double` in Kalman filter. Accept software emulation cost on M33 SP-FPU. The servo runs once per Sync (1–8 Hz), so the cost is immaterial. |
 | **Network Stack** | LwIP only for initial port. Design doc will cover EtherLib porting steps. |

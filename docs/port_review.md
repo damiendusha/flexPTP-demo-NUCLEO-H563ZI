@@ -1545,9 +1545,13 @@ encodings — `RCC_CFGR_HPRE_3` on H7, `RCC_CFGR2_PPRE1_2` on H5 — so carrying
 spelling across compiles silently and writes a PPRE-encoded value into the HPRE field,
 yielding the wrong AHB divider.
 
-Given that HCLK is also the PTP clock on this part, that would have detuned the PTP clock
-with no diagnostic. Caught by the Stage 10 compile gate only because the neighbouring APB
-lines failed loudly first.
+That would have yielded a wrong AHB divider with no diagnostic — HCLK at 125 MHz instead of
+250, halving bus throughput and putting the MDIO `CR = DIV102` pairing out of range. Caught
+by the Stage 10 compile gate only because the neighbouring APB lines failed loudly first.
+
+*(This paragraph previously added "and that would have detuned the PTP clock, since HCLK is
+also the PTP clock on this part". It would not: `clk_ptp_ref_i` is hardwired to `pll1_q_ck`
+and is unaffected by the AHB divider. See the F3 correction above.)*
 
 ### F44 — undocumented Ninja dependency
 
