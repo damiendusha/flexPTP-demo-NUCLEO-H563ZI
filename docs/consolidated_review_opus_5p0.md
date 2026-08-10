@@ -80,9 +80,9 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 | | Count |
 |---|---|
 | Total distinct actions | **81** |
-| Open (☐) | 17 |
+| Open (☐) | 14 |
 | Partial (◐) | 0 |
-| Already done (✅) | 60 |
+| Already done (✅) | 63 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -173,7 +173,7 @@ defects.
 | Status | Flash 3.6 Verified | Pro 3.1 Verified | Opus 5.0 ID | Flash 3.6 ID | Pro 3.1 ID | Consensus | Description |
 |---|---|---|---|---|---|---|---|
 | ☐ | — | — | **P5.1** | — | — | 1/3 O | Add CI: clean Debug + Release build, zero warnings under `-Wall -Wextra` |
-| ☐ | — | — | **P5.2** | ACT-14 (D2, I4) | — | 2/3 O+F | Remove the unconditional `DEBUG` from `CMakeLists.txt:93`; the `$<$<CONFIG:Debug>:DEBUG>` generator expression at line 132 already covers it |
+| ✅ | — | — | **P5.2** | ACT-14 (D2, I4) | — | 2/3 O+F | Remove the unconditional `DEBUG` from `CMakeLists.txt:93`; the `$<$<CONFIG:Debug>:DEBUG>` generator expression at line 132 already covers it — **DONE: `DEBUG` removed from the unconditional `compile_DEFS`; the `$<$<CONFIG:Debug>:DEBUG>` generator expression already covered it, so Release no longer defines it** |
 | ☐ | — | — | **P5.3** | ACT-15 (D3, I4) | — | **⚠ METHOD** | Decide whether `Release` should move from `-Og` to `-O2`/`-Os`; configure or delete the untested `relWithDebInfo` and `minSizeRel` presets. **Requires hardware re-verification** — see F62 |
 | ✅ | — | — | **P5.4** | — | — | 1/3 O | Use `bfifo_push_all()` in `serial_io_write()` — console output is silently truncated when the 16 KB FIFO fills — **DONE: `bfifo_push_all()`, so a full FIFO blocks the producer instead of truncating the message mid-word. Correct for every current caller (all threads); ISR-context output goes through `serial_io_panic_write()` instead, noted at the call** |
 | ✅ | — | — | **P5.5** | ACT-12 (B12) | — | 2/3 O+F | Fix `get_line()`'s left-trim so the trimmed line reaches `process_cli_line()` (use `memmove`) — **DONE: left-trim now shifts in place with `memmove` so the caller's buffer is actually trimmed. Verified on target — `   osinfo` (three leading spaces) is accepted and answers, where before only the local pointer moved and `task_cli()` passed the untrimmed line on** |
@@ -190,8 +190,8 @@ defects.
 | ☐ | — | — | **P5.16** | — | — | 1/3 O | Add a `docs/` cross-reference and anchor checker to CI |
 | ☐ | — | — | **P5.17** | — | — | 1/3 O | Move `serial_io_init()`'s `osThreadNew()` after `osKernelInitialize()`, or record why the current order is safe |
 | ☐ | — | — | **P5.18** | — | — | 1/3 O | Comment `ETH_MAC_ADDR0`'s `0x02 \| (UNIQUE_DEV_ID_BYTE(0) & 0xFE)` so the locally-administered bit and the unicast mask read as two deliberate operations |
-| ☐ | — | — | **P5.19** | ACT-16 (D4, I4) *(part)* | — | 1/3 F | Remove `-u _printf_float` from `CMakeLists.txt:166` — verified as force-linking newlib's float formatter (25 references in the map) into a project that uses `embfmt` |
-| ☐ | — | — | **P5.20** | ACT-17 (D5) | — | **⚠ SEVERITY** | Remove the duplicate `main.c` / `syscall.c` / `sysmem.c` listings between `CMakeLists.txt:35-40` and `Src/CMakeLists.txt:1-13` |
+| ✅ | — | — | **P5.19** | ACT-16 (D4, I4) *(part)* | — | 1/3 F | Remove `-u _printf_float` from `CMakeLists.txt:166` — verified as force-linking newlib's float formatter (25 references in the map) into a project that uses `embfmt` — **DONE (removed), but **the size claim was wrong**: a proper A/B — build, remove flag, rebuild — gives **0 bytes** difference, with `printf_float` absent from the map either way. My earlier "25 references" came from a grep that also matched `vfprintf`. Removed as a misleading dead flag, not as a saving; the cross-review is corrected accordingly** |
+| ✅ | — | — | **P5.20** | ACT-17 (D5) | — | **⚠ SEVERITY** | Remove the duplicate `main.c` / `syscall.c` / `sysmem.c` listings between `CMakeLists.txt:35-40` and `Src/CMakeLists.txt:1-13` — **DONE: `main.c`/`syscall.c`/`sysmem.c` removed from the root `sources_SRCS`, leaving `Src/CMakeLists.txt` as the single owner. Verified the map still has exactly one `main.c.obj` — CMake had been deduplicating them, so this is tidying with no functional effect, as recorded** |
 | ☐ | — | — | **P5.21** | ACT-19 (U2) | — | 1/3 F | Add a `NOLOAD` placement for `.ETHLibPool` in SRAM3, per the analysis already in `design_doc.md` |
 | ☐ | — | — | **P5.22** | — *(from U2)* | — | 1/3 F | Reconcile `ETH_BUFFER_SIZE`: `1536UL` in `eth_drv_etherlib.c:17` vs `1528UL` in `eth_drv_lwip.c:40` |
 | ✅ | — | — | **P5.23** | ACT-20 (B13) | — | 1/3 F | Add `\n` to `MSG("Turning PTP on!")`, `ptp_port_stm32h563.c:105` — **DONE: verified on target — *"Turning PTP on!"* now ends its own line instead of running into *"Own clock ID:"*** |

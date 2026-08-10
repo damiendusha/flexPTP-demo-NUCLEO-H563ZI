@@ -32,10 +32,9 @@ set(cpu_PARAMS
 set(MCU_TYPE STM32H563xx)
 
 # Sources
+# Only the startup file: main.c, syscall.c and sysmem.c are added by Src/CMakeLists.txt,
+# and listing them in both places was a duplicate CMake happened to deduplicate.
 set(sources_SRCS
-    ${CMAKE_SOURCE_DIR}/Src/main.c
-    ${CMAKE_SOURCE_DIR}/Src/syscall.c
-    ${CMAKE_SOURCE_DIR}/Src/sysmem.c
     ${CMAKE_SOURCE_DIR}/Startup/startup_stm32h563zitx.s
 )
 
@@ -90,7 +89,10 @@ target_sources(${CMAKE_PROJECT_NAME} PUBLIC ${sources_SRCS})
 set(ETH_STACK "LWIP") # select "LWIP" or "ETHERLIB"
 
 # Add definitions
-set(compile_DEFS ${MCU_TYPE} USE_HAL_DRIVER DEBUG CMSIS_OS2 PPS_SIMPLE ETH_STACK="${ETH_STACK}")
+# DEBUG is NOT listed here: it belongs to the Debug configuration only, and is applied
+# below through $<$<CONFIG:Debug>:DEBUG>. Listing it unconditionally defined it in
+# Release builds too.
+set(compile_DEFS ${MCU_TYPE} USE_HAL_DRIVER CMSIS_OS2 PPS_SIMPLE ETH_STACK="${ETH_STACK}")
 add_compile_definitions(${compile_DEFS})
 add_compile_definitions(PROJECT_NAME="${CMAKE_PROJECT_NAME}")
 
@@ -163,7 +165,6 @@ target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
     ${cpu_PARAMS}
     ${linker_OPTS}
     -Wl,-Map=${CMAKE_PROJECT_NAME}.map
-    -u _printf_float # STDIO float formatting support (remove if not used)
     --specs=nosys.specs
     -Wl,--start-group
     -lc

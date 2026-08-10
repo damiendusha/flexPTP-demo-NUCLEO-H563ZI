@@ -140,12 +140,19 @@ Checked against the linked map:
 
 | Flag | Effect | Verdict |
 |---|---|---|
-| `-u _printf_float` | **25 references** to `printf_float`/`vfprintf` in the map — it really is force-linking newlib's float formatter into a project that uses `embfmt` | **Correct.** Removing it is a genuine saving |
+| `-u _printf_float` | ~~25 references … a genuine saving~~ **Re-measured: none.** A/B build with and without the flag: FLASH identical to the byte, and `printf_float` appears **0** times in the map either way | **Incorrect** — see correction below |
 | `-lstdc++ -lsupc++` | Appear **only as `LOAD` lines** — the archives are scanned, nothing is extracted (no `.cpp` files exist) | **Incorrect.** They contribute zero bytes; removing them saves nothing |
 
-The claim *"adds dead code"* is true for one flag and false for the other two. Worth
-separating, because "remove three flags to shrink the image" sets an expectation that only
-one of them can meet.
+> **Correction.** An earlier revision of this section accepted Flash 3.6's `-u _printf_float`
+> claim, citing "25 references to `printf_float`/`vfprintf` in the map". That grep pattern also
+> matched `vfprintf`, which something else pulls in, so it never measured the flag. A proper
+> A/B — build, remove the flag, rebuild, compare — gives **0 bytes** difference and 0
+> `printf_float` references in both maps.
+>
+> So Flash 3.6's D4 is wrong about **all three** flags, not one of three: none of them
+> contributes anything to this image. Removing them is tidying, not shrinking. The flag was
+> removed anyway (P5.19), because a link option referencing a symbol the project never uses is
+> misleading — but no size claim is attached to it.
 
 ### D5 — real redundancy, wrong category, no effect
 
