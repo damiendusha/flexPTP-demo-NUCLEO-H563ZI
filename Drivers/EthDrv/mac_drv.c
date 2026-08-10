@@ -460,7 +460,7 @@ void ETHHW_ProcessTx(ETH_TypeDef *eth) {
     for (;;) {
         uint16_t found = 0;
         uint16_t minIdx = 0;
-        int32_t minDelta = 0;
+        int16_t minDelta = 0; // same width as delta, so the comparison stays modular
         bool first = true;
 
         // search for the oldest timestamp-carrying descriptor
@@ -470,7 +470,18 @@ void ETHHW_ProcessTx(ETH_TypeDef *eth) {
 
             if ((DES3 & ETH_DMATXNDESCWBF_TTSS) && !(DES3 & ETH_DMATXNDESCWBF_OWN)) {
                 found++;
-                int32_t delta = (int32_t)txCntr - (int32_t)state->txCntAcked;
+
+                /* Modular difference in 16 bits, NOT a widened subtraction.
+                 *
+                 * "(int32_t)txCntr - (int32_t)state->txCntAcked" breaks across the uint16_t
+                 * wrap: with txCntAcked = 65530 and descriptors 65531, 65532 and 2 pending,
+                 * the deltas are +1, +2 and -65528, so the "delta < minDelta" rule picks the
+                 * newest descriptor as the oldest and dispatches its timestamp out of order.
+                 *
+                 * The wrap is not a rare event. txCntr is incremented on EVERY transmit in
+                 * ETHHW_Transmit(), not only on timestamped ones, so on a busy link it comes
+                 * round in minutes rather than the ~18 hours a 1 Hz Delay_Req rate suggests. */
+                int16_t delta = (int16_t)(txCntr - state->txCntAcked);
 
                 if (first) {
                     first = false;
