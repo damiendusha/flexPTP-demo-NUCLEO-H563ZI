@@ -126,13 +126,27 @@ HSE 8 MHz (RCC_HSE_BYPASS — ST-Link MCO, no crystal fitted)
   │
   ├─ PLLM = HSE_VALUE / 2000000 = 4      →  VCI    =   2 MHz   (RCC_PLL1_VCIRANGE_1)
   ├─ PLLN = TARGET_SYSCLK_MHZ  = 250     →  VCO    = 500 MHz   (RCC_PLL1_VCORANGE_WIDE)
-  └─ PLLP = 2                            →  SYSCLK = 250 MHz
-                                             │
-       AHBCLKDivider  = RCC_HCLK_DIV1     →  HCLK   = 250 MHz  ← also ptp_ker_ck
-       APB1/2/3 Div   = RCC_APBx_DIV2     →  PCLK   = 125 MHz
+  │
+  ├─ PLLP = 2                            →  SYSCLK = 250 MHz
+  │                                          │
+  │    AHBCLKDivider = RCC_SYSCLK_DIV1   →  HCLK   = 250 MHz   (AHB bus, MDIO CSR)
+  │    APB1/2/3 Div  = RCC_HCLK_DIV2     →  PCLK   = 125 MHz
+  │
+  └─ PLLQ = 2, output enabled            →  pll1_q_ck = 250 MHz  → clk_ptp_ref_i
+       __HAL_RCC_PLL1_CLKOUT_ENABLE(RCC_PLL1_DIVQ)                 (PTP timestamp unit)
 
   FLASH_LATENCY_5, voltage scaling VOS0
 ```
+
+> [!WARNING]
+> The divider namespaces are **inverted between the H7 and the H5**, and the constants in
+> this diagram are the H5 ones. `AHBCLKDivider` takes `RCC_SYSCLK_DIVn` (it divides SYSCLK);
+> the APB dividers take `RCC_HCLK_DIVn` (they divide HCLK).
+>
+> `RCC_HCLK_DIVn` exists on **both** families with different encodings, so writing the H7
+> spelling into `AHBCLKDivider` compiles silently and programs a PPRE-encoded value into the
+> HPRE field — the wrong AHB divider, with no diagnostic. That is finding
+> [F45](port_review.md), and an earlier revision of this very diagram reproduced it.
 
 Comparison with the source project: the H743 ran SYSCLK 480 MHz with `RCC_HCLK_DIV2`,
 giving HCLK of 240 MHz, which on that part *was* also the PTP clock. On the H563 the two
