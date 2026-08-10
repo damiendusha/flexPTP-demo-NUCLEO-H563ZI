@@ -175,6 +175,16 @@ target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
     -Wl,--print-memory-usage
 )
 
+# Relink when the linker script changes.
+#
+# -T names the script on the link line but tells CMake nothing about it, so an incremental
+# build after editing stm32h563zitx_FLASH.ld silently keeps the previous memory layout. That
+# is not hypothetical: P3.8's section reorder appeared to have had no effect at all until the
+# ELF was deleted by hand, because the link step never re-ran.
+set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES
+    LINK_DEPENDS ${linker_script_SRC}
+)
+
 # Execute post-build to print size, generate hex and bin
 add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_SIZE} $<TARGET_FILE:${CMAKE_PROJECT_NAME}>

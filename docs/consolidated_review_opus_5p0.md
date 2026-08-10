@@ -79,10 +79,10 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 
 | | Count |
 |---|---|
-| Total distinct actions | **80** |
+| Total distinct actions | **81** |
 | Open (☐) | 42 |
 | Partial (◐) | 1 |
-| Already done (✅) | 33 |
+| Already done (✅) | 34 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -147,6 +147,7 @@ defects.
 | ✅ | — | — | **P3.7** | — | — | 1/3 O | Record which PTP message types `SNAPTYPSEL = 0b01` selects, and confirm it suits both e2e and p2p — **DONE: documented at the register write. `SNAPTYPSEL = 0b01` with `TSEVNTENA = 0` / `TSMSTRENA = 0` is the widest selection the MAC offers — every PTP message type including the peer-delay ones — which is **required**, since the delay mechanism is runtime-switchable and the two shipped profiles use different ones (default = E2E, gPTP = P2P). Confirmed on target that both are selectable: `ptp delmech` reports P2P by default and accepts `e2e`/`p2p`. `TSENALL` deliberately unset. The exact RM0481 message-type table is not restated — no copy to cite** |
 | ✅ | — | — | **P3.8** | ACT-07 (B10, I3) | — | **⚠ SEVERITY** | Reorder `stm32h563zitx_FLASH.ld` to place `.FreeRTOS_sec` before `._user_heap_stack`. Verified: `ucHeap` at `0x200190d0` sits inside the `_sbrk` range (`_end` `0x200186d0` → ceiling `0x2003F800`) — **DONE: `.FreeRTOS_sec` moved before `._user_heap_stack`. Verified from the map: `ucHeap` now at `0x200186cc`, `_end` at `0x2001fecc` — the 30 KB FreeRTOS heap sits entirely **below** where `_sbrk` starts, instead of 2.5 KB inside its range. Severity dispute resolved as ranked (P3, not Flash 3.6's P1): the fix is free, but reaching the bug needed ~2.5 KB of newlib `malloc` in a project that avoids newlib's allocator** |
 | ☐ | — | — | **P3.9** | — | item 4 | 1/3 P | Characterise against a PHC-capable grandmaster (Intel I210 / I219-V / 82576) to establish whether `LOCKED` (100 ns) is reachable. Nothing on the target changes |
+| ✅ | — | — | **P3.10** | — | — | *new, found while testing P3.8* | CMake does not declare the linker script as a link dependency, so editing `stm32h563zitx_FLASH.ld` does not trigger a relink: an incremental build silently keeps the previous memory layout. Found the hard way — P3.8's section reorder appeared to have no effect until the ELF was deleted by hand. Any future linker-script change is unverifiable until this is fixed. — **DONE: `LINK_DEPENDS` added on the target. Proved by editing `_Min_Heap_Size` in the linker script and rebuilding **without** deleting anything — the ELF hash changes, so the relink now fires. Before the fix it did not, which is why P3.8's reorder appeared to have no effect** |
 
 ### Priority 4 — documentation
 
