@@ -68,7 +68,7 @@ void ptphw_set_pps_freq(double freq) {
         // store frequency setting
         sFreq = freq_Hz;
 #else
-#error "No decision was made on how the PPS signal is generated! Please define either PPS_SIMPLE or PPL_PULSETRAIN!"
+#error "No decision was made on how the PPS signal is generated! Please define either PPS_SIMPLE or PPS_PULSETRAIN!"
 #endif
 }
 
@@ -102,7 +102,7 @@ static void ptphw_register_cli_commands() {
 #endif // CLI_REG_CMD
 
 void ptphw_init(uint32_t increment, uint32_t addend) {
-    MSG("Turning PTP on!");
+    MSG("Turning PTP on!\n");
 
     // Initialisation order matters, and differs from the H743 port this file derives
     // from. RM0481 requires the subsecond increment to be programmed BEFORE the addend:

@@ -80,9 +80,9 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 | | Count |
 |---|---|
 | Total distinct actions | **81** |
-| Open (☐) | 29 |
+| Open (☐) | 25 |
 | Partial (◐) | 0 |
-| Already done (✅) | 48 |
+| Already done (✅) | 52 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -194,10 +194,10 @@ defects.
 | ☐ | — | — | **P5.20** | ACT-17 (D5) | — | **⚠ SEVERITY** | Remove the duplicate `main.c` / `syscall.c` / `sysmem.c` listings between `CMakeLists.txt:35-40` and `Src/CMakeLists.txt:1-13` |
 | ☐ | — | — | **P5.21** | ACT-19 (U2) | — | 1/3 F | Add a `NOLOAD` placement for `.ETHLibPool` in SRAM3, per the analysis already in `design_doc.md` |
 | ☐ | — | — | **P5.22** | — *(from U2)* | — | 1/3 F | Reconcile `ETH_BUFFER_SIZE`: `1536UL` in `eth_drv_etherlib.c:17` vs `1528UL` in `eth_drv_lwip.c:40` |
-| ☐ | — | — | **P5.23** | ACT-20 (B13) | — | 1/3 F | Add `\n` to `MSG("Turning PTP on!")`, `ptp_port_stm32h563.c:105` |
-| ☐ | — | — | **P5.24** | ACT-21 (D6) | — | 1/3 F | Fix `"currenty"` → `"currently"` in the boot banner, `main.c:133` |
-| ☐ | — | — | **P5.25** | ACT-22 (D7) | — | 1/3 F | Fix `"PPL_PULSETRAIN"` → `"PPS_PULSETRAIN"` in the `#error` directive, `ptp_port_stm32h563.c:71` |
-| ☐ | — | — | **P5.26** | ACT-23 (D8) | — | 1/3 F | Swap the inverted OPAMP / OTFDEC comments in `stm32h5xx_hal_conf.h:268-269` (inherited from ST's template) |
+| ✅ | — | — | **P5.23** | ACT-20 (B13) | — | 1/3 F | Add `\n` to `MSG("Turning PTP on!")`, `ptp_port_stm32h563.c:105` — **DONE: verified on target — *"Turning PTP on!"* now ends its own line instead of running into *"Own clock ID:"*** |
+| ✅ | — | — | **P5.24** | ACT-21 (D6) | — | 1/3 F | Fix `"currenty"` → `"currently"` in the boot banner, `main.c:133` — **DONE: banner reads *"currently compiled against"*; confirmed on target that `currenty` no longer appears** |
+| ✅ | — | — | **P5.25** | ACT-22 (D7) | — | 1/3 F | Fix `"PPL_PULSETRAIN"` → `"PPS_PULSETRAIN"` in the `#error` directive, `ptp_port_stm32h563.c:71` — **DONE: the `#error` now names `PPS_PULSETRAIN`, matching the macro `ptphw_set_pps_freq()` actually tests** |
+| ✅ | — | — | **P5.26** | ACT-23 (D8) | — | 1/3 F | Swap the inverted OPAMP / OTFDEC comments in `stm32h5xx_hal_conf.h:268-269` (inherited from ST's template) — **DONE: OPAMP and OTFDEC comments swapped back to match their macros (inherited from ST's template)** |
 | ☐ | — | — | **P5.27** | — | item 6 | 1/3 P | Upstream the H563 hardware port (`Src/flexptp_port/`) to flexPTP — its first Cortex-M33 target. **Blocked on P3.1**, or the PPS enum defect ships with it |
 | ☐ | — | — | **P5.28** | — | item 1 *(part)* | 1/3 P | Report flexPTP's **documentation** discrepancies upstream — F37 (`PTP_HW_GET_TIME` typed `TimestampI *`) and F38 (`SPRINTF` vs `FLEXPTP_SNPRINTF`) |
 
