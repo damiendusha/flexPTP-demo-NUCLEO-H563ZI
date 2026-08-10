@@ -78,6 +78,11 @@
 #define configUSE_QUEUE_SETS            1
 
 
+/* MPU-wrapper-v2 settings. Inert while configENABLE_MPU is 0 -- the wrappers they configure
+ * are not compiled -- and kept rather than deleted so that turning the MPU on does not also
+ * require rediscovering this set. They are NOT evidence that the MPU is in use; it is not,
+ * and no MPU region is configured anywhere in this project (see docs/design_doc.md,
+ * "Caches and DMA Coherency"). */
 #define configSYSTEM_CALL_STACK_SIZE    128
 #define configENFORCE_SYSTEM_CALLS_FROM_KERNEL_ONLY 1
 #define configPROTECTED_KERNEL_OBJECT_POOL_SIZE 10

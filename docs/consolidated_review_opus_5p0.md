@@ -80,9 +80,9 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 | | Count |
 |---|---|
 | Total distinct actions | **81** |
-| Open (☐) | 14 |
+| Open (☐) | 11 |
 | Partial (◐) | 0 |
-| Already done (✅) | 63 |
+| Already done (✅) | 66 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -184,12 +184,12 @@ defects.
 | ✅ | — | — | **P5.10** | — | — | 1/3 O | Fix `phy_read_range()`'s stride (`a += 2` skips odd registers) and `phy_read_all_regs()`'s bound (a PHY address used as a register count) — **DONE: stride `a += 2` → `a++` (MDIO addresses are consecutive, not byte offsets — the old stride skipped BSR and both PHYID words), and `phy_read_all_regs()` now passes `EPHY_MDIO_REG_COUNT` (32) instead of `EPHY_MDIO_MAX_ADDR`, which is a PHY *address* limit** |
 | ✅ | — | — | **P5.11** | — | — | 1/3 O | Change `MSGchar()` to take a `char`; remove the unused `last_char` — **DONE: `MSGchar()` takes a `char`. The old `int` signature took the address of the parameter and sent one byte from it — correct only on little-endian, by accident. Unused `last_char` removed** |
 | ☐ | — | — | **P5.12** | — | — | 1/3 O | Renumber `patches/flexptp/0002-…` to `0001-…`, or note the gap in the directory README |
-| ☐ | — | — | **P5.13** | — | — | 1/3 O | Remove the inert MPU-wrapper settings from `FreeRTOSConfig.h:81-84`, or comment why they are kept with `configENABLE_MPU 0` |
-| ☐ | — | — | **P5.14** | — | — | 1/3 O | Exclude `Src/etherlib_options.c` from LWIP builds |
+| ✅ | — | — | **P5.13** | — | — | 1/3 O | Remove the inert MPU-wrapper settings from `FreeRTOSConfig.h:81-84`, or comment why they are kept with `configENABLE_MPU 0` — **DONE: kept, with a comment stating they are inert while `configENABLE_MPU` is 0 and are **not** evidence the MPU is in use. Deleting them would make turning the MPU on require rediscovering the set** |
+| ✅ | — | — | **P5.14** | — | — | 1/3 O | Exclude `Src/etherlib_options.c` from LWIP builds — **DONE: `etherlib_options.c` now compiled only when `ETH_STACK` is `ETHERLIB`. MAC address and networking unchanged — same DHCP lease, ping 0% loss** |
 | ☐ | — | — | **P5.15** | ACT-27 (I6) | items 1, 2 | **3/3** | File the upstream reports and patches: F47 (`__PRI64_PREFIX`), F59 (servo NaN latch), F60/F66 (embfmt) |
 | ☐ | — | — | **P5.16** | — | — | 1/3 O | Add a `docs/` cross-reference and anchor checker to CI |
 | ☐ | — | — | **P5.17** | — | — | 1/3 O | Move `serial_io_init()`'s `osThreadNew()` after `osKernelInitialize()`, or record why the current order is safe |
-| ☐ | — | — | **P5.18** | — | — | 1/3 O | Comment `ETH_MAC_ADDR0`'s `0x02 \| (UNIQUE_DEV_ID_BYTE(0) & 0xFE)` so the locally-administered bit and the unicast mask read as two deliberate operations |
+| ✅ | — | — | **P5.18** | — | — | 1/3 O | Comment `ETH_MAC_ADDR0`'s `0x02 \| (UNIQUE_DEV_ID_BYTE(0) & 0xFE)` so the locally-administered bit and the unicast mask read as two deliberate operations — **DONE: commented as two deliberate operations — `| 0x02` sets locally-administered (the UID is not an assigned OUI), `& 0xFE` clears the multicast bit so a UID with bit 0 set cannot produce an unroutable multicast source address** |
 | ✅ | — | — | **P5.19** | ACT-16 (D4, I4) *(part)* | — | 1/3 F | Remove `-u _printf_float` from `CMakeLists.txt:166` — verified as force-linking newlib's float formatter (25 references in the map) into a project that uses `embfmt` — **DONE (removed), but **the size claim was wrong**: a proper A/B — build, remove flag, rebuild — gives **0 bytes** difference, with `printf_float` absent from the map either way. My earlier "25 references" came from a grep that also matched `vfprintf`. Removed as a misleading dead flag, not as a saving; the cross-review is corrected accordingly** |
 | ✅ | — | — | **P5.20** | ACT-17 (D5) | — | **⚠ SEVERITY** | Remove the duplicate `main.c` / `syscall.c` / `sysmem.c` listings between `CMakeLists.txt:35-40` and `Src/CMakeLists.txt:1-13` — **DONE: `main.c`/`syscall.c`/`sysmem.c` removed from the root `sources_SRCS`, leaving `Src/CMakeLists.txt` as the single owner. Verified the map still has exactly one `main.c.obj` — CMake had been deduplicating them, so this is tidying with no functional effect, as recorded** |
 | ☐ | — | — | **P5.21** | ACT-19 (U2) | — | 1/3 F | Add a `NOLOAD` placement for `.ETHLibPool` in SRAM3, per the analysis already in `design_doc.md` |

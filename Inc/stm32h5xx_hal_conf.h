@@ -209,6 +209,13 @@ in voltage and temperature.*/
 #define UNIQUE_DEV_ID_BYTE(n) \
   ((uint8_t)((UNIQUE_DEV_ID_BASE[(n) >> 2] >> (((n) & 3U) * 8U)) & 0xFFU))
 
+/* Two deliberate operations on the first octet, not one expression to skim past:
+ *   | 0x02   sets the locally-administered bit -- the UID is not an assigned OUI, so the
+ *            address must not claim to be globally unique
+ *   & 0xFE   clears the multicast bit, which is bit 0 of the first octet. Without it, a UID
+ *            whose low bit happens to be set would produce a multicast source address, and
+ *            the frames would be silently unroutable.
+ * The remaining five octets are the UID verbatim. */
 #define ETH_MAC_ADDR0    ((uint8_t)0x02 | (UNIQUE_DEV_ID_BYTE(0) & 0xFE))
 #define ETH_MAC_ADDR1    UNIQUE_DEV_ID_BYTE(1)
 #define ETH_MAC_ADDR2    UNIQUE_DEV_ID_BYTE(2)
