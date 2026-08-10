@@ -190,7 +190,7 @@ extern int8_t hook_unknown_ethertype(struct pbuf *pbuf, struct netif *netif);
 */
 
 /* 
-The STM32H7xx allows computing and verifying the IP, UDP, TCP and ICMP checksums by hardware:
+The STM32H5xx allows computing and verifying the IP, UDP, TCP and ICMP checksums by hardware:
  - To use this feature let the following define uncommented.
  - To disable it and process by CPU comment the  the checksum.
 */

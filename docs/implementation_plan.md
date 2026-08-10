@@ -28,7 +28,7 @@
 - [x] **Stage 16** — Build & warning cleanup
 - [ ] **Stage 17** — Complete `docs/design_doc.md`
 - [x] **Stage 18** — Provision ST's OpenOCD via `build.sh` 🆕
-- [ ] **Stage 19** — Project metadata & tooling (README, build.sh, VS Code) 🆕
+- [x] **Stage 19** — Project metadata & tooling (README, build.sh, VS Code) 🆕
 - [ ] **Stage 20** — Flash & test on hardware
 
 ### Build gates
@@ -575,7 +575,27 @@ a valid manual option for developers who have it.
 
 ---
 
-### Stage 19 — Project metadata & tooling 🆕
+### Stage 19 — Project metadata & tooling ✅
+
+**Closed.** Everything below was done, plus two things the checklist did not anticipate:
+
+- **[F65](#f65--the-debuggers-freertos-awareness-was-broken-resolved)**: `launch.json` ran
+  `$_CHIPNAME.cpu0 configure -rtos FreeRTOS`, which the H5 target rejects outright, so
+  FreeRTOS thread awareness never worked. Also fixed a pre-existing typo, `STM32F743.svd`
+  for `STM32H743.svd`, in the Attach configuration.
+- The README's **PPS pin was wrong** (`PB5`, the H743 pin — this port uses **PG8**) and its
+  **CLI listing showed the PID servo's `ptp servo params`**, while this project builds the
+  Kalman servo and exposes `ptp servo st|sg|stm`. Both were captured from the running board
+  rather than transcribed.
+
+The README now also carries a documentation index, the two failure modes that cost the most
+time here (the `gPTP` startup profile, and switches discarding `Delay_Resp`), the ST-Link
+mass-storage flashing route that is by far the simplest, and a note that two submodules carry
+patches. The `NUCLEO-H743ZI.gif` reference was dropped rather than replaced — it was a broken
+link to an image that was never copied.
+
+<details>
+<summary>Original stage specification</summary>
 
 Not previously owned by any stage; all of it still says H743:
 - `README.md` — full pass: board name, MCU, clone URL, OpenOCD invocation
@@ -603,6 +623,8 @@ Not previously owned by any stage; all of it still says H743:
 - README — document the ST-Link udev rules needed for non-root OpenOCD access on Linux
 
 **Commit**: `"Stage 19: Update project metadata for NUCLEO-H563ZI"`
+
+</details>
 
 ---
 

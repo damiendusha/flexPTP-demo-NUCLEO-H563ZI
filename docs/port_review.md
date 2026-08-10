@@ -136,6 +136,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F62 | **Release build HardFaulted at the UID region** — F51's fix held only at `-O0` | **RESOLVED** | `volatile` added; verified on hardware |
 | F63 | lwIP DHCP `-Wstringop-overflow` in optimised builds | **Documented** | not reachable here; third-party, unpatched |
 | F64 | ST's OpenOCD will not build as the plan specified — `-Werror` and a mis-named prerequisite | **RESOLVED** | both corrected in `build.sh`, cold run verified |
+| F65 | `.vscode/launch.json` used `$_CHIPNAME.cpu0`, which does not exist on H5 | **RESOLVED** | FreeRTOS thread awareness was silently broken |
 | F58 | `eth_drv_lwip.c` RX copy never advances the source pointer across a chained pbuf | **RESOLVED** | proven by shrinking `PBUF_POOL_BUFSIZE`: DHCP failed entirely, then worked |
 | F43 | `PTP_ACCURACY_LIMIT_NS` (100 ns) is the implicit LOCKED criterion | Minor | plan Stage 20 |
 | F44 | `CMakePresets.json` requires Ninja; not documented as a prerequisite | Minor | plan Stage 19 |
@@ -1142,6 +1143,29 @@ With the fix, and the counters still in place: 201 servo samples over five minut
 duplicate corrections** by the F59 signature test, 200 of 201 applying a correction. Rebuilt
 without instrumentation: 111 of 111 correcting, zero duplicates, offset signed mean +16 ns with
 a magnitude of 28 µs.
+
+### F65 — the debugger's FreeRTOS awareness was broken *(RESOLVED)*
+
+Both OpenOCD configurations in `.vscode/launch.json` ran:
+
+```
+$_CHIPNAME.cpu0 configure -rtos FreeRTOS
+```
+
+`cpu0` is H743 naming. On the H5 the target is `stm32h5x.cpu`, and OpenOCD rejects the other:
+
+```
+invalid command name "stm32h5x.cpu0"
+```
+
+So RTOS thread awareness — the reason that line exists — never worked in the VS Code debugger,
+and the failure appears only in the OpenOCD server log where it is easy to miss. Corrected to
+`$_CHIPNAME.cpu`, and both forms were run against the board to confirm which one the target
+accepts.
+
+Found only because Stage 19 checked the configuration against hardware instead of proof-reading
+it. The board name, `device`, `svdFile` and config-file substitutions in the same file were all
+wrong too, but those fail loudly; this one did not.
 
 ### F64 — ST's OpenOCD does not build as specified *(RESOLVED)*
 

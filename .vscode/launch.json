@@ -13,11 +13,11 @@
             // Or fixed file path: "${workspaceFolder}/path/to/filename.elf"
             "request": "launch",
             "servertype": "stlink",
-            "device": "STM32H743ZITx", //MCU used
+            "device": "STM32H563ZITx", //MCU used
             "interface": "swd",
             "serialNumber": "", //Set ST-Link ID if you use multiple at the same time
             "runToEntryPoint": "main",
-            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H743.svd",
+            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H563.svd",
             "v1": false, //Change it depending on ST Link version
             "serverpath": "${config:STM32VSCodeExtension.cubeCLT.path}/STLink-gdb-server/bin/ST-LINK_gdbserver",
             "stm32cubeprogrammer": "${config:STM32VSCodeExtension.cubeCLT.path}/STM32CubeProgrammer/bin",
@@ -41,11 +41,11 @@
             // Or fixed file path: "${workspaceFolder}/path/to/filename.elf"
             "request": "attach",
             "servertype": "stlink",
-            "device": "STM32H743ZITx", //MCU used
+            "device": "STM32H563ZITx", //MCU used
             "interface": "swd",
             "serialNumber": "", //Set ST-Link ID if you use multiple at the same time
             "runToEntryPoint": "main",
-            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H743.svd",
+            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H563.svd",
             "v1": false, //Change it depending on ST Link version
             "serverpath": "${config:STM32VSCodeExtension.cubeCLT.path}/STLink-gdb-server/bin/ST-LINK_gdbserver",
             "stm32cubeprogrammer": "${config:STM32VSCodeExtension.cubeCLT.path}/STM32CubeProgrammer/bin",
@@ -66,17 +66,20 @@
             "request": "launch",
             "executable": "${command:cmake.launchTargetPath}",
             "servertype": "openocd",
-            "device": "STM32H743ZITx",
+            // Built by "./build.sh --with-openocd". A distro OpenOCD cannot program an
+            // STM32H5 -- it has no stm32h5x flash driver. See docs/implementation_plan.md.
+            "serverpath": "${workspaceFolder}/toolchains/openocd/bin/openocd",
+            "device": "STM32H563ZITx",
             "runToEntryPoint": "main",
-            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H743.svd",
+            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H563.svd",
             "gdbPath": "gdb-multiarch",
             "configFiles": [
-                "board/st_nucleo_h743zi.cfg"
+                "board/st_nucleo_h5.cfg"
             ],
             "openOCDLaunchCommands": [
                 "init",
                 "reset halt",
-                "$_CHIPNAME.cpu0 configure -rtos FreeRTOS"
+                "$_CHIPNAME.cpu configure -rtos FreeRTOS"
             ],
             "showDevDebugOutput": "raw"
         },
@@ -87,15 +90,18 @@
             "request": "attach",
             "executable": "${command:cmake.launchTargetPath}",
             "servertype": "openocd",
-            "device": "STM32H743ZITx",
+            // Built by "./build.sh --with-openocd". A distro OpenOCD cannot program an
+            // STM32H5 -- it has no stm32h5x flash driver. See docs/implementation_plan.md.
+            "serverpath": "${workspaceFolder}/toolchains/openocd/bin/openocd",
+            "device": "STM32H563ZITx",
             "runToEntryPoint": "main",
-            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32F743.svd",
+            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H563.svd",
             "gdbPath": "gdb-multiarch",
             "configFiles": [
-                "board/st_nucleo_h743zi.cfg"
+                "board/st_nucleo_h5.cfg"
             ],
             "openOCDLaunchCommands": [
-                "$_CHIPNAME.cpu0 configure -rtos FreeRTOS"
+                "$_CHIPNAME.cpu configure -rtos FreeRTOS"
             ],
             "showDevDebugOutput": "raw"
         },

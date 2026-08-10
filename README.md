@@ -1,110 +1,167 @@
-# STM32 NUCLEO-H743ZI flexPTP demo
-
-<!-- <img src="Modules/flexptp/manual/media/flexPTP_logo.png" alt="flexPTP-logo" width="200">
-<img src="https://www.st.com/bin/ecommerce/api/image.PF266519.en.feature-description-include-personalized-no-cpn-large.jpg" alt="NUCLEO-F439ZI" width="200"> -->
-
-![flexPTP CLI](NUCLEO-H743ZI.gif)
+# STM32 NUCLEO-H563ZI flexPTP demo
 
 ## What's this?
 
-> **This is a [flexPTP](https://github.com/epagris/flexPTP) demo project showcasing the capabilities of the flexPTP [IEEE 1588 Precision Time Protocol](https://ieeexplore.ieee.org/document/9120376) implementation for the [STMicroelectronics NUCLEO-H743ZI](https://www.st.com/en/evaluation-tools/nucleo-h743zi.html) devboard.**
+> **This is a [flexPTP](https://github.com/epagris/flexPTP) demo project showcasing the capabilities of the flexPTP [IEEE 1588 Precision Time Protocol](https://ieeexplore.ieee.org/document/9120376) implementation for the [STMicroelectronics NUCLEO-H563ZI](https://www.st.com/en/evaluation-tools/nucleo-h563zi.html) devboard.**
 
-Still not clear what is it useful for? No worries, it's a behind-the-scenes support technology that you use unaware every day if you have a smartphone or when you are connected to the internet. Modern telecommunication and measurement systems often rely on precise time synchronization down to the nanoseconds' scale. Methods got standardized by the IEEE and now it's known by the name of the Precision Time Protocol. This software project is an evaluation environment to showcase the capabilities of our IEEE 1588 PTP implementation named `flexPTP` on the STMicroelectronics NUCLEO-H743ZI board.
+Still not clear what is it useful for? No worries, it's a behind-the-scenes support technology that you use unaware every day if you have a smartphone or when you are connected to the internet. Modern telecommunication and measurement systems often rely on precise time synchronization down to the nanoseconds' scale. Methods got standardized by the IEEE and now it's known by the name of the Precision Time Protocol. This software project is an evaluation environment to showcase the capabilities of our IEEE 1588 PTP implementation named `flexPTP` on the STMicroelectronics NUCLEO-H563ZI board.
 
-> [!TIP]
->**Just want to try the demo and skip compiling? Download one of the precompiled binaries and jump to [Deploying](#deploying)!**
-
+This project is a port of [flexPTP-demo-NUCLEO-H743ZI](https://github.com/epagris/flexPTP-demo-NUCLEO-H743ZI)
+from the STM32H743 (Cortex-M7) to the STM32H563 (Cortex-M33). The porting work, the decisions
+behind it and every defect found along the way are documented in [`docs/`](docs/) — start with
+[`docs/architecture.md`](docs/architecture.md).
 
 ### Get the sources
 
 > [!NOTE]
 > To acquire the full source tree after cloning the repo, please fetch the linked *submodules* as well:
 
+```bash
+git clone <this-repository> flexPTP-demo-NUCLEO-H563ZI
+cd flexPTP-demo-NUCLEO-H563ZI
+git submodule update --init --recursive
 ```
-git clone https://github.com/epagris/flexPTP-demo-NUCLEO-H743ZI
-cd flexPTP-demo-NUCLEO-H743ZI
-git submodule init
-git submodule update
-```
+
+`build.sh` does the submodule step for you.
 
 ## Building
 
 ### Prerequisites
 
-The following two pieces of software are necessary for building:
-- `arm-none-eabi-gcc` (v12+): the GCC ARM Cortex-M C cross-compiler
-- `cmake` (v3.22+): KitWare's build management system
+| Tool | Needed for | Note |
+|---|---|---|
+| `arm-none-eabi-gcc` (v12+) | compiling | `build.sh` downloads ARM GNU Toolchain 15.3.rel1 into `toolchains/` if absent |
+| `cmake` (v3.22+) | build management | |
+| **`ninja`** | the CMake **presets** only | `CMakePresets.json` pins the Ninja generator. `build.sh` bypasses presets and uses CMake's default generator, so the two paths have different requirements — a preset build fails without Ninja while `./build.sh` succeeds |
+| `openocd` (ST's fork) | flashing and debugging | Built by `./build.sh --with-openocd`. **Upstream OpenOCD 0.12.0 cannot program an STM32H5** — see [Flashing](#flashing) |
 
 > [!NOTE]
-> Both applications are available on common Linux systems through the official package repository. For building on Windows we recommend to install the [STM32CubeCLT](https://www.st.com/en/development-tools/stm32cubeclt.html) bundle shipping the `arm-none-eabi-{gcc|gdb}`, `openocd` and ST's proprietary STLink downloading tools. The [CMake](https://cmake.org/) needs to be installed separately.
+> On Windows, [STM32CubeCLT](https://www.st.com/en/development-tools/stm32cubeclt.html) bundles `arm-none-eabi-{gcc,gdb}`, `openocd` and ST's STLink tools. [CMake](https://cmake.org/) and Ninja must be installed separately.
 
 ### Compiling
 
-You can build the project using the automated build script (which automatically downloads the ARM GNU Toolchain 15.3.rel1 if not present, sets up submodules, and builds the target):
+The build script downloads the toolchain if needed, initialises submodules and builds:
 
 ```bash
 ./build.sh
 ```
 
-Or manually configure and invoke the cross-compiler using CMake:
+Add `--with-openocd` the first time if you intend to flash or debug:
 
 ```bash
-cmake . -B build
-cmake --build build --target flexptp-demo --
+./build.sh --with-openocd
 ```
-Once the building has concluded the output binaries would be deposited in the `build` directory: `flexptp-demo.elf`, `flexptp-demo.bin`, `flexptp-demo.hex`
+
+Or configure and build manually. Via presets (needs Ninja):
+
+```bash
+cmake --preset debug && cmake --build build/debug
+```
+
+or without them:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --target flexptp-demo
+```
+
+Outputs land in the chosen build directory: `flexptp-demo.elf`, `.bin`, `.hex` and `.map`.
+Both the `debug` and `release` presets are tested on hardware.
 
 ## Deploying
 
-### Downloading the firmware
+### Flashing
 
-The compiled binaries can be downloaded onto the devboard through several tools:
+**With OpenOCD** — ST's fork is required. `target/stm32h5x.cfg` declares a `stm32h5x` flash
+bank, which names a *compiled-in* driver; upstream OpenOCD 0.12.0 has no such driver and
+rejects the declaration outright, so copying ST's `.cfg` files onto a distro build does not
+help. `./build.sh --with-openocd` builds the fork into `toolchains/openocd`:
 
-### Using the STM32CubeProgrammer
+```bash
+toolchains/openocd/bin/openocd -f board/st_nucleo_h5.cfg \
+    -c init -c halt -c "program build/flexptp-demo.elf verify reset" -c exit
+```
 
-The [STM32CubeProgrammer](https://www.st.com/en/development-tools/stm32cubeprog.html) recognizes the MCU once connected. Any of the generated binary output can be used for programming on the *Erasing & Programming* pane.
+Note the board file is **`st_nucleo_h5.cfg`** — generic across H5 Nucleos. There is no
+`st_nucleo_h563zi.cfg`.
 
-### Using the `st-flash` utility
+> [!NOTE]
+> On Linux, non-root access to the ST-Link needs udev rules:
+> ```bash
+> sudo cp toolchains/openocd-src/contrib/60-openocd.rules /etc/udev/rules.d/
+> sudo udevadm control --reload-rules && sudo udevadm trigger
+> ```
 
-This tool is part of the open source [stlink-tools](https://github.com/stlink-org/stlink) bundle, that is also available through common Linux package managers.
+**With the ST-Link mass-storage device** — the simplest route, and no tools at all. The board
+enumerates as a USB drive; copy the `.bin` onto it and it reprograms and resets itself:
 
-To program the MCU use the following command: `st-flash write build/flexptp-demo.bin 0x08000000`
+```bash
+cp build/flexptp-demo.bin /run/media/$USER/NOD_H563ZI/ && sync
+```
 
-### Using the `openocd` application
+**With `st-flash`** from [stlink-tools](https://github.com/stlink-org/stlink):
 
-The [OpenOCD](https://openocd.org/) programming/debugging tool can also be used to upload the firmware using the following command:
+```bash
+st-flash write build/flexptp-demo.bin 0x08000000
+```
 
-`openocd -f "board/st_nucleo_h743zi.cfg" -c init -c halt -c "program build/flexptp-demo.elf" -c exit`
-
-OpenOCD is also available through the common Linux package managers.
+**With [STM32CubeProgrammer](https://www.st.com/en/development-tools/stm32cubeprog.html)**, which recognises the MCU once connected.
 
 ### Interacting with the firmware
 
-The firmware prints its messages to and expect user input coming on the board controller's virtual serial port using the `115200-8-N-1` configuration. Use [Putty](https://www.putty.org/) or any equivalent (e.g. GtkTerm) serial port terminal to communicate with the firmware. On Linux, the device will show up as `/dev/ttyACMx`.
+The firmware prints its messages to and expects user input on the board controller's virtual
+serial port using the `115200-8-N-1` configuration. Use [Putty](https://www.putty.org/) or any
+equivalent (e.g. GtkTerm); on Linux the device shows up as `/dev/ttyACMx`.
 
 > [!NOTE]
 > Read the firmware's bootup hints and messages carefully!
 
 ### PPS signal
 
-The 1PPS signal is emitted on the `PB5` pin.
+The 1PPS signal is emitted on **`PG8`** (ETH_PPS_OUT, AF11).
 
 ## Test environment
 
-To test the software and evaluate the synchronization accuracy connect the devboard with another PTP-compatible equipment, either a dedicated Master clock or any other device (e.g. another devboard). We recommend using the [linuxptp](https://github.com/richardcochran/linuxptp) software suite available in Linux systems through the official package repositories, PTP hardware support is available out-of-the-box on several Intel NICs, like Intel I210, Intel I219-V or Intel 82576.
+To evaluate synchronization accuracy, connect the devboard to another PTP-capable device —
+a dedicated master clock, or a Linux host running [linuxptp](https://github.com/richardcochran/linuxptp).
+**[`docs/host_ptp_setup.md`](docs/host_ptp_setup.md) is a step-by-step guide** to setting the
+host up, including a direct-cable configuration and the failure modes worth knowing about.
+
+Two things that cost days here and are worth reading before you start:
+
+- **The board loads the `gPTP` profile at startup**, so a plain `ptp4l` will not talk to it.
+  Either match the profile on the host or issue `ptp profile preset default` on the board —
+  which must be re-issued after every flash, because the profile is not persisted.
+- **A switch may silently discard PTP `Delay_Resp`** while forwarding `Sync` and `Announce`
+  on the same multicast group. Verified on this setup. If sync never completes, try a direct
+  cable before suspecting the firmware.
+
+Hardware timestamping on the host side is available out-of-the-box on several Intel NICs, such
+as the I210, I219-V or 82576. With software timestamping expect microsecond-class results —
+enough to prove the link works, not enough to characterise it.
 
 ## Development
 
-An all-around [Visual Studio Code](https://code.visualstudio.com/) project is packaged along the project to enable easy development, debugging and editing. To enable these powerful features, install the [STM32Cube for Visual Studio Code](https://marketplace.visualstudio.com/items?itemName=stmicroelectronics.stm32-vscode-extension), [CMakeTools](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cmake-tools), [Cortex-Debug](https://marketplace.visualstudio.com/items?itemName=marus25.cortex-debug), [Embedded Tools](https://marketplace.visualstudio.com/items?itemName=ms-vscode.vscode-embedded-tools) extensions, [OpenOCD](https://openocd.org/) and the [STM32CubeCLT](https://www.st.com/en/development-tools/stm32cubeclt.html) software package. The latter one is required for downloading the firmware right away using the Cortex-Debug extension (if not done through OpenOCD) and for providing the Embedded Tools extension with register description `.SVD` files. [clangd](https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-clangd) and clang-format are highly recommended.
+An all-around [Visual Studio Code](https://code.visualstudio.com/) project is packaged along
+the project. Install the [STM32Cube for Visual Studio Code](https://marketplace.visualstudio.com/items?itemName=stmicroelectronics.stm32-vscode-extension),
+[CMakeTools](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cmake-tools),
+[Cortex-Debug](https://marketplace.visualstudio.com/items?itemName=marus25.cortex-debug) and
+[Embedded Tools](https://marketplace.visualstudio.com/items?itemName=ms-vscode.vscode-embedded-tools)
+extensions. [clangd](https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-clangd)
+and clang-format are highly recommended.
 
-Thas project has predefined *Launch* and *Attach* tasks.
+The project has predefined *Launch* and *Attach* tasks. The OpenOCD ones point at
+`toolchains/openocd/bin/openocd` from `./build.sh --with-openocd`, so they need no system
+OpenOCD. The ST-Link GDB-server configurations and the register (`.SVD`) views still resolve
+through [STM32CubeCLT](https://www.st.com/en/development-tools/stm32cubeclt.html); it is
+optional, and without it only the register view is lost.
 
 ### Software structure
 
-The project is relying on the following large software building blocks:
+The project relies on the following large software building blocks:
 - the [FreeRTOS](https://www.freertos.org/) embedded operating system,
 - the [CMSIS RTOS V2](https://arm-software.github.io/CMSIS_6/latest/RTOS2/index.html) module as a wrapper for FreeRTOS,
-- [STM32H7xx Hardware Abstraction Layer library](https://github.com/STMicroelectronics/stm32h7xx-hal-driver) (HAL) providing MCU specific functionality,
+- [STM32H5xx Hardware Abstraction Layer library](https://github.com/STMicroelectronics/stm32h5xx-hal-driver) (HAL) providing MCU specific functionality,
 - the [Lightweight IP](https://github.com/lwip-tcpip/lwip) (lwip) Ethernet stack extended with PTP timestamp support,
 - the [EtherLib](https://gitea.epagris.com/epagris/EtherLib), our in-house developed Ethernet stack,
 - the [embfmt](https://gitea.epagris.com/epagris/embfmt) a printf()-like formatted printer implementation for embedded systems.
@@ -114,8 +171,7 @@ The project is relying on the following large software building blocks:
 > ```
 >set(ETH_STACK "LWIP") # select "LWIP" or "ETHERLIB"
 >```
-> The development of the EtherLib network stack was motivated in the beginning by just curiosity and our need for something that is suitable for our university research. Gradually it became a handy tool so we've decided to promote it into our public projects as well.
->
+> Only the LwIP path is exercised on this port; EtherLib is not compiled. See [`docs/design_doc.md`](docs/design_doc.md) for what porting it would involve.
 
 The project is organized the following way:
 
@@ -124,7 +180,7 @@ ROOT
   Drivers
     CMSIS: ARM CMSIS-related files (CMSIS RTOS V2 and device headers)
     EthDrv: a custom Ethernet driver (with PTP timestamp support), a PHY-interface and network stack interfaces
-    stm32h7xx-hal-driver: ST's STM32H7xx HAL driver files (submodule)
+    stm32h5xx-hal-driver: ST's STM32H5xx HAL driver files (submodule)
   Inc: headers for compile-time library configuration
   Middlewares: FreeRTOS CMake configuration
   Modules
@@ -136,11 +192,23 @@ ROOT
   Src
     cliutils: CLI-interface implementation
     ethernet: Ethernet stack initialization
+    flexptp_port: the STM32H5 PTP hardware port, supplied by this project
+    standard_output: MSG() backend and the USART3 serial driver
 
     cmds.c: custom CLI commands
+  Startup: vector table and reset handler
+  docs: porting documentation, design decisions and the review log
+  patches: changes to submodules, which git cannot record for us
+  tools: host-side helpers (linuxptp configuration)
 ```
+
 > [!NOTE]
 > The flexPTP parameters are defined in the [flexptp_options.h](Inc/flexptp_options.h) header.
+
+Two submodules carry local changes, kept in [`patches/`](patches/) because the parent
+repository records only submodule commit pointers: a servo fix in flexPTP and two formatting
+fixes in embfmt. Both are described in [`docs/port_review.md`](docs/port_review.md) and are
+worth reporting upstream.
 
 ### Printing and logging
 
@@ -151,20 +219,21 @@ In this project the memory-heavy `printf()` is replaced by the more embedded-opt
 The software offers you with the following multitude, most flexPTP-related of commands:
 
 ```
-?                                                  Print this help (22/48)
+?                                                  Print this help
 hist                                               Print command history
 osinfo                                             Print OS-related information
 flexptp                                            Start flexPTP daemon
-ptp pps {freq}                                     Set or query PPS signal frequency [Hz]
-ptp servo params [Kp Kd]                           Set or query K_p and K_d servo parameters
-ptp servo log internals {on|off}                   Enable or disable logging of servo internals
-ptp reset                                          Reset PTP subsystem
-ptp servo offset [offset_ns]                       Set or query clock offset
-ptp log {def|corr|ts|info|locked|bmca} {on|off}    Turn on or off logging
 time [ns]                                          Print time
+ptp pps {freq}                                     Set or query PPS signal frequency [Hz]
+ptp servo st [var|default]                         Set or get sigma_theta^2 (s^2)
+ptp servo sg [var|default]                         Set or get sigma_gamma^2 (s^2)
+ptp servo stm [var|default]                        Set or get sigma_theta_m^2 (s^2)
+ptp servo offset [offset_ns]                       Set or query clock offset
+ptp reset                                          Reset PTP subsystem
+ptp log {def|corr|ts|info|locked|bmca} {on|off}    Turn on or off logging
 ptp master [[un]prefer] [clockid]                  Master clock settings
 ptp info                                           Print PTP info
-ptp domain [domain]                                Print or get PTP domain
+ptp domain [domain]                                Print or set PTP domain
 ptp addend [addend]                                Print or set addend
 ptp transport [{ipv4|802.3}]                       Set or get PTP transport layer
 ptp delmech [{e2e|p2p}]                            Set or get PTP delay mechanism
@@ -180,11 +249,26 @@ ptp priority [<p1> <p2>]                           Print or set clock priority f
 > [!TIP]
 > The above hint can be listed by typing '?'.
 
+This project uses the **Kalman** servo, hence `ptp servo st|sg|stm`. Ports configured for the
+PID servo expose `ptp servo params` instead.
+
 ## Notes
 
 > [!WARNING]
-> By default, the MCU clock is sourced by the onboard (STLink) board controller on this devboard. According to our observations, this clock signal is loaded with heavy noise rendering the clock synchronization unable to settle precisely. We highly recommend to solder a 8 MHz oscillator onto  the designated X3 pads to achieve the best results!
+> By default the MCU is clocked from the on-board ST-Link's 8 MHz MCO. That signal is noisy enough to limit how precisely synchronization settles, so a crystal is the better reference — and on this board (MB1404) one is **already fitted**: X3, 25 MHz, 20 ppm. Nothing needs soldering onto empty pads.
+>
+> Selecting it takes both hardware and firmware changes: SB3 and SB4 ON, SB49 OFF, C70/C71 populated with 5.6 pF; then `HSE_VALUE` = 25000000, `HSEState` = `RCC_HSE_ON`, and a re-derived PLL — `PLLM` 5, `PLLN` 100, `PLLRGE` = `RCC_PLL1_VCIRANGE_2`. Changing `HSE_VALUE` alone is **not** enough and fails silently, because `init_pll()` computes `PLLM` as `HSE_VALUE/2000000` and 25/2 is not an integer. This path is untested on this port.
 
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [`docs/architecture.md`](docs/architecture.md) | Module inventory and versions, layering, boot sequence, threads and priorities, interrupts, clocking, the PTP timestamp path, memory layout |
+| [`docs/design_doc.md`](docs/design_doc.md) | Porting decisions and their rationale, submodule pinning, clock tree, pin map, stage-by-stage log |
+| [`docs/ptp_clock.md`](docs/ptp_clock.md) | Full derivation of the PTP timestamp clock and why a 4 ns increment is unreachable on this part |
+| [`docs/host_ptp_setup.md`](docs/host_ptp_setup.md) | Running a PTP master on a Linux host, and what to check when nothing happens |
+| [`docs/port_review.md`](docs/port_review.md) | Every finding of the port review, with evidence — including the ones that cost days |
+| [`docs/implementation_plan.md`](docs/implementation_plan.md) | The staged work plan and what remains |
 
 ## Related papers and references
 
@@ -198,11 +282,6 @@ ptp priority [<p1> <p2>]                           Print or set clock priority f
 
 [Methods of Peripheral Synchronization in Real-Time Cyber-Physical Systems](https://ieeexplore.ieee.org/document/10178979/)
 
-
-
 ## License
 
 The project was created by András Wiesner (Epagris) in 2025 and published under the MIT license. Contributions are welcome! :)
-
-
-
