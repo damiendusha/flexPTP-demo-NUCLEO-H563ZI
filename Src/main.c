@@ -70,7 +70,12 @@ void init_pll() {
 	osc.PLL.PLLRGE = RCC_PLL1_VCIRANGE_1;       // VCI = 2 MHz, inside 2..4 MHz
 
 
-    HAL_RCC_OscConfig(&osc);
+    // A PLL that fails to lock must not be shrugged off: execution would continue on
+    // whatever SYSCLK survived, giving a board that runs at an unexpected speed with a
+    // detuned PTP clock and no indication -- the F45/F6 failure mode, undetected.
+    if (HAL_RCC_OscConfig(&osc) != HAL_OK) {
+        Error_Handler();
+    }
 
     // Enable the PLL1Q output. HAL_RCC_OscConfig() programmes the divider but leaves the
     // output gated; without this pll1_q_ck is never generated and the PTP timestamp
@@ -101,7 +106,10 @@ void init_pll() {
     clk.APB2CLKDivider = RCC_HCLK_DIV2;
     clk.APB3CLKDivider = RCC_HCLK_DIV2;
 
-    HAL_RCC_ClockConfig(&clk, FLASH_LATENCY_5); // 250 MHz at VOS0 requires 5 wait states
+    // 250 MHz at VOS0 requires 5 wait states
+    if (HAL_RCC_ClockConfig(&clk, FLASH_LATENCY_5) != HAL_OK) {
+        Error_Handler();
+    }
 
     // ---------------------
 }
@@ -176,6 +184,38 @@ void task_startup(void *arg) {
 }
 
 void btn_cb() {
+}
+
+/* Was declared and never defined, so nothing could call it and every HAL initialisation
+ * failure was discarded instead.
+ *
+ * The awkward case is that its most important caller, init_pll(), runs BEFORE
+ * serial_io_init(): USART3 is not up, so the polled writer returns without printing. It is
+ * still attempted, because Error_Handler() is equally reachable from later initialisation
+ * where the console does exist. For the early case the red LED is the fallback -- a bench
+ * failure should be visible without a debugger attached. */
+void Error_Handler(void) {
+    __disable_irq();
+
+    serial_io_panic_write("\n\n*** FATAL: Error_Handler() - hardware initialisation failed\n"
+                          "Halted.\n");
+
+    // LD3 (red) on MB1404. PG4 is otherwise unused by this project.
+    __HAL_RCC_GPIOG_CLK_ENABLE();
+
+    GPIO_InitTypeDef led;
+    memset(&led, 0, sizeof(led));
+    led.Pin = GPIO_PIN_4;
+    led.Mode = GPIO_MODE_OUTPUT_PP;
+    led.Speed = GPIO_SPEED_FREQ_LOW;
+    led.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(GPIOG, &led);
+
+    for (;;) {
+        HAL_GPIO_TogglePin(GPIOG, GPIO_PIN_4);
+        for (volatile uint32_t i = 0U; i < 2000000U; i++) {
+        }
+    }
 }
 
 void init_randomizer() {
