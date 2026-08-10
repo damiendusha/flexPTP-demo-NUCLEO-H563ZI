@@ -275,6 +275,7 @@ static void rx_thread(void *arg) {
         if (p != NULL) {
             /* save size waiting for being stored */
             u16_t size_left = evt.data.rx.size;
+            const u8_t *src = (const u8_t *)evt.data.rx.payload;
 
             /* We iterate over the pbuf chain until we have read the entire
              * packet into the pbuf. */
@@ -290,7 +291,8 @@ static void rx_thread(void *arg) {
 
                 /* compute copy size and copy */
                 u16_t copy_size = MIN(size_left, q->len);
-                memcpy(q->payload, evt.data.rx.payload, copy_size);
+                memcpy(q->payload, src, copy_size);
+                src += copy_size; // must advance, or every segment repeats the frame start (F58)
                 size_left -= copy_size;
             }
 

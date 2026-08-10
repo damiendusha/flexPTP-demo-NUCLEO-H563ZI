@@ -283,10 +283,20 @@ likely to break silently (see F42, F48).
 
 ```
 MAC captures RX timestamp into a context descriptor
-  → ETHHW_ProcessRx() pairs the data descriptor with its context descriptor
-  → ETHHW_ReadCallback() in eth_drv_lwip.c stores it into pbuf->time_s / time_ns
+  → ETHHW_ProcessRx() [ISR] pairs the data descriptor with its context descriptor,
+      marks both ETHHW_DescExt.inFlight, and queues the event on rx_msg_q
+  → rx_thread [task] copies the frame into a pbuf, stores the timestamp into
+      pbuf->time_s / time_ns, hands it to lwIP, then ETHHW_RestoreRXDesc()
+      returns ownership to the DMA and clears inFlight
   → nsd_lwip.c reads those fields and calls ptp_receive_enqueue()
 ```
+
+The `inFlight` marker is what makes the handoff safe. The descriptor's OWN bit is clear for
+the whole span between the MAC writing the frame and `rx_thread` restoring it, so ownership
+alone cannot distinguish "newly received" from "already queued" — and `ETHHW_ProcessRx()`
+runs from the ISR, which can re-enter that span freely. Without the marker the driver
+re-delivers queued frames; measured at **57% of all frames** under ordinary PTP traffic
+(F61).
 
 **Transmit:**
 

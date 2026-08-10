@@ -35,7 +35,11 @@ typedef struct {
 typedef struct {
     uint32_t bufAddr; // buffer address to restore
     uint16_t txCntr;  // transmit counter
-    uint16_t pad0;
+    // RX: descriptor has been handed to the receive thread and not yet returned. The OWN bit
+    // alone cannot express this -- it stays clear from the moment the MAC writes the frame
+    // until ETHHW_RestoreRXDesc() runs in thread context, so without this flag an RX
+    // interrupt arriving in that window re-delivers frames already queued (F61).
+    uint16_t inFlight;
     uint32_t tsCbPtr; // pointer to timestamp callback function
     uint32_t tsCbArg; // user-defined timestamp parameter
 } ETHHW_DescExt;

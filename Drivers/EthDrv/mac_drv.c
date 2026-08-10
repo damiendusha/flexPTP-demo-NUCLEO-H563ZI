@@ -238,6 +238,11 @@ void ETHHW_RestoreRXDesc(ETHHW_DescFull *bd) {
 
     bd->desc.DES0 = bd->ext.bufAddr;                                                          // store Buffer 1 address
     bd->desc.DES3 = 0 | ETH_DMARXNDESCRF_OWN | ETH_DMARXNDESCRF_IOC | ETH_DMARXNDESCRF_BUF1V; // set flags: OWN, IOC, BUF1V
+
+    // Clear the in-flight marker only AFTER ownership has gone back to the DMA. The reverse
+    // order leaves a window in which an RX interrupt sees the descriptor as free and fresh
+    // and re-delivers a stale frame; this order makes it see OWN set, and skip it.
+    bd->ext.inFlight = 0;
 }
 
 typedef enum { ETHHW_RINGBUF_RX,
@@ -343,6 +348,11 @@ __attribute__((unused)) static void ETHHW_PrintRingBufStatus(ETH_TypeDef *eth,
 #define ETHHW_DESC_OWNED_BY_APPLICATION(bd) \
     (!(((bd)->desc.DES3) & ETH_DMARXNDESCRF_OWN))
 
+// A descriptor needs processing only if the application owns it AND it is not already queued
+// with the receive thread. See ETHHW_DescExt.inFlight and F61.
+#define ETHHW_DESC_NEEDS_PROCESSING(bd) \
+    (ETHHW_DESC_OWNED_BY_APPLICATION(bd) && !((bd)->ext.inFlight))
+
 // process incoming packet
 void ETHHW_ProcessRx(ETH_TypeDef *eth) {
     // ETHHW_PrintRingBufStatus(eth, ETHHW_RINGBUF_RX);
@@ -354,14 +364,15 @@ void ETHHW_ProcessRx(ETH_TypeDef *eth) {
     ETHHW_DescFull *bd = (ETHHW_DescFull *)eth->DMACCARDR;
     ETHHW_DescFull *bd_prev = ETHHW_DESC_PREV(ring, ringLen, bd);
 
-    // get the first unprocessed descriptor (oldest one)
-    while (ETHHW_DESC_OWNED_BY_APPLICATION(bd_prev)) {
+    // get the first unprocessed descriptor (oldest one). An in-flight descriptor is a hard
+    // boundary: it is older than anything fresh, so stopping there is the correct start.
+    while (ETHHW_DESC_NEEDS_PROCESSING(bd_prev)) {
         bd = bd_prev;
         bd_prev = ETHHW_DESC_PREV(ring, ringLen, bd);
     }
 
     // iterate over unprocessed descriptors
-    while (ETHHW_DESC_OWNED_BY_APPLICATION(bd)) {
+    while (ETHHW_DESC_NEEDS_PROCESSING(bd)) {
         ETHHW_DescFull *bd_next = ETHHW_DESC_NEXT(ring, ringLen, bd);
 
         ETHHW_EventDesc evt;
@@ -385,9 +396,17 @@ void ETHHW_ProcessRx(ETH_TypeDef *eth) {
 
         evt.bd_ctx = ctx_bd;
 
+        // Mark before dispatching, not after: the receive thread may already have consumed
+        // and restored the descriptor by the time the callback returns, and setting the flag
+        // then would strand the descriptor for good.
+        bd->ext.inFlight = 1;
+        if (ctx_bd != NULL) {
+            ctx_bd->ext.inFlight = 1;
+        }
+
         int ret = ETHHW_ReadCallback(&evt);
         if (ret == ETHHW_RET_RX_PROCESSED) {
-            ETHHW_RestoreRXDesc(bd);     // release buffer descriptor
+            ETHHW_RestoreRXDesc(bd);     // release buffer descriptor (also clears inFlight)
             ETHHW_RestoreRXDesc(ctx_bd); // and context descriptor also
         }
 

@@ -132,8 +132,8 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F42 | **The switch silently discarded PTP Delay_Resp** — nothing in the port was at fault | **RESOLVED** | proven by direct cable |
 | F59 | **One duplicated Sync cycle latches the Kalman servo into NaN for ever** | **RESOLVED** | root-caused, fixed, verified on hardware |
 | F60 | embfmt cannot parse `%ll`, and renders NaN as a plausible `0.0000` | **RESOLVED** | reproduced on the host, fixed |
-| F61 | The same received Sync/Follow_Up was processed twice — one frame, one RX timestamp | **OPEN** | identical T1, T2 and offset on consecutive corrections |
-| F58 | `eth_drv_lwip.c` RX copy never advances the source pointer across a chained pbuf | Latent bug | open |
+| F61 | **`ETHHW_ProcessRx()` re-delivers frames already queued with the receive thread** | **RESOLVED** | measured: 57% of frames duplicated; 0 after the fix |
+| F58 | `eth_drv_lwip.c` RX copy never advances the source pointer across a chained pbuf | **RESOLVED** | proven by shrinking `PBUF_POOL_BUFSIZE`: DHCP failed entirely, then worked |
 | F43 | `PTP_ACCURACY_LIMIT_NS` (100 ns) is the implicit LOCKED criterion | Minor | plan Stage 20 |
 | F44 | `CMakePresets.json` requires Ninja; not documented as a prerequisite | Minor | plan Stage 19 |
 | F45 | H5 inverts the H7 clock-divider namespaces; the H7 spelling compiles but misconfigures | Critical (silent) | plan Stage 10 (fixed) |
@@ -1059,28 +1059,72 @@ Recorded in
 [`patches/embfmt/0001-ll-length-modifier-and-non-finite-doubles.patch`](../patches/embfmt/0001-ll-length-modifier-and-non-finite-doubles.patch).
 Both are worth reporting upstream: they are target-independent.
 
-### F61 — the same received Sync was processed twice *(OPEN)*
+### F61 — `ETHHW_ProcessRx()` re-delivers frames already queued *(RESOLVED)*
 
-F59's trigger is understood and now harmless, but **what produced the duplicate is not**.
+F59's trigger — one frame delivered twice, with identical T1, T2 *and* offset — turned out to
+be a race in the RX descriptor handoff, and a far larger one than the PTP symptom suggested.
 
-The two corrections shared T1, T2 *and* the resulting offset. T2 is the board's own hardware
-RX timestamp, so a genuine retransmission by the master would have produced a different T2.
-Identical T2 means **one frame delivered twice**, not two frames.
+#### The race
 
-The slave state machine cannot do this on its own: a second Follow_Up arrives in `SIdle`,
-where only Sync is handled, and is discarded. So the duplication is below `slave.c` — the RX
-path, `nsd_lwip.c`, or the message-buffer FIFO added in flexPTP `a60190f`.
+`ETHHW_ProcessRx()` decided whether a descriptor still needed processing from the OWN bit
+alone:
 
-Observed **once in roughly 150 Sync cycles** and not seen since, which makes it awkward to
-chase. The way to catch it is a counter pair — Syncs entering `ptp_slave_process_message()`
-versus calls to `ptp_perform_correction()` — left to run for hours and read over SWD; the
-`slvdbg` instrumentation from F42 is most of the way there already.
+```c
+#define ETHHW_DESC_OWNED_BY_APPLICATION(bd)  (!(((bd)->desc.DES3) & ETH_DMARXNDESCRF_OWN))
+```
 
-Low priority now that a duplicate costs one skipped cycle instead of the session, but it is
-a real defect and it is not this port's alone: the same duplicate would corrupt any
-flexPTP-based slave.
+It walks *backwards* from `DMACCARDR` to find the oldest application-owned descriptor, then
+forwards, queueing each frame on `rx_msg_q`. On the normal path the descriptor is deliberately
+**not** restored — ownership returns to the DMA only later, in `rx_thread`, after the frame has
+been copied into a pbuf and passed to lwIP.
 
-### F58 — RX pbuf copy never advances the source pointer
+So the OWN bit is clear for the entire span between the MAC writing the frame and the thread
+restoring it. `ETHHW_ProcessRx()` runs from the ISR, which preempts that thread. **Any RX
+interrupt arriving inside the span re-scans the queued descriptors and delivers those frames
+again** — same buffer, same captured timestamp. That is why the duplicate carried an identical
+T2: T2 is the board's own hardware RX timestamp, so a retransmission could never have produced
+it.
+
+#### How often
+
+Instrumented `ETHHW_ProcessRx()` to count the contiguous run of already-queued descriptors the
+old backward walk would have swept in:
+
+| Traffic | Frames | Would have been re-delivered |
+|---|---|---|
+| PTP only, ~40 s | 204 | **116 (57%)**, across 70 of 204 passes |
+| + 3000 pings at 500 pps | 3022 | 13 (0.4%) |
+
+The rate is inverted from the intuition. Under sustained load `rx_thread` is already awake and
+spinning on the queue, so it restores each descriptor almost immediately and the window closes.
+At low rates the thread must be woken from `osMessageQueueGet()`, and PTP traffic arrives in
+tight pairs — Sync then Follow_Up, Delay_Req then Delay_Resp — so the second frame's interrupt
+lands squarely in the wake-up window.
+
+**Over half of all received frames were duplicated**, not one in 150. The PTP-visible rate was
+far lower because a duplicate only produces a duplicate *correction* when it is a Follow_Up
+arriving in `SWaitFollowUp`; in any other state `slave.c` discards it. F59 was the one case
+where a duplicate got through to something that mattered.
+
+#### The fix
+
+Give the descriptor the state it was missing. `ETHHW_DescExt` had an unused `uint16_t pad0`,
+so `inFlight` costs nothing in layout:
+
+| Change | |
+|---|---|
+| `ETHHW_DESC_NEEDS_PROCESSING()` | application-owned **and** not in flight; used by both walks. An in-flight descriptor is always older than anything fresh, so it is the correct boundary and no new frame is skipped |
+| `ETHHW_ProcessRx()` | sets `inFlight` **before** dispatching, not after — the thread may consume and restore the descriptor before the callback returns, and setting the flag then would strand it permanently |
+| `ETHHW_RestoreRXDesc()` | returns ownership **first**, clears `inFlight` second. The reverse order leaves a window where the descriptor looks free and fresh; this order makes a concurrent ISR see OWN set and skip it |
+
+#### Verified
+
+With the fix, and the counters still in place: 201 servo samples over five minutes, **zero
+duplicate corrections** by the F59 signature test, 200 of 201 applying a correction. Rebuilt
+without instrumentation: 111 of 111 correcting, zero duplicates, offset signed mean +16 ns with
+a magnitude of 28 µs.
+
+### F58 — RX pbuf copy never advanced the source pointer *(RESOLVED)*
 
 `eth_drv_lwip.c`, copying a received frame into a pbuf chain:
 
@@ -1092,10 +1136,19 @@ for (q = p; (q != NULL) && (size_left > 0); q = q->next) {
 }
 ```
 
-Every segment is filled from the *start* of the frame, so any chained pbuf is corrupted.
-Latent as configured — `PBUF_POOL_BUFSIZE` is 1528 and `ETH_BUFFER_SIZE` is 1528, so a
-frame never spans two pool buffers — but it would corrupt traffic immediately if either
-were reduced. Inherited from the H743 project. Unrelated to F42.
+Every segment was filled from the *start* of the frame, so any chained pbuf was corrupted.
+Latent as configured — `PBUF_POOL_BUFSIZE` and `ETH_BUFFER_SIZE` are both 1528, so a frame
+never spans two pool buffers. Inherited from the H743 project.
+
+**Tested rather than assumed.** Temporarily setting `PBUF_POOL_BUFSIZE` to 256 makes a
+1500-byte frame span six pbufs. The result was more decisive than expected: the board could not
+complete **DHCP** — OFFER and ACK are several hundred bytes, so they chained, were corrupted,
+and lwIP dropped them. The board never acquired an address and was unreachable.
+
+With the source pointer advanced, on the same 256-byte configuration: DHCP completed
+immediately, and `ping` at 100, 500, 1000 and 1400-byte payloads all returned 0% loss with
+`-p` pattern verification passing — so content, not merely delivery, is correct.
+`PBUF_POOL_BUFSIZE` was then restored to 1528.
 
 ### F54 — unbounded wait in `ETHHW_SetPTPAddend()`
 
