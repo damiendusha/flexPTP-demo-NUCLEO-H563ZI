@@ -394,7 +394,13 @@ void ETHHW_ProcessRx(ETH_TypeDef *eth) {
     while (ETHHW_DESC_NEEDS_PROCESSING(bd)) {
         ETHHW_DescFull *bd_next = ETHHW_DESC_NEXT(ring, ringLen, bd);
 
+        /* Zeroed because ts_s/ts_ns are only assigned when a context descriptor carried a
+         * timestamp, but rx_thread copies them into pbuf->time_s/time_ns unconditionally.
+         * Left uninitialised, a frame the MAC did not timestamp handed flexPTP whatever was
+         * on the stack -- a plausible-looking wrong time rather than an obvious zero, which
+         * is the same class of trap as F59's NaN printing as "0.0000". */
         ETHHW_EventDesc evt;
+        memset(&evt, 0, sizeof(evt));
         evt.type = ETHHW_EVT_RX_READ;
         evt.data.rx.size = (bd->desc.DES3) & 0x3FFF;
         evt.data.rx.payload = (void *)bd->ext.bufAddr;
