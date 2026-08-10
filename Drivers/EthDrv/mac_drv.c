@@ -549,8 +549,24 @@ void ETHHW_Transmit(ETH_TypeDef *eth, const uint8_t *buf, uint16_t len, uint8_t 
 
     // ETHHW_PrintRingBufStatus(eth, ETHHW_RINGBUF_TX);
 
-    while (!ETHHW_DESC_OWNED_BY_APPLICATION(bd)) {
-    } // wait for descriptor to become released by the DMA (if needed)
+    /* Bounded, like every other handshake in this driver. This one was left unbounded by the
+     * F54 sweep, and it is the worst place to spin: low_level_output() calls it on
+     * tcpip_thread at priority 40 *while holding the lwIP core lock*, so a stalled TX DMA
+     * would not merely burn the CPU -- it would deadlock every lwIP user behind the lock,
+     * with no watchdog configured to recover. Dropping the frame is the right failure: the
+     * stack is designed for lossy links. */
+    bool descFree = false;
+    for (uint32_t i = 0; i < ETHHW_HW_TIMEOUT_SPINS; i++) {
+        if (ETHHW_DESC_OWNED_BY_APPLICATION(bd)) {
+            descFree = true;
+            break;
+        }
+    }
+
+    if (!descFree) {
+        MSG("ETH: TX descriptor %u still owned by the DMA; frame dropped\n", nextTxDescIdx);
+        return;
+    }
 
     // erase possible old descriptor data
     memset(bd, 0, sizeof(ETHHW_Desc)); // DON'T erase extension

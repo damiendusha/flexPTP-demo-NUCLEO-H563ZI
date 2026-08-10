@@ -80,9 +80,9 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 | | Count |
 |---|---|
 | Total distinct actions | **80** |
-| Open (☐) | 59 |
+| Open (☐) | 58 |
 | Partial (◐) | 1 |
-| Already done (✅) | 16 |
+| Already done (✅) | 17 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -121,7 +121,7 @@ defects.
 |---|---|---|---|---|---|---|---|
 | ✅ | **Verified ✅** | — | **P2.1** | — | — | 1/3 O | Implement `vApplicationStackOverflowHook()` and `vApplicationMallocFailedHook()` with a polled-UART panic reporter. Both currently resolve to the shim's weak stubs, which call `configASSERT(0)` — **DONE:** added `serial_io_panic_write()` (polled USART3, no FIFO/DMA/RTOS, clears `CR3.DMAT` first) and both hooks. Heap exhaustion reproduced and reported on target. **Testing revealed the stack hook is largely unreachable on ARMv8-M** — the port programs `PSPLIM` per task, so hardware raises STKOF first; see **P2.14** |
 | ✅ | **Verified ✅** | — | **P2.2** | — | — | 1/3 O | Make `configASSERT` report before halting — it is currently `taskDISABLE_INTERRUPTS(); for(;;);` — **DONE:** routed through `vAssertCalled(file, line)` on the P2.1 polled writer. Verified on target by tripping a real FreeRTOS assert, which reported `tasks.c:2820` (`uxNewPriority < configMAX_PRIORITIES`). Costs ~2.6 KB of flash in `__FILE__` strings (10.63% → 10.76% of 2 MB) |
-| ☐ | — | — | **P2.3** | ACT-03 (B2) | — | 2/3 O+F | Bound the ownership wait in `ETHHW_Transmit()`, `mac_drv.c:552`. Spins on `tcpip_thread` **while holding the lwIP core lock**; no watchdog exists to recover |
+| ✅ | — | — | **P2.3** | ACT-03 (B2) | — | 2/3 O+F | Bound the ownership wait in `ETHHW_Transmit()`, `mac_drv.c:552`. Spins on `tcpip_thread` **while holding the lwIP core lock**; no watchdog exists to recover — **DONE: bounded with the driver's existing spin-count idiom; on expiry it reports the descriptor index and drops the frame. Verified on target with ownership scaffolded to never clear — 4 drops reported, CLI still responsive, no deadlock. Healthy hardware: 0 drops, ping 0% loss at 56 and 1400 bytes** |
 | ✅ | — | — | **P2.4** | — | — | 1/3 O | Check `HAL_RCC_OscConfig()` / `HAL_RCC_ClockConfig()` return values; define `Error_Handler()`, which is declared at `main.c:31` and defined nowhere — **DONE: both HAL_RCC_* returns checked; `Error_Handler()` defined — attempts the polled writer, then halts blinking PG4 (LD3). Verified on target by forcing the failure: console silent (it runs before `serial_io_init()`, a limitation now documented in the code) and GPIOG ODR bit 4 toggling, 5 of 8 samples high** |
 | ☐ | — | — | **P2.5** | ACT-05 (B5) | — | **⚠ SCOPE** | Fix `get_line()`'s escape parser: bound `paramIdx` against `sizeof(escParam)` **and** move the `escParam[0]` read after the write (arrow-key history currently acts on the previous keypress) |
 | ☐ | — | — | **P2.6** | ACT-06 (B6) | — | 2/3 O+F | Fix the off-by-one write in `insert_carriage_return()` — change the guard to `len < maxLen` |
