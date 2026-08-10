@@ -478,9 +478,15 @@ int cli_register_command(char *pCmdParsHelp, uint8_t cmdTokCnt,
     struct CliCommand *pCmd = &spCliCmds[sCliCmdCnt];
 
     // tokenize the first part of the line (run until cmkTokCnt tokens have been fetched)
+    /* Clamp against the destination's own capacity. pCmd->ppTok is CliToken_Type[MAX_TOKEN_N]
+     * (8), but this clamped against TOK_ARR_LEN (16) -- the size of the *caller's* token array
+     * in process_cli_line(), a different buffer entirely. A command registered with 9 to 16
+     * tokens would have written past ppTok and straight into tokCnt, minArgCnt and pHelp, which
+     * follow it in the struct. No current command exceeds three tokens, so this is latent
+     * rather than live, but the clamp named the wrong limit. */
     uint32_t tokCnt = 0;
     tokenize_cli_line(pCmdParsHelp, pCmd->ppTok, MAX_TOK_LEN,
-                      (cmdTokCnt > TOK_ARR_LEN ? TOK_ARR_LEN : cmdTokCnt), &tokCnt);
+                      (cmdTokCnt > MAX_TOKEN_N ? MAX_TOKEN_N : cmdTokCnt), &tokCnt);
     pCmd->tokCnt = (uint8_t)tokCnt;
 
     // store minimal argument count parameter

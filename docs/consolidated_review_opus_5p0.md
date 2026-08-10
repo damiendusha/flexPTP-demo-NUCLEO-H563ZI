@@ -80,9 +80,9 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 | | Count |
 |---|---|
 | Total distinct actions | **80** |
-| Open (☐) | 53 |
+| Open (☐) | 52 |
 | Partial (◐) | 1 |
-| Already done (✅) | 22 |
+| Already done (✅) | 23 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -125,7 +125,7 @@ defects.
 | ✅ | — | — | **P2.4** | — | — | 1/3 O | Check `HAL_RCC_OscConfig()` / `HAL_RCC_ClockConfig()` return values; define `Error_Handler()`, which is declared at `main.c:31` and defined nowhere — **DONE: both HAL_RCC_* returns checked; `Error_Handler()` defined — attempts the polled writer, then halts blinking PG4 (LD3). Verified on target by forcing the failure: console silent (it runs before `serial_io_init()`, a limitation now documented in the code) and GPIOG ODR bit 4 toggling, 5 of 8 samples high** |
 | ✅ | — | — | **P2.5** | ACT-05 (B5) | — | **⚠ SCOPE** | Fix `get_line()`'s escape parser: bound `paramIdx` against `sizeof(escParam)` **and** move the `escParam[0]` read after the write (arrow-key history currently acts on the previous keypress) — **DONE, both halves — resolving the ⚠ SCOPE (Flash 3.6 flagged only the overflow). The store now precedes the dispatch, and `escParam` is bounds-checked and zero-initialised. Control run on target: **unfixed, the first arrow press did not recall the previous command; fixed, it recalls immediately.** The overflow itself produced no observable crash in testing — it lands in adjacent stack slots — so it is fixed as inspection-level UB, not as a reproduced fault** |
 | ✅ | — | — | **P2.6** | ACT-06 (B6) | — | 2/3 O+F | Fix the off-by-one write in `insert_carriage_return()` — change the guard to `len < maxLen` — **DONE: guard changed to `len < maxLen`, leaving room for the character the body is about to add. Proved on the host by compiling both variants against a full-length buffer ending in a bare newline: unfixed writes index 2049 of a 0..2048 buffer, fixed stays in bounds. On target the CRLF conversion is unchanged — 21 of 21 line feeds are CRLF pairs, zero bare LF** |
-| ☐ | — | — | **P2.7** | — | — | 1/3 O | Clamp `cli_register_command()`'s token count against `MAX_TOKEN_N` (8), not `TOK_ARR_LEN` (16) |
+| ✅ | — | — | **P2.7** | — | — | 1/3 O | Clamp `cli_register_command()`'s token count against `MAX_TOKEN_N` (8), not `TOK_ARR_LEN` (16) — **DONE: clamp now uses `MAX_TOKEN_N` (8), the destination array's own capacity, instead of `TOK_ARR_LEN` (16) which sizes a different buffer in `process_cli_line()`. Verified on target with a scaffolded 12-token registration — survives, CLI alive, help table intact** |
 | ☐ | — | — | **P2.8** | — | — | 1/3 O | Raise the `rx` thread above the console threads; six of nine threads currently share priority 24 |
 | ☐ | — | — | **P2.9** | — | — | 1/3 O | Check `HAL_UART_Transmit_DMA()`'s return in `serial_io_thread()` — on error it blocks forever on a completion flag that will never be set |
 | ✅ | — | — | **P2.10** | ACT-02 (B3) | — | 1/3 F | Replace `SET_BIT` with direct assignment when clearing `ETH->DMACSR` in `ETHHW_ISR()`. Read-modify-write on a w1c register clears every pending flag, including `AIS`/`FBE`, which nothing reads. ST's own `__HAL_ETH_DMA_CLEAR_IT` uses direct assignment — **DONE: all four acknowledgements are now `WRITE_REG` of just the bits being cleared, and `AIS` is acknowledged and reported instead of being wiped unseen. **Not demonstrable from software** — the race needs a flag to assert between the ISR's read and its write-back — so the evidence is correctness by inspection, corroborated by ST's own `__HAL_ETH_DMA_CLEAR_IT` using direct assignment, plus a regression: 500 pings at 1400 B, 0% loss, PTP addend correct** |
