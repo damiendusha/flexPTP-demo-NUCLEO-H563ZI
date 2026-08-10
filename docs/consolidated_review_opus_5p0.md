@@ -80,9 +80,9 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 | | Count |
 |---|---|
 | Total distinct actions | **80** |
-| Open (☐) | 44 |
+| Open (☐) | 43 |
 | Partial (◐) | 1 |
-| Already done (✅) | 31 |
+| Already done (✅) | 32 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -144,7 +144,7 @@ defects.
 | ✅ | — | — | **P3.4** | — | — | 1/3 O | Add a `_Static_assert` on `offsetof` for the `ETHHW_State` / RX-ring adjacency that `ETHHW_GetState()` depends on — **DONE: layout named as `ETHStateAndDescLayout` and asserted with `_Static_assert(offsetof(..., DMARxDscrTab) == sizeof(ETHHW_State))`. Proved the assertion bites by inserting a `uint32_t` between the members — build fails with the explanatory message rather than producing a driver that reads its state from inside a descriptor** |
 | ✅ | — | — | **P3.5** | — | — | 1/3 O | Reconcile `RX_MSG_Q_LEN` (32), `PBUF_POOL_SIZE` (8) and `ETH_RX_DESC_CNT` (24); record the reasoning — **DONE: `RX_MSG_Q_LEN` tied to `ETH_RX_DESC_CNT` (one event per descriptor is the hard ceiling — the old 32 was unreachable in its top third). `PBUF_POOL_SIZE` deliberately left at 8: it is the real throughput limit, and 300 pings of 1400 B at 100 / 250 / 500 pps all gave 0% loss. Relationship and the measurement recorded in `architecture.md`** |
 | ✅ | — | — | **P3.6** | — | — | 1/3 O | Add `LOCK_TCPIP_CORE()` around the lwIP accesses in `check_dhcp_state()`, which runs on `Tmr Svc` — **DONE: `LOCK_TCPIP_CORE()` around both lwIP reads, with the address copied out and `MSG()` moved outside the lock (it can block on the console FIFO, and stalling the core lock there would stall the whole stack). Verified: DHCP lease still detected and printed exactly once** |
-| ☐ | — | — | **P3.7** | — | — | 1/3 O | Record which PTP message types `SNAPTYPSEL = 0b01` selects, and confirm it suits both e2e and p2p |
+| ✅ | — | — | **P3.7** | — | — | 1/3 O | Record which PTP message types `SNAPTYPSEL = 0b01` selects, and confirm it suits both e2e and p2p — **DONE: documented at the register write. `SNAPTYPSEL = 0b01` with `TSEVNTENA = 0` / `TSMSTRENA = 0` is the widest selection the MAC offers — every PTP message type including the peer-delay ones — which is **required**, since the delay mechanism is runtime-switchable and the two shipped profiles use different ones (default = E2E, gPTP = P2P). Confirmed on target that both are selectable: `ptp delmech` reports P2P by default and accepts `e2e`/`p2p`. `TSENALL` deliberately unset. The exact RM0481 message-type table is not restated — no copy to cite** |
 | ☐ | — | — | **P3.8** | ACT-07 (B10, I3) | — | **⚠ SEVERITY** | Reorder `stm32h563zitx_FLASH.ld` to place `.FreeRTOS_sec` before `._user_heap_stack`. Verified: `ucHeap` at `0x200190d0` sits inside the `_sbrk` range (`_end` `0x200186d0` → ceiling `0x2003F800`) |
 | ☐ | — | — | **P3.9** | — | item 4 | 1/3 P | Characterise against a PHC-capable grandmaster (Intel I210 / I219-V / 82576) to establish whether `LOCKED` (100 ns) is reachable. Nothing on the target changes |
 

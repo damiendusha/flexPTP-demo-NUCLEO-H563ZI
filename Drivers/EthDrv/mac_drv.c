@@ -744,6 +744,25 @@ uint32_t ETHHW_WritePHYRegister(ETH_TypeDef *eth, uint32_t PHYAddr,
 // subsecond rollover control (1 = rollover on 10^9-1 nsec) #define
 // ETH_PTP_FLAG_TSE ((uint32_t)(1 << 0)) // global timestamp enable flag
 
+/* Snapshot selection, spelled out because the register alone does not say what it selects and
+ * getting it wrong costs timestamps on one delay mechanism only -- a failure that looks like
+ * a protocol bug rather than a driver setting.
+ *
+ * The combination written here is SNAPTYPSEL = 0b01 with TSEVNTENA = 0 and TSMSTRENA = 0,
+ * which is the widest selection this MAC offers: every PTP message type, event and general,
+ * INCLUDING the peer-delay ones (Pdelay_Req / Pdelay_Resp / Pdelay_Resp_Follow_Up).
+ *
+ * That breadth is required, not incidental. The delay mechanism is switchable at runtime --
+ * "ptp delmech {e2e|p2p}" -- and the profiles use different ones: the default IEEE 1588
+ * preset is E2E (Delay_Req/Delay_Resp) while the gPTP preset this project boots into is P2P
+ * (Pdelay_*). A narrower selection would silently time-stamp only one of them.
+ *
+ * TSENALL is deliberately NOT set: that would timestamp every received frame, not just PTP.
+ *
+ * Confirmed by the F42 investigation, which rebuilt with SNAPTYPSEL = 0b00 and measured no
+ * change in what the MAC *received* -- these bits select what is timestamped, not what is
+ * accepted. The exact message-type table is RM0481's; it is not restated here because this
+ * project has no copy to cite against. */
 void ETHHW_EnablePTPTimeStamping(ETH_TypeDef *eth) {
     __IO uint32_t tmpreg = eth->MACTSCR;
 
