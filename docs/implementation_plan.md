@@ -29,7 +29,7 @@
 - [x] **Stage 17** — Complete `docs/design_doc.md`
 - [x] **Stage 18** — Provision ST's OpenOCD via `build.sh` 🆕
 - [x] **Stage 19** — Project metadata & tooling (README, build.sh, VS Code) 🆕
-- [ ] **Stage 20** — Flash & test on hardware
+- [x] **Stage 20** — Flash & test on hardware *(except two items blocked on equipment)*
 
 ### Build gates
 
@@ -668,6 +668,9 @@ previously provisioned with TZEN=1 will not boot this image.
   `2³²/1.25` derivation exactly; under lock it tracks a few tens of thousands of counts either
   side (≈±10 ppm). The servo converges and holds rather than railing
 - Document results in the design doc
+  — ✅ **done.** Consolidated in [design_doc.md](design_doc.md#stage-20--hardware-verification-results):
+  build sizes, boot, network, PTP clock against the derivation, BMCA, servo statistics and the
+  CLI sweep, with the two blocked items cross-referenced
 
 **Commit**: `"Stage 20: Hardware verification results"`
 
@@ -736,8 +739,12 @@ Every finding on this list has been fixed and verified on hardware. Details in
 
 ### 3. Unfinished stages
 
-Stages 16–20 (see the [checklist](#implementation-checklist)). Stage 20 is substantially
-done but has never been signed off against the [Verification Plan](#verification-plan).
+**None.** Stages 16–20 are closed. Stage 20 is signed off against the
+[Verification Plan](#verification-plan) with results recorded in
+[design_doc.md](design_doc.md#stage-20--hardware-verification-results), except the two items
+[blocked on equipment](#blocked-on-equipment) — the LOCKED criterion, which needs a
+hardware-timestamping master, and the 1PPS waveform, which needs a scope. Neither is a defect
+in the port.
 
 ### 4. Deferred, with reasons
 

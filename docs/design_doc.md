@@ -917,5 +917,79 @@ Tested against `linuxptp` 4.4 on a Linux host.
 - **F60 resolved: embfmt could not print `%ll` and rendered NaN as `0.0000`.** The mean path
   delay and measured Sync period columns were blank on every servo line
   (`patches/embfmt/0001-…`).
-- **F61 open**: the duplicated Sync of F59 shared T1, T2 *and* offset, so one received frame
-  was delivered twice. Seen once in ~150 cycles; now harmless, but not root-caused.
+- **F61 resolved: `ETHHW_ProcessRx()` re-delivered frames already queued.** The duplicated
+  Sync of F59 shared T1, T2 *and* offset, so it was one frame delivered twice. The cause was
+  the OWN bit being the only "already handled" state, which stays clear until the receive
+  thread restores the descriptor — measured at **57% of all frames** under ordinary PTP
+  traffic, not the rare event it appeared to be. Fixed with an `inFlight` marker in the
+  descriptor extension.
+
+---
+
+### Stage 20 — hardware verification results
+
+Measured on a clean build of `1e446fb`, flashed over the ST-Link mass-storage device, against
+`ptp4l -i enp5s0 -S -m --serverOnly=1 --priority1=100` on a directly-connected host.
+
+**Build**
+
+| | |
+|---|---|
+| Warnings / errors | **0 / 0** (`-Wall -Wextra`, both presets) |
+| FLASH | 223 032 B — 10.6% of 2 MB |
+| SRAM1 | 133 328 B — 50.9% of 256 KB |
+| SRAM2 | 0 B — unused |
+| SRAM3 | 74 888 B — 22.9% of 320 KB (ETH descriptors, buffers, lwIP heap) |
+
+**Boot and network**
+
+```
+PHY: SMSC LAN8742A (rev. 1) @0
+ETH LINK: UP (100 Mbps, FULL duplex)
+IP-address: 192.168.2.141
+```
+
+No fault, HardFault or driver-timeout report. Ping 0% loss at 56 and 1400 bytes, the latter
+with `-p deadbeef` pattern verification, so payload integrity is checked and not merely
+delivery.
+
+**PTP clock, against the derivation in [ptp_clock.md](ptp_clock.md)**
+
+| Check | Expected | Measured |
+|---|---|---|
+| `ptp addend` before tuning | `2³²/1.25` = 3435973836 | **3435973836** — exact |
+| Addend under lock | tracks around nominal, does not rail | 3435793666 … 3435978364 |
+| Servo variances | 1e-16, 1e-12, 5e-11 | **1.000000e-16, 1.000000e-12, 5.000000e-11** |
+| PPS frequency | 1 Hz | reports 1 Hz (configuration only — see [Verification limits](#verification-limits)) |
+
+**BMCA and servo**
+
+```
+INITIALIZING -> LISTENING -> UNCALIBRATED -> SLAVE
+```
+
+| | |
+|---|---|
+| Samples | 137 |
+| Applying a correction | **136** (the one exception is the servo's own first cycle) |
+| Duplicate corrections | **0** — the F59 signature test |
+| Driver timeout reports | none |
+| Offset, last 100 | signed mean **−716 ns**, magnitude 28.5 µs, peak 77.8 µs |
+| Mean path delay, median | 36.6 µs |
+
+**Reading those last two rows correctly.** The signed mean near zero is the result that
+matters: it says the servo is locked and centred on the master rather than drifting. The
+magnitude and the 36.6 µs path delay are **not** measurements of this board — a direct metre
+of cable is nanoseconds, and 36 µs is the host's software timestamping asymmetry. See
+[Verification limits](#verification-limits).
+
+**CLI**
+
+All 23 commands swept in their query form; none returned *"Unknown command or bad parameter"*.
+The sweep found [F66](port_review.md#f66--embfmt-misreports-small-e-values-and-any-rounding-carry-resolved),
+where the three servo variance commands reported `~5.1e-8` for values of 1e-16, 1e-12 and
+5e-11; fixed, and correct in the table above.
+
+**Status.** Everything achievable with the equipment here is verified. Two items remain open
+and are blocked on instruments, not on the port —
+[LOCKED and 1PPS](implementation_plan.md#blocked-on-equipment).
