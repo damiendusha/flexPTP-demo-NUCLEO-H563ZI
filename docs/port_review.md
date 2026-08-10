@@ -128,7 +128,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F38 | Guide requires `SPRINTF`; code calls `FLEXPTP_SNPRINTF` | Trap | plan Stage 13 |
 | F39 | flexPTP has never been ported to Cortex-M33 / ARMv8-M | Risk | plan Open Items |
 | F40 | No OS-binding macro selected; silently defaults to `FLEXPTP_FREERTOS` | Build (latent) | plan Stage 13 |
-| F41 | `PTP_UPDATE_CLOCK` dead; `ETHHW_UpdatePTPTime()` unreachable and suspect | Minor + latent bug | plan Stage 12 |
+| F41 | `PTP_UPDATE_CLOCK` dead; `ETHHW_UpdatePTPTime()` unreachable and wrong | **RESOLVED** | removed as dead code rather than fixed unexercised |
 | F42 | **The switch silently discarded PTP Delay_Resp** — nothing in the port was at fault | **RESOLVED** | proven by direct cable |
 | F59 | **One duplicated Sync cycle latches the Kalman servo into NaN for ever** | **RESOLVED** | root-caused, fixed, verified on hardware |
 | F60 | embfmt cannot parse `%ll`, and renders NaN as a plausible `0.0000` | **RESOLVED** | reproduced on the host, fixed |
@@ -1202,6 +1202,29 @@ Reduced to one and measured, rather than assumed:
 Every single write reaches the hardware, so the repetition bought nothing. The servo is
 unaffected; the difference in offset magnitude is run-to-run variation on a
 software-timestamping master, not an improvement to claim.
+
+### F41 — dead relative clock-update path removed *(RESOLVED)*
+
+`ETHHW_UpdatePTPTime()` was unreachable — its only caller was the `PTP_UPDATE_CLOCK` macro,
+which the flexPTP core never invokes; coarse correction goes through `PTP_SET_CLOCK` →
+`ETHHW_InitPTPTime()`. Its subtract path was also wrong:
+
+```c
+nsec = 1000000000 - (nsec >> 1);   /* the >> 1 has no justification */
+```
+
+RM0481's relative update wants `10^9 − nsec` with the ADDSUB bit set. The shift halves every
+backward correction.
+
+**Removed rather than fixed.** Repairing arithmetic in a function that has never executed
+produces something that *looks* verified and is not — a worse trap than its absence, and the
+kind of thing that costs a day when someone eventually routes through it. Git history keeps
+it. The header declaration went with it, and `mac_drv.c` carries a note saying a relative
+update should be written against the reference manual rather than resurrected.
+
+Verified: clean build, zero warnings, and a hardware run afterwards since the edit sits next
+to the coarse-correction path — 87 of 88 samples correcting, no duplicates, no timeout
+reports, offset magnitude 13.8 µs.
 
 ### F49 — `task_ptp_is_operating()` renamed upstream
 

@@ -65,9 +65,9 @@
 #include <stdlib.h>
 
 #define PTP_HW_INIT(increment, addend) ptphw_init(increment, addend)
-// PTP_UPDATE_CLOCK is deliberately not defined: the flexPTP core never references it, and
-// the ETHHW_UpdatePTPTime() it used to call has a suspect subtract path. Coarse correction
-// goes through PTP_SET_CLOCK. (F41)
+// PTP_UPDATE_CLOCK is deliberately not defined: the flexPTP core never references it. Coarse
+// correction goes through PTP_SET_CLOCK. The relative-update driver function it would have
+// called was removed as dead code with a wrong subtract path (F41).
 #define PTP_SET_CLOCK(s, ns) ETHHW_InitPTPTime(ETH, labs(s), abs(ns))
 #define PTP_SET_ADDEND(addend) ETHHW_SetPTPAddend(ETH, addend)
 #define PTP_HW_GET_TIME(pt) ptphw_gettime(pt)

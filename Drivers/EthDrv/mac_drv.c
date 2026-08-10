@@ -743,36 +743,12 @@ void ETHHW_EnablePTPFineCorr(ETH_TypeDef *eth, bool enFineCorr) {
     eth->MACTSCR = tmpreg;
 }
 
-// #define ETH_PTP_FLAG_TSSTU ((uint32_t)(1 << 3)) // flag initiating time
-// update
-
-// NOTE: unreachable in this project. Its only caller is the PTP_UPDATE_CLOCK macro in
-// Inc/flexptp_options.h, which the flexPTP core never invokes -- coarse correction goes
-// through PTP_SET_CLOCK instead. The subtract path below also looks wrong (the >> 1 has
-// no evident justification); fix it before routing anything through here. See F41.
-void ETHHW_UpdatePTPTime(ETH_TypeDef *eth, uint32_t sec, uint32_t nsec,
-                         bool add_substract) { // true = add
-    if (add_substract) {
-        nsec &= ~((uint32_t)(1 << 31));
-    } else {
-        nsec = 1000000000 - (nsec >> 1);
-        nsec |= (1 << 31);
-    }
-
-    // fill registers with time components
-    eth->MACSTSUR = sec;
-    eth->MACSTNUR = nsec;
-
-    // wait for TSUPDT and TSINIT to clear
-    ETHHW_WaitBitsClear(&eth->MACTSCR, ETH_MACTSCR_TSUPDT | ETH_MACTSCR_TSINIT, "TSUPDT/TSINIT");
-
-    // perform time update
-    __IO uint32_t tmpreg = eth->MACTSCR;
-
-    tmpreg |= ETH_MACTSCR_TSUPDT;
-
-    eth->MACTSCR = tmpreg;
-}
+// NOTE: there is no relative time-update helper here on purpose. TSUPDT-based adjustment
+// (MACSTSUR/MACSTNUR with the ADDSUB bit) is a documented feature of this MAC, but nothing in
+// this project uses it -- the flexPTP core does coarse correction through PTP_SET_CLOCK, i.e.
+// ETHHW_InitPTPTime(). A relative version inherited from the H743 driver was removed as dead
+// code with a wrong subtract path; see F41. If you need one, write it against RM0481 rather
+// than resurrecting that one.
 
 // #define ETH_PTP_FLAG_TSARU ((uint32_t)(1 << 5)) // flag initiating addend
 // register update

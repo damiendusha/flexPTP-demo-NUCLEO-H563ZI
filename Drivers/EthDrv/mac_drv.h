@@ -128,7 +128,6 @@ void ETHHW_EnablePTPTimeStamping(ETH_TypeDef *eth);                             
 void ETHHW_DisablePTPTimeStamping(ETH_TypeDef *eth);                                         // Disable PTP timestamping
 void ETHHW_InitPTPTime(ETH_TypeDef *eth, uint32_t sec, uint32_t nsec);                       // Initialize PTP clock time
 void ETHHW_EnablePTPFineCorr(ETH_TypeDef *eth, bool enFineCorr);                             // Enable fine correction method
-void ETHHW_UpdatePTPTime(ETH_TypeDef *eth, uint32_t sec, uint32_t nsec, bool add_substract); // Update PTP time forward or backward by a given value
 uint32_t ETHHW_GetPTPAddend(ETH_TypeDef *eth);                                               // Get PTP addend
 bool ETHHW_SetPTPAddend(ETH_TypeDef *eth, uint32_t addend);                                  // Set PTP addend; false if the hardware did not accept it
 void ETHHW_SetPTPPPSFreq(ETH_TypeDef *eth, uint32_t freqCode);                               // Set PPS output frequency

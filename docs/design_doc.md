@@ -471,8 +471,9 @@ resolved unchanged. The work was entirely peripheral plumbing:
   | inherited (double-shifted) | 0 | ÷42 | 5.95 MHz | over the 2.5 MHz limit |
   | fixed | 4 | ÷102 | 2.45 MHz | within limit |
 
-- `ETHHW_UpdatePTPTime()` annotated as unreachable, with a warning about its suspect
-  subtract path (F41). Ported mechanically; not validated, because nothing calls it
+- `ETHHW_UpdatePTPTime()` removed entirely (F41): unreachable, and its subtract path
+  halved every backward correction. Fixing code that has never run would have produced
+  something that looks verified and is not.
 - `phy_common.c` needed no change — it reaches the HAL only through `mac_drv.h`
 - Verified: `mac_drv.c` and `phy_common.c` both compile clean, zero warnings
 
