@@ -6,6 +6,27 @@
 
 #include <stm32h5xx_hal.h>
 
+/* Every hardware handshake in this driver is "set a bit, wait for the hardware to clear it".
+ * None of them may spin forever. An unbounded wait turns any clock, supply or PHY fault into
+ * a silent hang of the calling thread -- which is exactly how F53 presented: the flexPTP task
+ * stopped, the PTP CLI went dead, and nothing said why. Bounded, and loud on timeout.
+ *
+ * The bound is a spin count rather than a time: these handshakes resolve in nanoseconds, this
+ * runs before any timebase is guaranteed, and it must be callable from an ISR. At 250 MHz the
+ * loop below is a few milliseconds -- six orders of magnitude of headroom. */
+#define ETHHW_HW_TIMEOUT_SPINS (100000UL)
+
+static bool ETHHW_WaitBitsClear(volatile uint32_t *reg, uint32_t mask, const char *what) {
+    for (uint32_t i = 0; i < ETHHW_HW_TIMEOUT_SPINS; i++) {
+        if ((*reg & mask) == 0U) {
+            return true;
+        }
+    }
+
+    MSG("ETH: timed out waiting for %s to clear\n", what);
+    return false;
+}
+
 __weak uint32_t ETHHW_setupPHY(ETH_TypeDef *eth) {
     (void)eth;
     return MODEINIT_FULL_DUPLEX | MODEINIT_SPEED_100MBPS;
@@ -85,9 +106,7 @@ static void ETHHW_InitPeripheral(ETH_TypeDef *eth, ETHHW_InitOpts *init) {
     SET_BIT(eth->DMAMR, ETH_DMAMR_SWR);
 
     // wait for reset completion
-    while (READ_BIT(eth->DMAMR, ETH_DMAMR_SWR)) {
-        asm("nop");
-    }
+    ETHHW_WaitBitsClear(&eth->DMAMR, ETH_DMAMR_SWR, "DMA software reset");
 
     /* ---- MAC initialization ---- */
 
@@ -617,7 +636,8 @@ uint32_t ETHHW_ReadPHYRegister(ETH_TypeDef *eth, uint32_t PHYAddr, uint32_t PHYR
     WRITE_REG(eth->MACMDIOAR, tmpreg);
 
     /* Wait for the Busy flag */
-    while (READ_BIT(eth->MACMDIOAR, ETH_MACMDIOAR_MB) > 0U) {
+    if (!ETHHW_WaitBitsClear(&eth->MACMDIOAR, ETH_MACMDIOAR_MB, "MDIO read")) {
+        return 1;
     }
 
     /* Get MACMIIDR value */
@@ -656,7 +676,8 @@ uint32_t ETHHW_WritePHYRegister(ETH_TypeDef *eth, uint32_t PHYAddr,
     WRITE_REG(eth->MACMDIOAR, tmpreg);
 
     /* Wait for the Busy flag */
-    while (READ_BIT(eth->MACMDIOAR, ETH_MACMDIOAR_MB) > 0U) {
+    if (!ETHHW_WaitBitsClear(&eth->MACMDIOAR, ETH_MACMDIOAR_MB, "MDIO write")) {
+        return 1;
     }
 
     return 0;
@@ -697,9 +718,7 @@ void ETHHW_InitPTPTime(ETH_TypeDef *eth, uint32_t sec, uint32_t nsec) {
     eth->MACSTNUR = nsec;
 
     // wait for TSINIT to clear
-    while (eth->MACTSCR & (ETH_MACTSCR_TSINIT)) {
-        __NOP();
-    }
+    ETHHW_WaitBitsClear(&eth->MACTSCR, ETH_MACTSCR_TSINIT, "TSINIT");
 
     // perform time initialization
     __IO uint32_t tmpreg = eth->MACTSCR;
@@ -745,9 +764,7 @@ void ETHHW_UpdatePTPTime(ETH_TypeDef *eth, uint32_t sec, uint32_t nsec,
     eth->MACSTNUR = nsec;
 
     // wait for TSUPDT and TSINIT to clear
-    while (eth->MACTSCR & (ETH_MACTSCR_TSUPDT | ETH_MACTSCR_TSINIT)) {
-        __NOP();
-    }
+    ETHHW_WaitBitsClear(&eth->MACTSCR, ETH_MACTSCR_TSUPDT | ETH_MACTSCR_TSINIT, "TSUPDT/TSINIT");
 
     // perform time update
     __IO uint32_t tmpreg = eth->MACTSCR;
@@ -760,23 +777,22 @@ void ETHHW_UpdatePTPTime(ETH_TypeDef *eth, uint32_t sec, uint32_t nsec,
 // #define ETH_PTP_FLAG_TSARU ((uint32_t)(1 << 5)) // flag initiating addend
 // register update
 
-void ETHHW_SetPTPAddend(ETH_TypeDef *eth, uint32_t addend) {
-    size_t i = 0;
-    for (i = 0; i < 8; i++) {
-        eth->MACTSAR = addend; // set addend
+bool ETHHW_SetPTPAddend(ETH_TypeDef *eth, uint32_t addend) {
+    eth->MACTSAR = addend; // set addend
 
-        // wait for TSADDREG to clear
-        while (eth->MACTSCR & (ETH_MACTSCR_TSADDREG)) {
-            __NOP();
-        }
-
-        // update PTP block internal register
-        __IO uint32_t tmpreg = eth->MACTSCR;
-
-        tmpreg |= ETH_MACTSCR_TSADDREG;
-
-        eth->MACTSCR = tmpreg;
+    // wait for any previous update to retire
+    if (!ETHHW_WaitBitsClear(&eth->MACTSCR, ETH_MACTSCR_TSADDREG, "TSADDREG")) {
+        return false;
     }
+
+    // update PTP block internal register
+    __IO uint32_t tmpreg = eth->MACTSCR;
+
+    tmpreg |= ETH_MACTSCR_TSADDREG;
+
+    eth->MACTSCR = tmpreg;
+
+    return true;
 }
 
 uint32_t ETHHW_GetPTPAddend(ETH_TypeDef *eth) {
@@ -833,8 +849,7 @@ uint8_t ETHHW_GetAuxTimestampCnt(ETH_TypeDef *eth) {
 void ETHHW_StartPTPPPSPulseTrain(ETH_TypeDef *eth, uint32_t high_len, uint32_t period) {
     ETHHW_StopPTPPPSPulseTrain(eth);
 
-    while (eth->MACPPSCR & ETH_PTP_PPSCMD_MASK) {
-    };
+    ETHHW_WaitBitsClear(&eth->MACPPSCR, ETH_PTP_PPSCMD_MASK, "PPSCMD");
 
     // delayed start of pulse train with (at least) 1s to ensure,
     // target timestamps point always in the future on return from this function
@@ -861,8 +876,7 @@ void ETHHW_StopPTPPPSPulseTrain(ETH_TypeDef *eth) {
     if (!(eth->MACPPSCR & ETH_PTP_PPS_OUTPUT_MODE_SELECT)) {
         eth->MACPPSCR |= ETH_PTP_PPS_OUTPUT_MODE_SELECT; // switch to pulse-train mode
     } else {
-        while (eth->MACPPSCR & ETH_PTP_PPSCMD_MASK) {
-        };
+        ETHHW_WaitBitsClear(&eth->MACPPSCR, ETH_PTP_PPSCMD_MASK, "PPSCMD");
     }
 
     eth->MACPPSCR |= ETH_PTP_PPS_PULSE_TRAIN_STOP_IMM;

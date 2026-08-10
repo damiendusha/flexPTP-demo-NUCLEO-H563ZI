@@ -145,7 +145,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F51 | H563 UID region rejects **byte** reads; `ETH_MAC_ADDR*` byte-indexed it → HardFault | Critical | fixed, verified on hardware |
 | F52 | `ptphw_init()` set the PTP addend before the subsecond increment → TSADDREG never clears | Critical | fixed, verified on hardware |
 | F53 | PTP timestamp counter is not clocked — PLL1Q output never enabled | **RESOLVED** | fixed, verified on hardware |
-| F54 | `ETHHW_SetPTPAddend()` waits unbounded, turning any PTP clock fault into a silent hang | Robustness | open |
+| F54 | Six unbounded hardware waits; any clock, supply or PHY fault hangs the caller silently | **RESOLVED** | all bounded and reporting; the 8× addend loop was superstition |
 | F55 | Welcome message tells users to fit an **8 MHz** oscillator at X3; on MB1404 X3 is **25 MHz** | Wrong advice | plan Stage 19 |
 | F56 | `PTP_LOG_TRANSMISSION` exists in flexPTP's enum but has no CLI switch | Minor (cost hours) | documented |
 | F57 | `ETHHW_ProcessTx()` never reset its per-pass descriptor count — could re-dispatch a stale index | Latent bug | fixed |
@@ -1150,16 +1150,58 @@ immediately, and `ping` at 100, 500, 1000 and 1400-byte payloads all returned 0%
 `-p` pattern verification passing — so content, not merely delivery, is correct.
 `PBUF_POOL_BUFSIZE` was then restored to 1528.
 
-### F54 — unbounded wait in `ETHHW_SetPTPAddend()`
+### F54 — unbounded hardware waits *(RESOLVED)*
 
-The function spins on `while (eth->MACTSCR & ETH_MACTSCR_TSADDREG)` with no timeout, eight
-times over. That is what converted F53 from "PTP does not lock" into "the flexPTP task
-hangs silently and the PTP CLI commands stop responding". Inherited from the H743 driver,
-where the wait always completed.
+Recorded against `ETHHW_SetPTPAddend()`, but the driver had **six** of them, all the same
+shape — set a bit, spin until the hardware clears it, forever if it never does:
 
-A bounded wait with an error return would have surfaced F53 immediately and left the rest
-of the system diagnosable. Not fixed yet, because a silent timeout could equally mask real
-faults — the right form is a timeout that reports.
+| Site | Hangs on |
+|---|---|
+| `ETHHW_Init()` | DMA software reset (`SWR`) |
+| `ETHHW_ReadPHYRegister()` | MDIO busy — a missing or unpowered PHY hangs the boot |
+| `ETHHW_WritePHYRegister()` | MDIO busy |
+| `ETHHW_InitPTPTime()` | `TSINIT` |
+| `ETHHW_UpdatePTPTime()` | `TSUPDT` / `TSINIT` |
+| `ETHHW_SetPTPAddend()` | `TSADDREG`, eight times over |
+
+This is what turned F53 from a diagnosable fault into a silent hang: the timestamp clock was
+absent, `TSADDREG` never cleared, the flexPTP task stopped inside the driver, and the PTP CLI
+went dead with nothing said about why.
+
+All six now go through one helper:
+
+```c
+static bool ETHHW_WaitBitsClear(volatile uint32_t *reg, uint32_t mask, const char *what);
+```
+
+The bound is a **spin count, not a time**. These handshakes resolve in nanoseconds; the helper
+must work before any timebase is guaranteed (the DMA reset runs during `ETHHW_Init`) and must
+be callable from an ISR. 100 000 spins is a few milliseconds at 250 MHz — six orders of
+magnitude of headroom. On expiry it prints which handshake failed. A *silent* timeout would
+have been worse than the hang, so it is deliberately loud.
+
+`ETHHW_SetPTPAddend()` now returns `bool`, and the port layer reports a refusal directly:
+*"hardware clock did not accept the addend; timestamp unit is not running"* — the message F53
+should have produced.
+
+#### The 8× loop was superstition
+
+`ETHHW_SetPTPAddend()` wrote the addend and pulsed `TSADDREG` **eight times per call**, once
+per servo update. Almost certainly a workaround for F52 (the init-ordering bug, since fixed)
+rather than anything the hardware requires — RM0481 asks for one write.
+
+Reduced to one and measured, rather than assumed:
+
+| | 8 writes | 1 write |
+|---|---|---|
+| Samples applying a correction | 111 of 111 | 119 of 120 |
+| Distinct addend values observed | — | **120 of 120** — every write lands |
+| Offset magnitude, last 60 | 28.5 µs | 20.2 µs |
+| Timeout reports | — | none |
+
+Every single write reaches the hardware, so the repetition bought nothing. The servo is
+unaffected; the difference in offset magnitude is run-to-run variation on a
+software-timestamping master, not an improvement to claim.
 
 ### F49 — `task_ptp_is_operating()` renamed upstream
 

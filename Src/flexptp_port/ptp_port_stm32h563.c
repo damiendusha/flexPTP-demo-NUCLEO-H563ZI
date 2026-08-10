@@ -125,7 +125,12 @@ void ptphw_init(uint32_t increment, uint32_t addend) {
     ETHHW_EnablePTPFineCorr(ETH, true);
 
     // 4. programme the addend (MACTSAR + TSADDREG)
-    ETHHW_SetPTPAddend(ETH, addend);
+    if (!ETHHW_SetPTPAddend(ETH, addend)) {
+        // The timestamp unit is not accepting updates -- almost always its clock. Say so
+        // here rather than letting the symptom surface later as a clock that never
+        // disciplines (F53 presented exactly that way).
+        MSG("PTP: hardware clock did not accept the addend; timestamp unit is not running\n");
+    }
 
     // 5. initialise PTP time (TSINIT)
     ETHHW_InitPTPTime(ETH, 0, 0);

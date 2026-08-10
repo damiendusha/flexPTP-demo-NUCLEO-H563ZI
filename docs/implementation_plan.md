@@ -621,14 +621,15 @@ those are permanent fixes, not instrumentation.
 
 ### 2. Known bugs, not yet fixed
 
-**F61 and F58 are fixed** — see [port_review.md](port_review.md). F61 turned out to be a race
+**F61, F58 and F54 are fixed** — see [port_review.md](port_review.md). F54 turned out to cover
+six unbounded hardware waits, not one; all are now bounded and report which handshake failed,
+and the 8× addend-write loop was measured to be unnecessary. F61 turned out to be a race
 in the RX descriptor handoff that duplicated **57% of received frames** under ordinary PTP
 traffic, not the rare event it appeared to be; F58 was proven by shrinking `PBUF_POOL_BUFSIZE`
 until DHCP itself failed.
 
 | Finding | Severity | Notes |
 |---|---|---|
-| **F54** — unbounded driver wait | Robustness | `ETHHW_SetPTPAddend()` spins on `TSADDREG` with no timeout. This is what turned F53 from a diagnosable fault into a silent hang. Fix as a bounded wait that **reports** — a silent timeout would mask real faults |
 | **F41** — `ETHHW_UpdatePTPTime()` | Latent | Unreachable and suspect; `PTP_UPDATE_CLOCK` is dead |
 | **F55** — wrong hardware advice | User-facing | The welcome message repeats the H743 project's "solder an 8 MHz oscillator onto X3". On MB1404 X3 is **already fitted and is 25 MHz** (SB3/SB4 ON, SB49 OFF); using it needs `HSE_VALUE` 25000000 and a re-derived `PLLM` |
 

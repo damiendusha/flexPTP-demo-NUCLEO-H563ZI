@@ -130,7 +130,7 @@ void ETHHW_InitPTPTime(ETH_TypeDef *eth, uint32_t sec, uint32_t nsec);          
 void ETHHW_EnablePTPFineCorr(ETH_TypeDef *eth, bool enFineCorr);                             // Enable fine correction method
 void ETHHW_UpdatePTPTime(ETH_TypeDef *eth, uint32_t sec, uint32_t nsec, bool add_substract); // Update PTP time forward or backward by a given value
 uint32_t ETHHW_GetPTPAddend(ETH_TypeDef *eth);                                               // Get PTP addend
-void ETHHW_SetPTPAddend(ETH_TypeDef *eth, uint32_t addend);                                  // Set PTP addend
+bool ETHHW_SetPTPAddend(ETH_TypeDef *eth, uint32_t addend);                                  // Set PTP addend; false if the hardware did not accept it
 void ETHHW_SetPTPPPSFreq(ETH_TypeDef *eth, uint32_t freqCode);                               // Set PPS output frequency
 uint32_t ETHHW_GetPTPSubsecondIncrement(ETH_TypeDef *eth);                                   // Get PTP clock subsecond increment
 void ETHHW_SetPTPSubsecondIncrement(ETH_TypeDef *eth, uint8_t increment);                    // Set PTP clock subsecond increment. Time quantum is 0.467 ns.
