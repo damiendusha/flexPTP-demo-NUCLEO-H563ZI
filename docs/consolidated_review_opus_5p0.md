@@ -80,9 +80,9 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 | | Count |
 |---|---|
 | Total distinct actions | **80** |
-| Open (☐) | 55 |
+| Open (☐) | 54 |
 | Partial (◐) | 1 |
-| Already done (✅) | 20 |
+| Already done (✅) | 21 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -124,7 +124,7 @@ defects.
 | ✅ | — | — | **P2.3** | ACT-03 (B2) | — | 2/3 O+F | Bound the ownership wait in `ETHHW_Transmit()`, `mac_drv.c:552`. Spins on `tcpip_thread` **while holding the lwIP core lock**; no watchdog exists to recover — **DONE: bounded with the driver's existing spin-count idiom; on expiry it reports the descriptor index and drops the frame. Verified on target with ownership scaffolded to never clear — 4 drops reported, CLI still responsive, no deadlock. Healthy hardware: 0 drops, ping 0% loss at 56 and 1400 bytes** |
 | ✅ | — | — | **P2.4** | — | — | 1/3 O | Check `HAL_RCC_OscConfig()` / `HAL_RCC_ClockConfig()` return values; define `Error_Handler()`, which is declared at `main.c:31` and defined nowhere — **DONE: both HAL_RCC_* returns checked; `Error_Handler()` defined — attempts the polled writer, then halts blinking PG4 (LD3). Verified on target by forcing the failure: console silent (it runs before `serial_io_init()`, a limitation now documented in the code) and GPIOG ODR bit 4 toggling, 5 of 8 samples high** |
 | ☐ | — | — | **P2.5** | ACT-05 (B5) | — | **⚠ SCOPE** | Fix `get_line()`'s escape parser: bound `paramIdx` against `sizeof(escParam)` **and** move the `escParam[0]` read after the write (arrow-key history currently acts on the previous keypress) |
-| ☐ | — | — | **P2.6** | ACT-06 (B6) | — | 2/3 O+F | Fix the off-by-one write in `insert_carriage_return()` — change the guard to `len < maxLen` |
+| ✅ | — | — | **P2.6** | ACT-06 (B6) | — | 2/3 O+F | Fix the off-by-one write in `insert_carriage_return()` — change the guard to `len < maxLen` — **DONE: guard changed to `len < maxLen`, leaving room for the character the body is about to add. Proved on the host by compiling both variants against a full-length buffer ending in a bare newline: unfixed writes index 2049 of a 0..2048 buffer, fixed stays in bounds. On target the CRLF conversion is unchanged — 21 of 21 line feeds are CRLF pairs, zero bare LF** |
 | ☐ | — | — | **P2.7** | — | — | 1/3 O | Clamp `cli_register_command()`'s token count against `MAX_TOKEN_N` (8), not `TOK_ARR_LEN` (16) |
 | ☐ | — | — | **P2.8** | — | — | 1/3 O | Raise the `rx` thread above the console threads; six of nine threads currently share priority 24 |
 | ☐ | — | — | **P2.9** | — | — | 1/3 O | Check `HAL_UART_Transmit_DMA()`'s return in `serial_io_thread()` — on error it blocks forever on a completion flag that will never be set |

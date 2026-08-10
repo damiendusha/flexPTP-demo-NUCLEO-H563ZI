@@ -51,9 +51,15 @@ static void msg_unlock(bool locked) {
     }
 }
 
+/* `maxLen` is the largest string length the buffer may hold, so growing to exactly maxLen is
+ * fine but growing past it is not. The guard was "len <= maxLen" and was evaluated at loop
+ * *entry*, while the body increments len and then writes str[len] -- so a message that
+ * reached maxLen and still contained a bare '\n' wrote one byte beyond the buffer, and the
+ * trailing str[len] = '\0' wrote there too. "len < maxLen" leaves room for the character the
+ * body is about to add. */
 static uint32_t insert_carriage_return(char *str, uint32_t maxLen) {
     uint32_t len = strlen(str);
-    for (uint32_t i = 0; (i < len) && (len <= maxLen); i++) {
+    for (uint32_t i = 0; (i < len) && (len < maxLen); i++) {
         // if a \n is found and no \r precedes it or it is the first character os the string
         if ((str[i] == '\n') && ((i == 0) || (str[i - 1] != '\r'))) {
             len++;                               // increase length
