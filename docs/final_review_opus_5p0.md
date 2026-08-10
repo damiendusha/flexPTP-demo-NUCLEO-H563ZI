@@ -374,31 +374,32 @@ Separately, `paramIdx = escPos - 2` is unbounded — the loop only leaves escape
 `~` or an uppercase letter. `ESC [ 0123456789` writes ten bytes into a four-byte stack
 array. Reachable from anything sending escape sequences down the serial line.
 
-**B6 — The PPS frequency codes look off by one, on the one path with no hardware
-evidence.** [`mac_drv.h:108-125`](../Drivers/EthDrv/mac_drv.h#L108),
+**B6 — RETRACTED: the PPS frequency codes are correct.** ~~The PPS frequency codes look off
+by one.~~ [`mac_drv.h:108-125`](../Drivers/EthDrv/mac_drv.h#L108),
 [`ptp_port_stm32h563.c:18-73`](../Src/flexptp_port/ptp_port_stm32h563.c#L18)
 
-The driver writes `PPSCTRL` directly from this enum, with `PPSEN0` clear (simple mode):
+The original finding argued that because the driver writes `PPSCTRL` directly from an enum
+whose first entry is `ETHHW_PTP_PPS_OFF = 0`, and because `PPSCTRL = 0000` selects 1 Hz on
+this MAC family rather than "off", every entry must be shifted by one — so `ptp pps 1` would
+emit 2 Hz while reporting 1 Hz.
 
-```c
-ETHHW_PTP_PPS_OFF   = 0,
-ETHHW_PTP_PPS_1Hz   = 1,
-ETHHW_PTP_PPS_2Hz,          /* … up to ETHHW_PTP_PPS_16384Hz = 15 */
-```
+**Measured on the target, and it is wrong.** PG8 was sampled through SWD at ~1 kHz while the
+CLI was driven:
 
-On this MAC (Synopsys DWC_ether_qos, shared with the H743) `PPSCTRL = 0000` selects **1 Hz
-output**, not "off" — there is no off code in simple mode; the output is disabled by
-clearing the enable, not by a frequency code. If that holds, every entry is shifted by one:
-`ptp pps 1` writes `PPSCTRL = 1` and emits **2 Hz** while reporting *"PPS frequency:
-1 Hz"*, and `ptp pps 0` writes `PPSCTRL = 0` and emits **1 Hz** while reporting *"PPS
-output is turned off."*
+| Requested | CLI reports | Measured on PG8 |
+|---|---|---|
+| `ptp pps 0` | *"PPS output is turned off."* | **no transitions** — genuinely off |
+| `ptp pps 1` | *"PPS frequency: 1 Hz"* | **1.000 Hz** (8 periods: 1000, 1000, 1000, 1000, 1001, 999, 1000, 1000 ms) |
+| `ptp pps 2` | *"PPS frequency: 2 Hz"* | **2.001 Hz** |
+| `ptp pps 4` | *"PPS frequency: 4 Hz"* | **3.983 Hz** |
 
-The `ETHHW_PTP_PPS_OFF = 0` naming is the strongest tell and is independent of the
-1 Hz/2 Hz question. This is inherited from the H743 driver and has never been observed on a
-scope in either project — it lands exactly on
-[`implementation_plan.md`'s "1PPS output is unmeasured"](implementation_plan.md#blocked-on-equipment).
-**Verify `PPSCTRL` against RM0481 before treating the CLI's reported frequency as truth**;
-the LED-on-PG8 test the plan already suggests would settle 1 Hz vs 2 Hz in a minute.
+The enum, the `round(log2f(freq)) + 1` mapping and the hardware agree at every point tested,
+and code 0 really does disable the output. The premise about the `PPSCTRL` encoding was
+simply mistaken; no change is needed and none was made.
+
+Recorded rather than deleted because the reasoning was confident, was echoed by the Flash 3.6
+cross-review, and was wrong — and because it was the finding that motivated actually
+measuring the pin, which closed the project's longest-standing open item.
 
 **B7 — `ETHHW_Transmit()` spins unbounded.** See [A6](#architectural-weaknesses).
 A stalled TX DMA hangs whichever thread is transmitting — under `LWIP_TCPIP_CORE_LOCKING`

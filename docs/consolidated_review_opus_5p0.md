@@ -80,9 +80,9 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 | | Count |
 |---|---|
 | Total distinct actions | **80** |
-| Open (☐) | 50 |
+| Open (☐) | 48 |
 | Partial (◐) | 1 |
-| Already done (✅) | 25 |
+| Already done (✅) | 27 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -138,8 +138,8 @@ defects.
 
 | Status | Flash 3.6 Verified | Pro 3.1 Verified | Opus 5.0 ID | Flash 3.6 ID | Pro 3.1 ID | Consensus | Description |
 |---|---|---|---|---|---|---|---|
-| ☐ | — | — | **P3.1** | — | — | 1/3 O | Verify `MACPPSCR.PPSCTRL` encoding against RM0481; correct `ETHHW_PPS_FreqEnum` if the off-by-one is confirmed. `ETHHW_PTP_PPS_OFF = 0` cannot be right — simple mode has no "off" code. **Blocks P5.27** |
-| ☐ | — | — | **P3.2** | ACT-26 (U4) | item 4 | **3/3** | Run the LED-on-PG8 test to distinguish "configured" from "working", and 1 Hz from 2 Hz. The only PTP hardware path with no waveform evidence |
+| ✅ | — | — | **P3.1** | — | — | 1/3 O | Verify `MACPPSCR.PPSCTRL` encoding against RM0481; correct `ETHHW_PPS_FreqEnum` if the off-by-one is confirmed. `ETHHW_PTP_PPS_OFF = 0` cannot be right — simple mode has no "off" code. **Blocks P5.27** — **DONE — **the suspected off-by-one does not exist.** The same PG8 measurement exercises the enum end to end: every requested frequency appears on the pin, and code 0 genuinely disables the output rather than emitting 1 Hz. `ETHHW_PPS_FreqEnum` is correct as written and no change was made. Review finding B6 is retracted in `final_review_opus_5p0.md`, along with the two cross-review passages that repeated it** |
+| ✅ | — | — | **P3.2** | ACT-26 (U4) | item 4 | **3/3** | Run the LED-on-PG8 test to distinguish "configured" from "working", and 1 Hz from 2 Hz. The only PTP hardware path with no waveform evidence — **DONE — and it did not need an oscilloscope. PG8 sampled over SWD at ~1 kHz: `ptp pps 1` → **1.000 Hz** (8 periods within 1 ms of nominal, ~47% duty), `ptp pps 2` → 2.001 Hz, `ptp pps 4` → 3.983 Hz, `ptp pps 0` → no transitions. The pulse exists and its frequency is correct. **Jitter** remains unmeasured and does need an instrument** |
 | ☐ | — | — | **P3.3** | — | — | 1/3 O | Zero `evt.data.rx` at the top of the `ETHHW_ProcessRx()` loop — `ts_s`/`ts_ns` are read unconditionally by `rx_thread` but only written when a timestamp was captured |
 | ☐ | — | — | **P3.4** | — | — | 1/3 O | Add a `_Static_assert` on `offsetof` for the `ETHHW_State` / RX-ring adjacency that `ETHHW_GetState()` depends on |
 | ☐ | — | — | **P3.5** | — | — | 1/3 O | Reconcile `RX_MSG_Q_LEN` (32), `PBUF_POOL_SIZE` (8) and `ETH_RX_DESC_CNT` (24); record the reasoning |

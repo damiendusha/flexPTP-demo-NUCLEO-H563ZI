@@ -205,7 +205,10 @@ library's first Cortex-M33 target (F39). `Src/flexptp_port/ptp_port_stm32h563.{c
 against its ancestor (Stage 14), and it is now hardware-verified. It is in the best possible
 state to contribute.
 
-One qualification: it should not be upstreamed until the `PPSCTRL` question is settled. The
+~~One qualification: it should not be upstreamed until the `PPSCTRL` question is settled.~~
+**Qualification withdrawn — the question is settled and the port is clean.** PG8 measured over
+SWD: 1.000 / 2.001 / 3.983 Hz for `ptp pps 1 / 2 / 4`, and genuinely off at 0. There is no
+off-by-one to carry upstream. Original concern: The
 PPS frequency enum it depends on (`ETHHW_PPS_FreqEnum` in `mac_drv.h`) declares
 `ETHHW_PTP_PPS_OFF = 0`, and on this MAC `PPSCTRL = 0000` selects 1 Hz output rather than
 "off" — there is no off code in simple mode. If that is confirmed against RM0481, the whole

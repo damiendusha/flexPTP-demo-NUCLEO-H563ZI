@@ -822,27 +822,21 @@ of this port. Quoting it as the port's accuracy would be wrong.
 **To close:** a NIC with a PHC — Intel I210, I219-V and 82576 are the usual choices — then
 drop `-S` and re-run. Nothing on the target needs to change.
 
-#### 1PPS output is unmeasured
+#### 1PPS output — measured, and correct
 
-No oscilloscope is available. This is the **only part of the PTP hardware port with no
-waveform evidence behind it**.
+**Measured, 2026-08-10.** PG8 was sampled through SWD at ~1 kHz while the CLI was driven,
+which needs no oscilloscope:
 
-| | |
-|---|---|
-| **Verified** | PG8 is configured as `GPIO_AF11_ETH` in `Src/flexptp_port/ptp_port_stm32h563.c`; the CLI responds — `ptp pps` reports *"PPS frequency: 1 Hz"* and `ptp pps 1` is accepted without error |
-| **Not verified** | That a pulse actually appears on the pin, its frequency accuracy, or its jitter |
+| Requested | CLI reports | Measured on PG8 |
+|---|---|---|
+| `ptp pps 0` | *"PPS output is turned off."* | no transitions — genuinely off |
+| `ptp pps 1` | *"PPS frequency: 1 Hz"* | **1.000 Hz** (periods 1000, 1000, 1000, 1000, 1001, 999, 1000, 1000 ms; ~47% duty) |
+| `ptp pps 2` | *"PPS frequency: 2 Hz"* | **2.001 Hz** |
+| `ptp pps 4` | *"PPS frequency: 4 Hz"* | **3.983 Hz** |
 
-Configuration state is not a waveform. The PPS path could be misconfigured at the register
-level, or the pin could be driven by something else, and nothing above would notice.
+So the pulse exists, its frequency is correct, and `ETHHW_PPS_FreqEnum` maps correctly at
+every point tested. What remains unmeasured is **jitter**, which does need an instrument.
 
-**To close**, in descending order of rigour:
-
-1. **Oscilloscope on PG8** — the stated requirement. PG8 is brought out on the ST morpho
-   connector (UM3115 Table 25, CN12 pin 66 — confirm against the table before probing).
-2. **Logic analyser or frequency counter** — establishes that the pulse train exists and its
-   period is right, but not its jitter, which is the interesting part.
-3. **LED and series resistor on PG8** — a 1 Hz blink confirms the output is toggling at all.
-   Crude, but it distinguishes "configured" from "working", which is the gap that matters
-   most right now.
-
-Option 3 costs almost nothing and would move this from *no evidence* to *some evidence*.
+Previously recorded here as blocked on an oscilloscope. It was not: the pin can be sampled
+over SWD faster than the pulse it carries, and that is enough to establish presence, period
+and duty. Only jitter still needs an instrument.

@@ -450,8 +450,12 @@ Both limitations are correctly stated. *"±26 µs jitter"* is from an intermedia
 Stage 20 sign-off figures are **28.5 µs magnitude, 77.8 µs peak, signed mean −716 ns** over
 137 samples.
 
-Worth adding, since this is the project's only unwitnessed path: the PPS frequency enum
-itself is suspect. `mac_drv.h` declares `ETHHW_PTP_PPS_OFF = 0, ETHHW_PTP_PPS_1Hz = 1, …`,
+~~Worth adding, since this is the project's only unwitnessed path: the PPS frequency enum
+itself is suspect.~~ **RETRACTED — measured and wrong.** PG8 sampled over SWD gives 1.000 Hz
+for `ptp pps 1`, 2.001 Hz for `ptp pps 2`, 3.983 Hz for `ptp pps 4`, and no transitions at
+all for `ptp pps 0`. The enum is correct; the suspicion below was based on a mistaken premise
+about the `PPSCTRL` encoding, and is left in place only because it is what prompted the
+measurement. Original text: `mac_drv.h` declares `ETHHW_PTP_PPS_OFF = 0, ETHHW_PTP_PPS_1Hz = 1, …`,
 but with `PPSEN0` clear the MAC has no "off" code in `PPSCTRL` — `0000` selects 1 Hz output.
 If confirmed against RM0481 the whole table is shifted by one, and `ptp pps 1` would emit 2 Hz
 while reporting 1 Hz. That would be invisible to exactly the verification that has not been

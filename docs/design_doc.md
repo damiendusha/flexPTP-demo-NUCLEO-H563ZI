@@ -888,8 +888,11 @@ distinction matters when reading everything above:
   is tens of microseconds against a 100 ns `LOCKED` threshold. What is demonstrated is that
   the servo engages and holds the offset centred on the master; the board's own accuracy is
   **unmeasured**.
-- **1PPS has never been observed.** PG8 is configured and the CLI reports 1 Hz, but no scope
-  has been on the pin. Configuration state is not a waveform.
+- **1PPS is measured and correct.** PG8 was sampled over SWD at ~1 kHz: `ptp pps 1` gives
+  **1.000 Hz** on the pin (eight consecutive periods within 1 ms of nominal), `ptp pps 2`
+  gives 2.001 Hz, `ptp pps 4` gives 3.983 Hz, and `ptp pps 0` produces no transitions at all.
+  Configuration state is not a waveform — so the waveform was measured. Only **jitter**
+  remains unquantified, and that does need an instrument.
 
 Both are detailed in [implementation_plan.md](implementation_plan.md#blocked-on-equipment),
 including what would close each.
