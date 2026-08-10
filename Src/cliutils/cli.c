@@ -518,16 +518,19 @@ void cli_remove_command(int cmdIdx) {
     // acquire mutex
     osMutexAcquire(modifyMtx, osWaitForever);
 
-    if (cmdIdx + 1 > sCliCmdCnt || cmdIdx < 0) {
-        return;
-    }
+    // Range check inside the lock, with a single exit that always releases. The original
+    // returned from here while still holding the mutex, so one out-of-range index -- a
+    // stale handle passed to cli_remove_command_array(), say -- wedged the command
+    // database permanently: every later register/remove blocked for ever on a mutex whose
+    // owner had walked away.
+    if ((cmdIdx >= 0) && (cmdIdx < (int)sCliCmdCnt)) {
+        uint8_t i;
+        for (i = cmdIdx; i < sCliCmdCnt - 1; i++) {
+            memcpy(&spCliCmds[i], &spCliCmds[i + 1], sizeof(struct CliCommand));
+        }
 
-    uint8_t i;
-    for (i = cmdIdx; i < sCliCmdCnt - 1; i++) {
-        memcpy(&spCliCmds[i], &spCliCmds[i + 1], sizeof(struct CliCommand));
+        sCliCmdCnt--;
     }
-
-    sCliCmdCnt--;
 
     // release mutex
     osMutexRelease(modifyMtx);
