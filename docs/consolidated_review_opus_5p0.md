@@ -80,9 +80,9 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 | | Count |
 |---|---|
 | Total distinct actions | **81** |
-| Open (☐) | 19 |
+| Open (☐) | 17 |
 | Partial (◐) | 0 |
-| Already done (✅) | 58 |
+| Already done (✅) | 60 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -176,10 +176,10 @@ defects.
 | ☐ | — | — | **P5.2** | ACT-14 (D2, I4) | — | 2/3 O+F | Remove the unconditional `DEBUG` from `CMakeLists.txt:93`; the `$<$<CONFIG:Debug>:DEBUG>` generator expression at line 132 already covers it |
 | ☐ | — | — | **P5.3** | ACT-15 (D3, I4) | — | **⚠ METHOD** | Decide whether `Release` should move from `-Og` to `-O2`/`-Os`; configure or delete the untested `relWithDebInfo` and `minSizeRel` presets. **Requires hardware re-verification** — see F62 |
 | ✅ | — | — | **P5.4** | — | — | 1/3 O | Use `bfifo_push_all()` in `serial_io_write()` — console output is silently truncated when the 16 KB FIFO fills — **DONE: `bfifo_push_all()`, so a full FIFO blocks the producer instead of truncating the message mid-word. Correct for every current caller (all threads); ISR-context output goes through `serial_io_panic_write()` instead, noted at the call** |
-| ☐ | — | — | **P5.5** | ACT-12 (B12) | — | 2/3 O+F | Fix `get_line()`'s left-trim so the trimmed line reaches `process_cli_line()` (use `memmove`) |
+| ✅ | — | — | **P5.5** | ACT-12 (B12) | — | 2/3 O+F | Fix `get_line()`'s left-trim so the trimmed line reaches `process_cli_line()` (use `memmove`) — **DONE: left-trim now shifts in place with `memmove` so the caller's buffer is actually trimmed. Verified on target — `   osinfo` (three leading spaces) is accepted and answers, where before only the local pointer moved and `task_cli()` passed the untrimmed line on** |
 | ✅ | — | — | **P5.6** | — | — | 1/3 O | Fix `phy_setup_int_DP83848()`'s `READ`-where-`WRITE`-is-meant on MICR, `phy_common.c:89` — **DONE: `READ` → `WRITE` on the DP83848 MICR. The read discarded the value just computed, leaving the global interrupt enable clear so the PHY never asserted its interrupt pin. Not this board's PHY, but shipped broken** |
 | ✅ | — | — | **P5.7** | — | — | 1/3 O | Fix `ETHHW_AuxTimestampCh()` to OR rather than assign, `mac_drv.c:803` — **DONE: `ETHHW_AuxTimestampCh()` now read-modify-writes the single channel bit. The assignment disabled every other auxiliary channel as a side effect of touching one** |
-| ☐ | — | — | **P5.8** | — | — | 1/3 O | Fix the out-of-scope `netif` identifier in `rx_thread`'s MIB2 macros — compiles only because MIB2 stats are disabled |
+| ✅ | — | — | **P5.8** | — | — | 1/3 O | Fix the out-of-scope `netif` identifier in `rx_thread`'s MIB2 macros — compiles only because MIB2 stats are disabled — **DONE: `netif` → `if0` in `rx_thread`'s four MIB2 macros. Verified by building with `MIB2_STATS 1` — zero `netif`-undeclared errors, where previously the file only compiled because the macros expanded to nothing** |
 | ✅ | — | — | **P5.9** | — | — | 1/3 O | Fix the inverted return sense of `phy_read_reg()` / `phy_write_reg()` (0 means success) — **DONE: both wrappers now return `== 0U`, so `true` means success. Previously `true` meant the access had *failed*. Unused today — corrected rather than deleted so the next caller is not handed an inverted contract** |
 | ✅ | — | — | **P5.10** | — | — | 1/3 O | Fix `phy_read_range()`'s stride (`a += 2` skips odd registers) and `phy_read_all_regs()`'s bound (a PHY address used as a register count) — **DONE: stride `a += 2` → `a++` (MDIO addresses are consecutive, not byte offsets — the old stride skipped BSR and both PHYID words), and `phy_read_all_regs()` now passes `EPHY_MDIO_REG_COUNT` (32) instead of `EPHY_MDIO_MAX_ADDR`, which is a PHY *address* limit** |
 | ✅ | — | — | **P5.11** | — | — | 1/3 O | Change `MSGchar()` to take a `char`; remove the unused `last_char` — **DONE: `MSGchar()` takes a `char`. The old `int` signature took the address of the parameter and sent one byte from it — correct only on little-endian, by accident. Unused `last_char` removed** |

@@ -421,9 +421,19 @@ static void get_line(char *pStr, size_t *pLen) {
 
     // trim the line
 
-    // left trim
-    while ((*pStr) <= ' ' && (*pStr != '\0')) {
-        pStr++;
+    /* Left trim, in place. Advancing the local pointer only trimmed the copy inside this
+     * function -- task_cli() then passed the original sLineBuf to process_cli_line(), so a
+     * command typed with leading whitespace still failed to match. memmove because the
+     * regions overlap. */
+    {
+        char *pFirst = pStr;
+        while ((*pFirst != '\0') && (*pFirst <= ' ')) {
+            pFirst++;
+        }
+        if (pFirst != pStr) {
+            size_t remaining = strlen(pFirst) + 1U; // include the terminator
+            memmove(pStr, pFirst, remaining);
+        }
     }
 
     // right trim

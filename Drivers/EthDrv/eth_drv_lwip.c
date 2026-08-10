@@ -351,18 +351,21 @@ static void rx_thread(void *arg) {
             p->time_s = evt.data.rx.ts_s;
             p->time_ns = evt.data.rx.ts_ns;
 
-            MIB2_STATS_NETIF_ADD(netif, ifinoctets, p->tot_len);
+            /* if0, not netif: there is no "netif" in this scope. These compile today only
+             * because MIB2 statistics are disabled, so the macros expand to nothing --
+             * enabling them broke the build. */
+            MIB2_STATS_NETIF_ADD(if0, ifinoctets, p->tot_len);
             if (((u8_t *)p->payload)[0] & 1) {
                 /* broadcast or multicast packet*/
-                MIB2_STATS_NETIF_INC(netif, ifinnucastpkts);
+                MIB2_STATS_NETIF_INC(if0, ifinnucastpkts);
             } else {
                 /* unicast packet*/
-                MIB2_STATS_NETIF_INC(netif, ifinucastpkts);
+                MIB2_STATS_NETIF_INC(if0, ifinucastpkts);
             }
         } else {
             LINK_STATS_INC(link.memerr);
             LINK_STATS_INC(link.drop);
-            MIB2_STATS_NETIF_INC(netif, ifindiscards);
+            MIB2_STATS_NETIF_INC(if0, ifindiscards);
         }
 
         /* if no packet could be read, silently ignore this */
