@@ -135,6 +135,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F61 | **`ETHHW_ProcessRx()` re-delivers frames already queued with the receive thread** | **RESOLVED** | measured: 57% of frames duplicated; 0 after the fix |
 | F62 | **Release build HardFaulted at the UID region** — F51's fix held only at `-O0` | **RESOLVED** | `volatile` added; verified on hardware |
 | F63 | lwIP DHCP `-Wstringop-overflow` in optimised builds | **Documented** | not reachable here; third-party, unpatched |
+| F64 | ST's OpenOCD will not build as the plan specified — `-Werror` and a mis-named prerequisite | **RESOLVED** | both corrected in `build.sh`, cold run verified |
 | F58 | `eth_drv_lwip.c` RX copy never advances the source pointer across a chained pbuf | **RESOLVED** | proven by shrinking `PBUF_POOL_BUFSIZE`: DHCP failed entirely, then worked |
 | F43 | `PTP_ACCURACY_LIMIT_NS` (100 ns) is the implicit LOCKED criterion | Minor | plan Stage 20 |
 | F44 | `CMakePresets.json` requires Ninja; not documented as a prerequisite | Minor | plan Stage 19 |
@@ -1141,6 +1142,49 @@ With the fix, and the counters still in place: 201 servo samples over five minut
 duplicate corrections** by the F59 signature test, 200 of 201 applying a correction. Rebuilt
 without instrumentation: 111 of 111 correcting, zero duplicates, offset signed mean +16 ns with
 a magnitude of 28 µs.
+
+### F64 — ST's OpenOCD does not build as specified *(RESOLVED)*
+
+Stage 18's recipe was written from the documentation, not from a run. A cold execution found
+two errors in it.
+
+**`-Werror` is on by default and the tree does not survive current GCC.** OpenOCD's
+`configure.ac` defaults `gcc_werror` to the value of `gcc_warnings`, which is enabled for git
+checkouts. ST's fork is 0.12.0-era and GCC 15.2 rejects it:
+
+```
+cc1: all warnings being treated as errors
+make[2]: *** [src/jtag/drivers/libocdjtagdrivers_la-angie.lo] Error 1
+make[2]: *** [src/jtag/drivers/libocdjtagdrivers_la-ulink.lo]  Error 1
+make[2]: *** [src/jtag/drivers/libocdjtagdrivers_la-ti_icdi_usb.lo] Error 1
+```
+
+All three are USB adapter drivers this project never uses, but the build stops regardless.
+`--disable-werror` is therefore **required**, not optional, and the configure line is now:
+
+```
+./configure --prefix="${OPENOCD_DIR}" --enable-stlink --disable-werror
+```
+
+**The prerequisite list named a binary that does not exist.** The plan said to check for
+`libtool`. On Debian and Ubuntu the `libtool` *package* installs `/usr/bin/libtoolize` and
+**no** `/usr/bin/libtool`, so checking the obvious name reports a failure on a machine that is
+fully ready to build — exactly what happened on this host, which had already built OpenOCD
+successfully. The check tests `libtoolize`, which is what `./bootstrap` actually invokes.
+
+Verified by a genuinely cold run: `toolchains/openocd` and `toolchains/openocd-src` moved
+aside, then `./build.sh --with-openocd` exercised clone, bootstrap, configure, make and
+install from nothing, and went on to build the firmware. The resulting binary programmed the
+board:
+
+```
+** Programming Finished **
+** Verify Started **
+** Verified OK **
+** Resetting Target **
+```
+
+and the board booted and took its DHCP lease.
 
 ### F62 — the release build HardFaulted; F51's fix was optimisation-dependent *(RESOLVED)*
 

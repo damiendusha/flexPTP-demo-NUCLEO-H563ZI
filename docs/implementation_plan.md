@@ -27,7 +27,7 @@
 - [x] **Stage 15** — Global HAL header sweep
 - [x] **Stage 16** — Build & warning cleanup
 - [ ] **Stage 17** — Complete `docs/design_doc.md`
-- [ ] **Stage 18** — Provision ST's OpenOCD via `build.sh` 🆕
+- [x] **Stage 18** — Provision ST's OpenOCD via `build.sh` 🆕
 - [ ] **Stage 19** — Project metadata & tooling (README, build.sh, VS Code) 🆕
 - [ ] **Stage 20** — Flash & test on hardware
 
@@ -507,7 +507,28 @@ Complete the remaining sections:
 
 ---
 
-### Stage 18 — Provision ST's OpenOCD via `build.sh` 🆕
+### Stage 18 — Provision ST's OpenOCD via `build.sh` ✅
+
+**Closed.** `./build.sh --with-openocd` clones ST's fork at `openocd-cubeide-v2.1.0`,
+bootstraps, configures, builds and installs into `toolchains/openocd`, skipping the work if
+the binary is already there. `toolchains/openocd/bin` joins `PATH` whenever it exists, so
+flashing works in the same shell as the build, and the script closes by printing the exact
+`program … verify reset` command line.
+
+Two corrections to the recipe below, both found by running it rather than reading it — see
+[F64](#f64--sts-openocd-does-not-build-as-specified-resolved):
+
+- **`--disable-werror` is required.** OpenOCD enables `-Werror` for git checkouts and this
+  0.12.0-era tree does not compile under GCC 15.2 (`angie.c`, `ulink.c`, `ti_icdi_usb.c`).
+- **The prerequisite is `libtoolize`, not `libtool`.** The Debian/Ubuntu `libtool` package
+  ships no `/usr/bin/libtool`, so the documented check fails on a perfectly good machine.
+
+Verified cold — both `toolchains/openocd` and `toolchains/openocd-src` removed first — and the
+resulting binary programmed and verified the board, which then booted and took a DHCP lease.
+
+<details>
+<summary>Original stage specification</summary>
+
 
 **Why a fork is needed.** `target/stm32h5x.cfg` declares `flash bank … stm32h5x …`, which is
 a compiled-in flash driver, not tcl. Stock OpenOCD 0.12.0 ships no `stm32h5x` driver, no
@@ -549,6 +570,8 @@ path because it is a registration-walled manual installer and cannot be scripted
 a valid manual option for developers who have it.
 
 **Commit**: `"Stage 18: Build ST's OpenOCD fork from build.sh"`
+
+</details>
 
 ---
 
