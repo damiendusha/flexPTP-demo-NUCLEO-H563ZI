@@ -226,9 +226,13 @@ Priorities below are raw FreeRTOS priorities. `configMAX_PRIORITIES` is 56. The 
 shim passes `osPriority_t` values straight through to `xTaskCreate`, so the CMSIS and
 FreeRTOS scales are the same numbers here — `osPriorityNormal` *is* 24.
 
+Thread names are as they appear in a debugger. lwIP's core thread is named by
+`TCPIP_THREAD_NAME` in `Inc/lwipopts.h`, which is `"TCP/IP"` — it is referred to as
+`tcpip_thread` elsewhere in these documents after its lwIP source symbol.
+
 | Thread | Priority | Stack | Created by | Role |
 |---|---|---|---|---|
-| `tcpip_thread` | **40** (`osPriorityHigh`) | 3072 B | lwIP via `sys_thread_new` | lwIP core; all stack processing is serialised here |
+| `TCP/IP` | **40** (`osPriorityHigh`) | 3072 B | lwIP via `sys_thread_new` | lwIP core; all stack processing is serialised here |
 | `ptp` | **24** | 2048 B | `reg_task_ptp()`, on demand | flexPTP core: BMCA, servo, message handling |
 | `init` | 24 (default) | 2048 B | `main()` | One-shot bring-up, then idles at 1 Hz |
 | `cli` | 24 (default) | 2048 B | `cli_init()` | Console command parsing |

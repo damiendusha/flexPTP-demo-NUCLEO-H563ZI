@@ -80,9 +80,9 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 | | Count |
 |---|---|
 | Total distinct actions | **81** |
-| Open (☐) | 33 |
+| Open (☐) | 29 |
 | Partial (◐) | 1 |
-| Already done (✅) | 43 |
+| Already done (✅) | 47 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -162,10 +162,10 @@ defects.
 | ✅ | — | — | **P4.7** | — | — | 1/3 O | Mark F42's retained `### Status — F42 is open` section as superseded history — **DONE: the retained `### Status` subsection is retitled *SUPERSEDED (retained as history)* with a note pointing at the resolution, and the *"F42 is open"* sentence struck through. The investigation narrative is kept — it is the most instructive part of the finding** |
 | ✅ | — | — | **P4.8** | — | — | 1/3 O | Settle the embfmt fix count between `README.md:209` ("two") and `architecture.md:52` ("three") — four defects, two findings, one patch — **DONE: settled as **four defects, two findings, one patch file** in both places, with each defect named. README said "two", `architecture.md` said "three" — the disagreement came from conflating the three different counts, so all three are now stated explicitly** |
 | ✅ | — | — | **P4.9** | — | — | 1/3 O | Clear the "Open: F54" heading in `design_doc.md:851` — **DONE: the stage-log **Open:** heading is now *"Open at the time of this stage — since resolved"* and the F54 bullet marked resolved, so the stage log stays a historical record without asserting a live defect** |
-| ☐ | — | — | **P4.10** | — | — | 1/3 O | Fix `mac_drv.h`'s two stale comments — the `TSENALL` claim (`:127`) and the 0.467 ns quantum (`:135`) |
-| ☐ | — | — | **P4.11** | — | — | 1/3 O | Correct the thread name in `architecture.md:220` to match `TCPIP_THREAD_NAME` (`"TCP/IP"`) |
-| ☐ | — | — | **P4.12** | — | — | 1/3 O | Update the FreeRTOS version in `FreeRTOSConfig.h`'s header comment to V11.3.0 |
-| ☐ | — | — | **P4.13** | — | — | 1/3 O | Remove the dead relative `Inc` include path from `Middlewares/CMakeLists.txt:14` |
+| ✅ | — | — | **P4.10** | — | — | 1/3 O | Fix `mac_drv.h`'s two stale comments — the `TSENALL` claim (`:127`) and the 0.467 ns quantum (`:135`) — **DONE: both corrected at the declarations — `TSENALL` is deliberately clear so only `SNAPTYPSEL`-selected PTP messages are stamped (not every frame), and `SSINC` counts whole nanoseconds because `TSCTRLSSR` selects digital rollover (0.467 ns is the *binary*-rollover quantum)** |
+| ✅ | — | — | **P4.11** | — | — | 1/3 O | Correct the thread name in `architecture.md:220` to match `TCPIP_THREAD_NAME` (`"TCP/IP"`) — **DONE: thread table now shows `TCP/IP`, the actual `TCPIP_THREAD_NAME`, with a note that these documents call it `tcpip_thread` after its lwIP source symbol** |
+| ✅ | — | — | **P4.12** | — | — | 1/3 O | Update the FreeRTOS version in `FreeRTOSConfig.h`'s header comment to V11.3.0 — **DONE: header comment now reads V11.3.0, matching the `FetchContent` pin, with a pointer to where the pin lives** |
+| ✅ | — | — | **P4.13** | — | — | 1/3 O | Remove the dead relative `Inc` include path from `Middlewares/CMakeLists.txt:14` — **DONE: the bare `Inc` entry (resolving to the non-existent `Middlewares/Inc`) removed, with a comment naming F32 so it is not re-added** |
 | ◐ | **Partial ◐** | — | **P4.14** | — | item 5 | 1/3 P | Add an `#error` guard on `HAL_DCACHE_MODULE_ENABLED` in `stm32h5xx_hal_conf.h`. **The comment half is already done** — the linker script and `design_doc.md` both carry the warning; the compile-time guard is the new part |
 
 ### Priority 5 — housekeeping, tooling and upstream

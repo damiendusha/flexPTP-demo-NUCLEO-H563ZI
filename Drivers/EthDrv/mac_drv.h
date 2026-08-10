@@ -124,7 +124,7 @@ typedef enum {
     ETHHW_PTP_PPS_16384Hz
 } ETHHW_PPS_FreqEnum;
 
-void ETHHW_EnablePTPTimeStamping(ETH_TypeDef *eth);                                          // Enable PTP timestamping (currently every frame received gets timestamped)
+void ETHHW_EnablePTPTimeStamping(ETH_TypeDef *eth);                                          // Enable PTP timestamping. NOT every frame: TSENALL is deliberately clear, so only PTP messages selected by SNAPTYPSEL are stamped -- see the note at the definition
 void ETHHW_DisablePTPTimeStamping(ETH_TypeDef *eth);                                         // Disable PTP timestamping
 void ETHHW_InitPTPTime(ETH_TypeDef *eth, uint32_t sec, uint32_t nsec);                       // Initialize PTP clock time
 void ETHHW_EnablePTPFineCorr(ETH_TypeDef *eth, bool enFineCorr);                             // Enable fine correction method
@@ -132,7 +132,7 @@ uint32_t ETHHW_GetPTPAddend(ETH_TypeDef *eth);                                  
 bool ETHHW_SetPTPAddend(ETH_TypeDef *eth, uint32_t addend);                                  // Set PTP addend; false if the hardware did not accept it
 void ETHHW_SetPTPPPSFreq(ETH_TypeDef *eth, uint32_t freqCode);                               // Set PPS output frequency
 uint32_t ETHHW_GetPTPSubsecondIncrement(ETH_TypeDef *eth);                                   // Get PTP clock subsecond increment
-void ETHHW_SetPTPSubsecondIncrement(ETH_TypeDef *eth, uint8_t increment);                    // Set PTP clock subsecond increment. Time quantum is 0.467 ns.
+void ETHHW_SetPTPSubsecondIncrement(ETH_TypeDef *eth, uint8_t increment);                    // Set PTP clock subsecond increment, in whole nanoseconds. (0.467 ns is the BINARY-rollover quantum; TSCTRLSSR is set here, so rollover is digital and SSINC counts ns.)
 
 void ETHHW_AuxTimestampCh(ETH_TypeDef *eth, uint8_t ch, bool en);                       // Enable auxiliary timestamping channel
 void ETHHW_ReadLastAuxTimestamp(ETH_TypeDef *eth, uint32_t *ps, uint32_t *pns);         // Read lastly captured auxiliary timestamp
