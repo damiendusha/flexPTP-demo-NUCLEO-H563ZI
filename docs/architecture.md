@@ -57,7 +57,7 @@ source — with one **temporary** exception, noted below.
 | Component | Version | How it is vendored | Modified? |
 |---|---|---|---|
 | **stm32h5xx-hal-driver** | `v1.7.0-8-g0fff6e2` | git submodule | **As-is.** Configured by `Inc/stm32h5xx_hal_conf.h`; 12 of 61 modules enabled |
-| **CMSIS Core (M)** | 5.6 | in-tree, `Drivers/CMSIS/Include` | **As-is.** Inherited from the H743 project, not refreshed |
+| **CMSIS Core (M)** | 5.6 (= CMSIS 5.9.0 content) | in-tree, `Drivers/CMSIS/Include` | **As-is, and already current for CMSIS 5.** Inherited from the H743 project, but verified byte-identical to the final CMSIS 5 release — see the note below. Not a submodule |
 | **CMSIS Device STM32H5xx** | 1.7.0 | in-tree, `Drivers/CMSIS/Device` | **As-is.** From `STMicroelectronics/cmsis_device_h5` |
 | **CMSIS-RTOS2 shim** | ST distribution | in-tree, `Drivers/CMSIS/CMSIS_RTOS_V2` | **Patched — one `#include` directive.** In `cmsis_os2.c`, `#include "stm32h7xx.h"` became `#include "stm32h5xx.h"`. No header file was copied or rewritten; see the note below. Vendored copy, not a submodule, so the edit is in-repo and visible in git history |
 | **FreeRTOS-Kernel** | `V11.3.0` | CMake `FetchContent`, pinned tag | **As-is.** Configured by `Inc/FreeRTOSConfig.h` |
@@ -65,6 +65,26 @@ source — with one **temporary** exception, noted below.
 | **flexPTP** | `76aaf67` (`RC1.0-11`) | git submodule | **Patched.** A permanent servo fix (F59, `patches/flexptp/0002-…`) plus temporary F42 instrumentation (see above), and two external workarounds. (1) `__PRI64_PREFIX=__INT64` compile definition, because flexPTP uses a glibc-internal macro newlib lacks (F47). (2) The STM32H5 hardware port is supplied by this project, since flexPTP ships none |
 | **embfmt** | `670a349` | git submodule | **Patched.** Formatted-print backend for `MSG()`. `%ll` conversions were dropped entirely and NaN printed as `0.0000`; see [F60](port_review.md#f60--embfmt-drops-ll-conversions-and-renders-nan-as-00000-resolved) and `patches/embfmt/` |
 | **EtherLib** | `ec35be5` | git submodule | **Present but not compiled.** Alternative to lwIP, selectable via the `ETH_STACK` CMake variable |
+
+> **"CMSIS Core (M) 5.6" is not a stale version.** `5.6` is the **Core(M)** version from
+> `cmsis_version.h`, which is versioned separately from the CMSIS *pack*. CMSIS 5.9.0 — the
+> final CMSIS 5 release — also reports Core(M) 5.6, so the number says nothing about age.
+>
+> Checked rather than assumed: all **30 files** in `Drivers/CMSIS/Include` are byte-identical
+> to `CMSIS/Core/Include` at tag `5.9.0` of `ARM-software/CMSIS_5`. Fetching CMSIS 5 directly
+> would therefore change **nothing**. The five headers this project actually compiles —
+> `core_cm33.h`, `cmsis_version.h`, `cmsis_compiler.h`, `cmsis_gcc.h`, `mpu_armv8.h`, all
+> reached through `stm32h5xx.h`, never included directly — are among them.
+>
+> **CMSIS 6 would be a real migration**, not a refresh. Core(M) 6.1 restructures the tree:
+> the compiler and feature headers move under `m-profile/` (`cmsis_gcc_m.h`,
+> `armv8m_mpu.h`, `armv8m_pmu.h`, `armv81m_pac.h`, `armv7m_cachel1.h`, `armv7m_mpu.h`),
+> `cmsis_armcc.h` is gone with Arm Compiler 5 support, `cmsis_clang.h` is new, and
+> `core_cm33.h` differs by about 1 050 lines and no longer includes `mpu_armv8.h` itself.
+> The constraint is not the compiler — this project uses GCC — but ST: the pinned
+> `stm32h5xx-hal-driver` and CMSIS device pack 1.7.0 are validated against CMSIS 5. The right
+> way to move is to take the CMSIS Core that ships with the STM32CubeH5 release matching the
+> device pack, not the newest tag available.
 
 > **What "patched" means for the CMSIS-RTOS2 shim.** It is easy to read the row above as a
 > header having been copied or converted. It was neither.

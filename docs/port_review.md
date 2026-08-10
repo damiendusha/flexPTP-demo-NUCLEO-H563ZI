@@ -117,7 +117,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F27 | ETH DMA reach into SRAM3 unverified | Precondition | plan Open Items, Stage 17 |
 | F28 | SRAM2 (64 KB) unallocated | Minor | plan Stage 4 note |
 | F29 | `.ETHLibPool` has no linker placement | Minor | plan Stage 4 note, Stage 17 |
-| F30 | CMSIS Core 5.6 carried over from the H7 project | Minor | plan Open Items |
+| F30 | CMSIS Core 5.6 carried over from the H7 project | **Not an issue** | verified identical to CMSIS 5.9.0 |
 | F31 | Unexpanded `{{sr:cmake_path}}` template placeholder | Minor | plan Stage 7 |
 | F32 | Two CMake include paths point at non-existent dirs | Minor | plan Stage 7 |
 | F33 | ST header comment bug on `MACSSIR` masks | None | this document only |
@@ -1573,9 +1573,16 @@ recorded so it reads as a choice rather than an oversight.
 **F29 — `.ETHLibPool`.** `Inc/etherlib_options.h` declares the section but the linker script
 has no placement (nor did upstream's). Only matters if EtherLib is enabled.
 
-**F30 — CMSIS Core version.** `Drivers/CMSIS/Include` is CMSIS Core 5.6, carried over from
-the H7 project, paired with CMSIS device pack 1.7.0. Expected to work with `core_cm33.h`;
-first thing to try if unexplained core-header errors appear.
+**F30 — CMSIS Core version.** Raised because `Drivers/CMSIS/Include` was inherited from the
+H7 project and looked stale at "5.6". It is not. `5.6` is the **Core(M)** version, versioned
+separately from the CMSIS pack, and CMSIS 5.9.0 — the last CMSIS 5 release — reports the same.
+All 30 files are byte-identical to `CMSIS/Core/Include` at tag `5.9.0` of
+`ARM-software/CMSIS_5`, so there is nothing to refresh within CMSIS 5.
+
+The original advice — "a bump is the first thing to try if odd core-header errors appear" —
+was therefore **wrong and has been removed**: there is no CMSIS 5 bump to make. CMSIS 6 is a
+restructuring rather than a refresh, and ST's pinned HAL and device pack are validated against
+CMSIS 5. See the note in [architecture.md](architecture.md).
 
 **F31 — Unexpanded template placeholder.** `CMakeLists.txt:7` contains a literal
 `list(APPEND CMAKE_MODULE_PATH "{{sr:cmake_path}}")` — an unsubstituted placeholder from the

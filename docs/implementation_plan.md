@@ -747,7 +747,7 @@ done but has never been signed off against the [Verification Plan](#verification
 | Accuracy characterisation | The offset's **signed** mean is near zero (+40 ns), which shows lock; its **magnitude** is ~26 µs typical and ~87 µs peak, which is the **host's** software-timestamping floor, not the board's capability. Needs a hardware-timestamping NIC. The ST-Link MCO clock (noisy) and the 25 MHz X3 option are the other two variables |
 | Upstream reports owed | F47 (`__PRI64_PREFIX` breaks every newlib target), F59 (servo NaN latch), F60 (embfmt `%ll` and NaN). All three are target-independent |
 | flexPTP on ARMv8-M (F39) | First Cortex-M33 target for the library. No specific defect known; treat unexplained core-level misbehaviour as a possible ARMv7-M assumption rather than a port bug |
-| CMSIS Core 5.6 (F30) | Carried over from the H7 project against a 1.7.0 device pack. Works; a bump is the first thing to try if odd core-header errors appear |
+| CMSIS Core 5.6 (F30) | **Closed, not deferred.** Verified byte-identical to CMSIS 5.9.0, the final CMSIS 5 release — "5.6" is the Core(M) version, not the pack version. There is no bump to make; CMSIS 6 is a migration, and ST's pinned HAL and device pack are validated against CMSIS 5 |
 | ETH DMA reach into SRAM3 | SRAM1/2/3 are all on the AHB matrix and DCACHE is off, so no coherency handling is expected — but confirm empirically before relying on it |
 | `SNSINC` sub-nanosecond increment | Left at zero, as on the H743. An unexplored avenue for finer rate resolution; see [ptp_clock.md](ptp_clock.md) |
 
