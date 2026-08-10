@@ -163,8 +163,20 @@ static void serial_io_thread(void * arg) {
         bfifo_wait_avail(&fifo);
         uint32_t size = bfifo_read(&fifo, lineBuf, SERIAL_IO_LINEBUF_LEN);
         bfifo_pop(&fifo, size, 0);
-        HAL_UART_Transmit_DMA(&uart, lineBuf, size);
-        osEventFlagsWait(flags, SERIAL_IO_TX_CPLT_FLAG, 0, osWaitForever);
+
+        /* Only wait for the completion flag if the transfer actually started. The return was
+         * discarded before, and the wait below is osWaitForever on a flag that ONLY the
+         * success path's callback ever sets -- so a single rejected transfer killed the
+         * console permanently, for the rest of the session. That is precisely the symptom
+         * F51 presented as: output stopping mid-banner with the board otherwise alive.
+         *
+         * On failure the data is already popped and is lost; that is the right trade. The
+         * alternative is to stop draining the FIFO, which loses everything after it too. */
+        if (HAL_UART_Transmit_DMA(&uart, lineBuf, size) == HAL_OK) {
+            osEventFlagsWait(flags, SERIAL_IO_TX_CPLT_FLAG, 0, osWaitForever);
+        } else {
+            osDelay(1); // let the peripheral settle rather than spinning on a failing DMA
+        }
     }
 }
 

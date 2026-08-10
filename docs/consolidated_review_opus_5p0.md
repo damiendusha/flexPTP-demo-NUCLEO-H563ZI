@@ -80,9 +80,9 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 | | Count |
 |---|---|
 | Total distinct actions | **80** |
-| Open (☐) | 52 |
+| Open (☐) | 51 |
 | Partial (◐) | 1 |
-| Already done (✅) | 23 |
+| Already done (✅) | 24 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -127,7 +127,7 @@ defects.
 | ✅ | — | — | **P2.6** | ACT-06 (B6) | — | 2/3 O+F | Fix the off-by-one write in `insert_carriage_return()` — change the guard to `len < maxLen` — **DONE: guard changed to `len < maxLen`, leaving room for the character the body is about to add. Proved on the host by compiling both variants against a full-length buffer ending in a bare newline: unfixed writes index 2049 of a 0..2048 buffer, fixed stays in bounds. On target the CRLF conversion is unchanged — 21 of 21 line feeds are CRLF pairs, zero bare LF** |
 | ✅ | — | — | **P2.7** | — | — | 1/3 O | Clamp `cli_register_command()`'s token count against `MAX_TOKEN_N` (8), not `TOK_ARR_LEN` (16) — **DONE: clamp now uses `MAX_TOKEN_N` (8), the destination array's own capacity, instead of `TOK_ARR_LEN` (16) which sizes a different buffer in `process_cli_line()`. Verified on target with a scaffolded 12-token registration — survives, CLI alive, help table intact** |
 | ☐ | — | — | **P2.8** | — | — | 1/3 O | Raise the `rx` thread above the console threads; six of nine threads currently share priority 24 |
-| ☐ | — | — | **P2.9** | — | — | 1/3 O | Check `HAL_UART_Transmit_DMA()`'s return in `serial_io_thread()` — on error it blocks forever on a completion flag that will never be set |
+| ✅ | — | — | **P2.9** | — | — | 1/3 O | Check `HAL_UART_Transmit_DMA()`'s return in `serial_io_thread()` — on error it blocks forever on a completion flag that will never be set — **DONE: the completion wait is now conditional on the transfer having started, with a short delay on failure instead of an unconditional `osWaitForever`. Control on target with 3 forced DMA failures: **unfixed → 0 console bytes, every marker missed** (console dead for the session); **fixed → 1213 bytes, all markers after the lost chunks pass, `osinfo` responds**** |
 | ✅ | — | — | **P2.10** | ACT-02 (B3) | — | 1/3 F | Replace `SET_BIT` with direct assignment when clearing `ETH->DMACSR` in `ETHHW_ISR()`. Read-modify-write on a w1c register clears every pending flag, including `AIS`/`FBE`, which nothing reads. ST's own `__HAL_ETH_DMA_CLEAR_IT` uses direct assignment — **DONE: all four acknowledgements are now `WRITE_REG` of just the bits being cleared, and `AIS` is acknowledged and reported instead of being wiped unseen. **Not demonstrable from software** — the race needs a flag to assert between the ISR's read and its write-back — so the evidence is correctness by inspection, corroborated by ST's own `__HAL_ETH_DMA_CLEAR_IT` using direct assignment, plus a regression: 500 pings at 1400 B, 0% loss, PTP addend correct** |
 | ✅ | — | — | **P2.11** | ACT-04 (B4) | — | 1/3 F | Fix the transmit-sequence delta in `ETHHW_ProcessTx()`, `mac_drv.c:473`, to `int16_t delta = (int16_t)(txCntr - state->txCntAcked);`. `txCntr` increments on *every* transmit, so the 16-bit wrap arrives in minutes on a busy link — **DONE: `int16_t delta = (int16_t)(txCntr - txCntAcked)`, with `minDelta` narrowed to match so the comparison stays modular. Verified on target with the counter scaffolded to start at 65500: 600 pings across the wrap at 0% loss, then 300 more at 1400 B at 0% loss. The timestamp *ordering* effect is not directly observable without a PTP master on this bench** |
 | ✅ | — | — | **P2.12** | ACT-09 (B8) | — | 1/3 F | Bound the `phy_soft_reset()` handshake, `phy_common.c:441-448` — a seventh unbounded wait that F54 missed. Also initialise `r` before the loop — **DONE: bounded at 100 x 5 ms with `r` initialised and a failed MDIO read treated as still-in-reset rather than exiting on stale data; reports on expiry. Verified on target with a PHY scaffolded to never clear BCR.RESET: *"soft reset did not complete after 500 ms"* and boot continued** |
