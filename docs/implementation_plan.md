@@ -599,18 +599,53 @@ graph TD
 
 ---
 
-## Open Items & Risks
+## Remaining Work
 
-| Item | Stage | Notes |
+The port works end to end: DHCP, link, PTP timestamping, delay exchange and a servo that
+disciplines the clock (see [port_review.md](port_review.md) F42/F59). What is left splits
+into cleanup, bugs that are known but unfixed, and the five unfinished stages.
+
+### 1. Cleanup — blocks anything shipping
+
+| Item | Where |
+|---|---|
+| `ethdbg` volatile debug struct | `Drivers/EthDrv/mac_drv.c`, `mac_drv.h` |
+| `rxdbg` volatile debug struct | `Drivers/EthDrv/eth_drv_lwip.c` |
+| Forced `ptp_log_enable(PTP_LOG_TRANSMISSION/INFO)` | `Src/main.c` — this is what floods the console |
+| `slvdbg` / `coredbg` / `ptpdbg` / `nsddbg` | submodule, via `patches/flexptp/0001-temporary-F42-instrumentation.patch` |
+| `ETHHW_PrintRingBufStatus` defined but not used | `Drivers/EthDrv/mac_drv.c` — the only build warning |
+
+**Keep** `patches/flexptp/0002-servo-nan-latch-fix.patch` and
+`patches/embfmt/0001-ll-length-modifier-and-non-finite-doubles.patch`: those are permanent
+fixes, not instrumentation. Reverting the submodule instrumentation costs nothing
+permanent — `0001` reapplies with one `git apply` when F61 is chased.
+
+### 2. Known bugs, not yet fixed
+
+| Finding | Severity | Notes |
 |---|---|---|
-| **Temporary instrumentation to remove** | 12 | `ethdbg` counters in `mac_drv.c`/`.h`, `rxdbg` in `eth_drv_lwip.c`, the forced `ptp_log_enable(PTP_LOG_TRANSMISSION/INFO)` in `main.c`, and `patches/flexptp/0001-temporary-F42-instrumentation.patch`. All marked TEMPORARY; they exist only for the F42/F59 investigations and must not ship. Keep `patches/flexptp/0002-…` and `patches/embfmt/0001-…` — those are permanent fixes. |
-| Duplicate frame delivery (F61) | 20 | **Open.** The same received Sync was processed twice — identical T1, T2 *and* offset, so one frame delivered twice, not a retransmission. Seen once in ~150 cycles. Harmless since the F59 guards landed, but not root-caused; the source is below `slave.c` (RX path, `nsd_lwip.c`, or the message-buffer FIFO). Catch it with a Sync-vs-correction counter pair read over SWD after a long run. |
-| RX pbuf copy (F58) | 12 | The source pointer never advances, so every segment of a chained pbuf is filled from the start of the frame. Latent only because `PBUF_POOL_BUFSIZE` equals `ETH_BUFFER_SIZE`. Fix before changing either. Also a candidate to check while chasing F61. |
-| Unbounded driver waits (F54) | 12 | `ETHHW_SetPTPAddend()` spins on `TSADDREG` with no timeout, so a PTP clock fault hangs the `ptp` thread silently instead of reporting. Fix as a bounded wait that returns an error — not a silent timeout. |
-| flexPTP on ARMv8-M | 16, 20 | This is flexPTP's first Cortex-M33 target — the library is documented as tested on Cortex-M4/M7 only. No specific defect is known; treat unexplained core-level misbehaviour as potentially an ARMv7-M assumption rather than a port bug (F39). |
-| CMSIS Core version | 16 | `Drivers/CMSIS/Include` is CMSIS Core 5.6, carried over from the H7 project. CMSIS device pack is 1.7.0. Expected to work with `core_cm33.h`, but a version bump is the first thing to try if odd core-header errors appear. |
-| ETH DMA reach into SRAM3 | 16, 20 | SRAM1/2/3 are all on the AHB matrix, and DCACHE is off, so no coherency handling is expected. Confirm empirically on hardware before assuming. |
-| SNSINC sub-nanosecond increment | — | Left at zero, as on the H743. Unexplored avenue for finer rate resolution; would need a reference-manual check. See `ptp_clock.md`. |
+| **F61** — duplicate frame delivery | Open, not root-caused | The trigger for F59. One frame delivered twice — identical T1, T2 *and* offset, so not a retransmission. Harmless since the F59 guards landed. Source is below `slave.c`: RX path, `nsd_lwip.c`, or the message-buffer FIFO added in flexPTP `a60190f`. Catch it with a Sync-vs-correction counter pair over a long run, read via SWD |
+| **F58** — RX pbuf copy | Latent | The source pointer never advances, so every segment of a chained pbuf is filled from the start of the frame. Latent only because `PBUF_POOL_BUFSIZE` equals `ETH_BUFFER_SIZE`; fix before changing either. Also a suspect for F61 |
+| **F54** — unbounded driver wait | Robustness | `ETHHW_SetPTPAddend()` spins on `TSADDREG` with no timeout. This is what turned F53 from a diagnosable fault into a silent hang. Fix as a bounded wait that **reports** — a silent timeout would mask real faults |
+| **F41** — `ETHHW_UpdatePTPTime()` | Latent | Unreachable and suspect; `PTP_UPDATE_CLOCK` is dead |
+| **F55** — wrong hardware advice | User-facing | The welcome message repeats the H743 project's "solder an 8 MHz oscillator onto X3". On MB1404 X3 is **already fitted and is 25 MHz** (SB3/SB4 ON, SB49 OFF); using it needs `HSE_VALUE` 25000000 and a re-derived `PLLM` |
+
+### 3. Unfinished stages
+
+Stages 16–20 (see the [checklist](#implementation-checklist)). Stage 20 is substantially
+done but has never been signed off against the [Verification Plan](#verification-plan).
+
+### 4. Deferred, with reasons
+
+| Item | Why it is deferred |
+|---|---|
+| gPTP route end to end | Deliberate — the `default` profile is the proven one; switching was explicitly postponed |
+| Accuracy characterisation | The measured 519 ns mean is the **host's** software-timestamping floor, not the board's capability. Needs a hardware-timestamping NIC. The ST-Link MCO clock (noisy) and the 25 MHz X3 option are the other two variables |
+| Upstream reports owed | F47 (`__PRI64_PREFIX` breaks every newlib target), F59 (servo NaN latch), F60 (embfmt `%ll` and NaN). All three are target-independent |
+| flexPTP on ARMv8-M (F39) | First Cortex-M33 target for the library. No specific defect known; treat unexplained core-level misbehaviour as a possible ARMv7-M assumption rather than a port bug |
+| CMSIS Core 5.6 (F30) | Carried over from the H7 project against a 1.7.0 device pack. Works; a bump is the first thing to try if odd core-header errors appear |
+| ETH DMA reach into SRAM3 | SRAM1/2/3 are all on the AHB matrix and DCACHE is off, so no coherency handling is expected — but confirm empirically before relying on it |
+| `SNSINC` sub-nanosecond increment | Left at zero, as on the H743. An unexplored avenue for finer rate resolution; see [ptp_clock.md](ptp_clock.md) |
 
 ---
 
