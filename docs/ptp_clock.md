@@ -249,10 +249,13 @@ the PTP clock.
 
 **MDIO divider `CR = DIV102`.** The CSR clock for MDIO is HCLK. At 250 MHz,
 250/102 = 2.45 MHz, just inside the 2.5 MHz MDIO limit. This is the correct pairing for a
-250 MHz HCLK; at 125 MHz, DIV62 would be the appropriate choice instead. Note that
-`mac_drv.c` currently contains a shift bug in this register write (it shifts an
-already-positioned mask by `ETH_MACMDIOAR_CR_Pos`, landing in the `RDA` field and leaving
-CR at DIV42 ≈ 6 MHz); that must be fixed as part of the MAC driver port.
+250 MHz HCLK; at 125 MHz, DIV62 would be the appropriate choice instead.
+
+*(An earlier revision of this paragraph warned that `mac_drv.c` still shifted the
+already-positioned `ETH_MACMDIOAR_CR_DIV102` mask by `ETH_MACMDIOAR_CR_Pos` again, landing in
+the `RDA` field and leaving CR at ÷42 ≈ 6 MHz. That was finding F8 and it was fixed at
+Stage 12; the write is now a plain `WRITE_REG(eth->MACMDIOAR, ETH_MACMDIOAR_CR_DIV102)`,
+verified on hardware by the PHY enumerating at 2.45 MHz MDC.)*
 
 ### PLL arithmetic, for reference
 
