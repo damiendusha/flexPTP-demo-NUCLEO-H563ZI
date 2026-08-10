@@ -11,6 +11,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <string.h>
 
 static ip4_addr_t ipaddr;
 static ip4_addr_t netmask;
@@ -23,11 +24,31 @@ static osTimerId_t checkDhcpTmr;
 
 static bool prevDhcpOK = false;
 
+/* Runs on the "Tmr Svc" thread, which is not the lwIP core thread. With
+ * LWIP_TCPIP_CORE_LOCKING = 1 every lwIP API call must hold the core lock, and this made two
+ * without it: dhcp_supplied_address() walks the netif's DHCP state, and ipaddr_ntoa() reads
+ * netif_default->ip_addr while the stack may be rewriting it on lease renewal.
+ *
+ * It is the only place in the project that got this wrong -- phy_thread goes through
+ * tcpip_callback(), and flexPTP's nsd_lwip.c brackets its sends with LOCK_TCPIP_CORE() -- so
+ * this was an oversight rather than a convention.
+ *
+ * The lock is held only across the reads; the printing is done outside it, since MSG() can
+ * block on the console FIFO and holding the core lock there would stall the whole stack. */
 void check_dhcp_state(void *param) {
+    LOCK_TCPIP_CORE();
     bool dhcpOK = dhcp_supplied_address(&intf);
+    const char *addr = dhcpOK ? ipaddr_ntoa(&(netif_default->ip_addr)) : NULL;
+    char addrCopy[IP4ADDR_STRLEN_MAX];
+    if (addr != NULL) {
+        strncpy(addrCopy, addr, sizeof(addrCopy) - 1U);
+        addrCopy[sizeof(addrCopy) - 1U] = '\0';
+    }
+    UNLOCK_TCPIP_CORE();
+
     if (dhcpOK != prevDhcpOK) {
         if (dhcpOK) {
-            MSG("IP-address: %s\n", ipaddr_ntoa(&(netif_default->ip_addr)));
+            MSG("IP-address: %s\n", addrCopy);
         } else {
             MSG("DHCP configuration lost!\n");
         }
