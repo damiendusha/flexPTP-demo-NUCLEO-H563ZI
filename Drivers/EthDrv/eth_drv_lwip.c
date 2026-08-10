@@ -1,6 +1,7 @@
 #include "eth_drv_lwip.h"
 
 #include <memory.h>
+#include <stddef.h> // offsetof, for the layout assertion below
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -43,11 +44,23 @@
 
 uint8_t ETHBuffer[(ETH_RX_DESC_CNT + ETH_TX_DESC_CNT) * ETH_BUFFER_SIZE] __attribute__((section(".ETHBufferSection"))); /* Ethernet Receive Buffers */
 
-struct {
+typedef struct {
     ETHHW_State ETHState;
     ETHHW_DescFull DMARxDscrTab[ETH_RX_DESC_CNT];
     ETHHW_DescFull DMATxDscrTab[ETH_TX_DESC_CNT];
-} ETHStateAndDesc __attribute__((section(".ETHStateAndDecripSection")));
+} ETHStateAndDescLayout;
+
+ETHStateAndDescLayout ETHStateAndDesc __attribute__((section(".ETHStateAndDecripSection")));
+
+/* ETHHW_GetState() recovers the driver state as ((ETHHW_State *)eth->DMACRDLAR) - 1, i.e. it
+ * assumes the state block sits immediately below the RX descriptor ring the DMA was pointed
+ * at. Until now that was guaranteed only by the field order above and a comment in
+ * mac_drv.h; reordering these two members, or any padding appearing between them, would have
+ * produced a driver reading its state from the middle of a descriptor -- silently, and at
+ * runtime. Make the layout contract a build error instead. */
+_Static_assert(offsetof(ETHStateAndDescLayout, DMARxDscrTab) == sizeof(ETHHW_State),
+               "ETHHW_State must immediately precede the RX descriptor ring, with no padding: "
+               "ETHHW_GetState() derives the state pointer by subtracting one from DMACRDLAR.");
 
 // -------------------------------------
 // ---------- Global objects -----------
