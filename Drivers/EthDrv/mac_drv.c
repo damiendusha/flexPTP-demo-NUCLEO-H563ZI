@@ -867,13 +867,18 @@ void ETHHW_SetPTPPPSFreq(ETH_TypeDef *eth, uint32_t freqCode) {
     eth->MACPPSCR = tmpreg;
 }
 
+/* Read-modify-write, not assign: "tmpreg = en << (ch + 4)" discarded the register and
+ * disabled every other auxiliary channel as a side effect of touching one. Unused by this
+ * project, but wrong for whoever enables auxiliary snapshots first. */
 void ETHHW_AuxTimestampCh(ETH_TypeDef *eth, uint8_t ch, bool en) {
-    __IO uint32_t tmpreg = eth->MACACR;
+    const uint32_t bit = 1UL << ((ch & 0b11) + 4);
+    uint32_t tmpreg = eth->MACACR;
 
-    ch = ch & 0b11;
-    en = en & 0b1;
-
-    tmpreg = (en) << (ch + 4);
+    if (en) {
+        tmpreg |= bit;
+    } else {
+        tmpreg &= ~bit;
+    }
 
     eth->MACACR = tmpreg;
 }

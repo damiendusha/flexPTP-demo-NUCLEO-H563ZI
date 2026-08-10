@@ -96,9 +96,11 @@ static void phy_setup_int_DP83848() {
     regVal = EPHY_DP83848_MISR_LINK_INT_EN | EPHY_DP83848_MISR_ANC_INT_EN;
     WRITE(EPHY_DP83848_MISR, regVal);
 
-    // global enable interrupts
+    // global enable interrupts. This was a READ, which discarded the value just computed
+    // and left the DP83848's global interrupt enable clear -- so the PHY never asserted its
+    // interrupt pin. Not this board's PHY (LAN8742A), but shipped broken.
     regVal = EPHY_DP83848_MICR_INT_OE | EPHY_DP83848_MICR_INTEN;
-    READ(EPHY_DP83848_MICR, regVal);
+    WRITE(EPHY_DP83848_MICR, regVal);
 }
 
 static void phy_fetch_link_status_DP83848(PHY_LinkStatus *ls) {
@@ -569,8 +571,10 @@ void phy_refresh_link_status() {
     }
 }
 
+/* MDIO register addresses are consecutive, not byte offsets: the old "a += 2" silently
+ * skipped every odd-numbered register, which includes BSR (1) and both PHYID words (2, 3). */
 static void phy_read_range(uint32_t firstAddr, uint16_t len) {
-    for (uint32_t a = firstAddr; a < (firstAddr + len); a += 2) {
+    for (uint32_t a = firstAddr; a < (firstAddr + len); a++) {
         uint32_t regVal;
         READ(a, regVal);
         if (regVal != 0) {
@@ -579,8 +583,15 @@ static void phy_read_range(uint32_t firstAddr, uint16_t len) {
     }
 }
 
-void phy_read_all_regs() { phy_read_range(0, EPHY_MDIO_MAX_ADDR); }
+/* EPHY_MDIO_MAX_ADDR is the highest PHY *address* on the bus, not a register count. The
+ * basic MDIO register set is 0..31. */
+#define EPHY_MDIO_REG_COUNT (32U)
 
-bool phy_read_reg(uint32_t addr, uint32_t *dst) { return READ(addr, *dst); }
+void phy_read_all_regs() { phy_read_range(0, EPHY_MDIO_REG_COUNT); }
 
-bool phy_write_reg(uint32_t addr, uint32_t data) { return WRITE(addr, data); }
+/* ETHHW_{Read,Write}PHYRegister() return 0 on success, so returning them directly gave a
+ * bool that was true exactly when the access FAILED. Both are unused today; corrected rather
+ * than deleted so the next caller is not handed an inverted contract. */
+bool phy_read_reg(uint32_t addr, uint32_t *dst) { return __READ(addr, dst) == 0U; }
+
+bool phy_write_reg(uint32_t addr, uint32_t data) { return WRITE(addr, data) == 0U; }
