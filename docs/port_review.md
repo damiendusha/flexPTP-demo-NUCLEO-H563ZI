@@ -137,6 +137,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F63 | lwIP DHCP `-Wstringop-overflow` in optimised builds | **Documented** | not reachable here; third-party, unpatched |
 | F64 | ST's OpenOCD will not build as the plan specified — `-Werror` and a mis-named prerequisite | **RESOLVED** | both corrected in `build.sh`, cold run verified |
 | F65 | `.vscode/launch.json` used `$_CHIPNAME.cpu0`, which does not exist on H5 | **RESOLVED** | FreeRTOS thread awareness was silently broken |
+| F66 | embfmt misprints `%e` below ~5e-8 and corrupts any rounding carry in `%f` | **RESOLVED** | found by the Stage 20 CLI sweep; fixed and verified on hardware |
 | F58 | `eth_drv_lwip.c` RX copy never advances the source pointer across a chained pbuf | **RESOLVED** | proven by shrinking `PBUF_POOL_BUFSIZE`: DHCP failed entirely, then worked |
 | F43 | `PTP_ACCURACY_LIMIT_NS` (100 ns) is the implicit LOCKED criterion | Minor | plan Stage 20 |
 | F44 | `CMakePresets.json` requires Ninja; not documented as a prerequisite | Minor | plan Stage 19 |
@@ -1076,7 +1077,7 @@ The mean path delay would have exposed F42 far sooner. `LEN_LONG` already reads
 why that is worse than it sounds. Now prints `nan` / `inf` / `-inf`.
 
 Recorded in
-[`patches/embfmt/0001-ll-length-modifier-and-non-finite-doubles.patch`](../patches/embfmt/0001-ll-length-modifier-and-non-finite-doubles.patch).
+[`patches/embfmt/0001-formatting-fixes.patch`](../patches/embfmt/0001-formatting-fixes.patch).
 Both are worth reporting upstream: they are target-independent.
 
 ### F61 — `ETHHW_ProcessRx()` re-delivers frames already queued *(RESOLVED)*
@@ -1143,6 +1144,60 @@ With the fix, and the counters still in place: 201 servo samples over five minut
 duplicate corrections** by the F59 signature test, 200 of 201 applying a correction. Rebuilt
 without instrumentation: 111 of 111 correcting, zero duplicates, offset signed mean +16 ns with
 a magnitude of 28 µs.
+
+### F66 — embfmt misreports small `%e` values and any rounding carry *(RESOLVED)*
+
+Found by actually exercising every CLI command for Stage 20, which is the point of that
+verification item.
+
+`ptp servo st` reported `sigma_theta^2 = 5.100000e-8`. The default is **`1E-16`**. The other
+two were wrong in the same direction, and the arithmetic identifies the cause exactly:
+
+| Variable | True value | `+ 0.51 × 10⁻⁷` | Reported |
+|---|---|---|---|
+| `sigma_theta^2` | 1e-16 | 5.100000e-8 | `5.100000e-8` |
+| `sigma_gamma^2` | 1e-12 | 5.100100e-8 | `5.100100e-8` |
+| `sigma_theta_m^2` | 5e-11 | 5.105000e-8 | `5.105000e-8` |
+
+`pfn_double()` added its rounding constant — `0.51 × 10^-(precision+1)`, i.e. `0.51e-7` at the
+default precision — **before** normalising the exponent. The constant is sized for the
+fixed-point form, so against an unnormalised value any magnitude below it is simply swallowed.
+Zero printed as `5.100000e-8` as well.
+
+Fixed by normalising first and rounding second, with a guard for zero (which never enters
+`[1,10)`, so the normalisation loop would not terminate).
+
+#### And a second bug underneath it
+
+Checking the fix against values that straddle a rounding carry exposed an unrelated defect in
+the shared fraction code:
+
+```c
+uint32_t additional_integer = frac_part / power(10, fmt->precision);
+frac_part -= additional_integer * 10;      /* should be * power(10, precision) */
+```
+
+When rounding carried into a new integer digit, only `10` was removed from the fraction
+instead of `10^precision`, leaving the remainder intact:
+
+| Input | Before | After | Correct |
+|---|---|---|---|
+| `9.9999999` | `10.999990` | `10.000000` | `10.000000` |
+| `1.9999999` | `2.999990` | `2.000000` | `2.000000` |
+| `99.9999999` | `100.999990` | `100.000000` | `100.000000` |
+
+**This one affects `%f`, not just `%e`** — the code is shared. It is latent in this project
+rather than harmless: `corr_ppb` is printed with `% 8.4f`, so a correction of 9.99999 ppb
+would have printed as `10.9990`.
+
+#### Verified
+
+On the target after the fix, the three servo commands report `1.000000e-16`, `1.000000e-12`
+and `5.000000e-11` — matching `kalman_filter.c`'s defaults exactly.
+
+One residual is left alone and documented in `patches/embfmt/README.md`: `%e` renders a
+mantissa that rounds up to ten as `10.000000e+0` rather than `1.000000e+1`, and the exponent
+is not zero-padded. Both are cosmetic and the value is correct.
 
 ### F65 — the debugger's FreeRTOS awareness was broken *(RESOLVED)*
 

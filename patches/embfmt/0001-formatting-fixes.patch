@@ -1,0 +1,94 @@
+diff --git a/embformat.c b/embformat.c
+index c9c6582..ea3e944 100644
+--- a/embformat.c
++++ b/embformat.c
+@@ -6,6 +6,7 @@
+ #include <stdbool.h>
+ #include <stddef.h>
+ #include <stdint.h>
++#include <float.h>
+ #include <sys/_types.h>
+ 
+ #define MAX(x, y) (((x) > (y)) ? (x) : (y))
+@@ -274,25 +275,47 @@ static int pfn_integer(va_list *va, FmtWord *fmt, char *outbuf, size_t free_spac
+ static int pfn_double(va_list *va, FmtWord *fmt, char *outbuf, size_t free_space) {
+     // get passed double variable
+     double d = va_arg((*va), double);
++
++    // Print non-finite values as such. Without this they fall through the integer/fraction
++    // split below, where the undefined double-to-integer conversion yields zero, and a NaN
++    // is displayed as a perfectly plausible "0.0000".
++    if (d != d) {
++        return string_copy(outbuf, "nan", free_space);
++    }
++    if (d > DBL_MAX || d < -DBL_MAX) {
++        return string_copy(outbuf, (d > 0) ? "inf" : "-inf", free_space);
++    }
++
+     bool negative = d < 0;
+     if (negative) {
+         d *= -1;
+     }
+ 
++    // Normalize FIRST, then round. The other order adds a rounding constant sized for the
++    // fixed-point form -- 0.51e-7 at the default precision -- to a value that has not been
++    // scaled yet, so anything smaller than that constant is swallowed by it and prints as the
++    // constant. 1e-16 came out as "5.100000e-8", which is 0.51e-7 and nothing else.
++    int exponent = 0;
++    if (fmt->type == DOUBLE_EXPONENTIAL) {
++        if (d != 0.0) { // a zero mantissa never enters [1,10): the loop would not terminate
++            double q = d < 1.0 ? 10.0 : 0.1; // quotient
++            int d_exp = d < 1.0 ? -1 : 1;    // shift per iteration in exponent
++            while (!(d >= 1.0 && d < 10.0)) {
++                d *= q;
++                exponent += d_exp;
++            }
++        }
++    }
++
+     // round to requested precision if trucation is not instructed
+     if (fmt->type != DOUBLE_TRUNCATE) {
+         double r = 0.51 * powerf(10, -(fmt->precision + 1));
+         d += r;
+-    }
+ 
+-    // normalize if exponential form is required
+-    int exponent = 0;
+-    if (fmt->type == DOUBLE_EXPONENTIAL) {
+-        double q = d < 1.0 ? 10.0 : 0.1; // quotient
+-        int d_exp = d < 1.0 ? -1 : 1;    // shift per iteration in exponent
+-        while (!(d >= 1.0 && d < 10.0)) {
+-            d *= q;
+-            exponent += d_exp;
++        // rounding can carry the mantissa out of [1,10), e.g. 9.9999999 -> 10.00000005
++        if (fmt->type == DOUBLE_EXPONENTIAL && d >= 10.0) {
++            d *= 0.1;
++            exponent++;
+         }
+     }
+ 
+@@ -311,9 +334,12 @@ static int pfn_double(va_list *va, FmtWord *fmt, char *outbuf, size_t free_space
+     double frac_extended = d_frac * powerf(10, fmt->precision + 1);
+     uint64_t frac_part = round_to_base((uint64_t)frac_extended, 10) / 10;
+ 
+-    // if rounding results a new integer digit
++    // If rounding carried into a new integer digit, remove that digit's worth from the
++    // fraction -- which is 10^precision, not 10. Subtracting 10 left the fraction at
++    // (10^precision - 10): 9.9999999 printed as "10.999990" instead of "10.000000", and
++    // 1.9999999 as "2.999990". Affects %f as much as %e, since this code is shared.
+     uint32_t additional_integer = frac_part / power(10, fmt->precision);
+-    frac_part -= additional_integer * 10;
++    frac_part -= additional_integer * power(10, fmt->precision);
+     int_part += additional_integer;
+ 
+     // print integer part
+@@ -574,6 +600,9 @@ static int process_format_word(char *str, FmtWord *word, int *rewind) {
+     if (*str == 'l') {
+         word->length = LEN_LONG;
+         str++;
++        if (*str == 'l') { // "ll": already handled as 64-bit by LEN_LONG
++            str++;
++        }
+     }
+ 
+     // 5.: get type from the designator

@@ -664,6 +664,9 @@ previously provisioned with TZEN=1 will not boot this image.
   for what is and is not demonstrated, and what would close each**
 - Confirm the PTP clock behaves as derived in `ptp_clock.md` — check `ptp addend` reports
   ~3435973836 and that the servo converges rather than railing
+  — ✅ **done.** `ptp addend` reads **3435973836** before the servo tunes it, matching the
+  `2³²/1.25` derivation exactly; under lock it tracks a few tens of thousands of counts either
+  side (≈±10 ppm). The servo converges and holds rather than railing
 - Document results in the design doc
 
 **Commit**: `"Stage 20: Hardware verification results"`
@@ -715,7 +718,7 @@ into cleanup, bugs that are known but unfixed, and the five unfinished stages.
 | `ETHHW_PrintRingBufStatus` defined but not used | `Drivers/EthDrv/mac_drv.c` | kept as a diagnostic, marked `__attribute__((unused))` |
 
 The build is now clean — zero errors, zero warnings. `patches/flexptp/0002-servo-nan-latch-fix.patch`
-and `patches/embfmt/0001-ll-length-modifier-and-non-finite-doubles.patch` remain applied:
+and `patches/embfmt/0001-formatting-fixes.patch` remain applied:
 those are permanent fixes, not instrumentation.
 
 ### 2. Known bugs — **all clear**
@@ -766,6 +769,11 @@ done but has never been signed off against the [Verification Plan](#verification
 4. **1PPS Output**: Measure PPS pulse on oscilloscope — verify frequency and jitter
    — **blocked: no oscilloscope, see [Blocked on equipment](#blocked-on-equipment)**
 5. **CLI**: All flexPTP CLI commands respond correctly (`?`, `flexptp`, profile switching)
+   — ✅ **done.** All 23 commands swept in their query form: none returned *"Unknown command
+   or bad parameter"*, and every one produced a plausible response. The sweep earned its
+   keep — it found [F66](port_review.md#f66--embfmt-misreports-small-e-values-and-any-rounding-carry-resolved),
+   where `ptp servo st|sg|stm` reported `~5.1e-8` for variances of `1e-16`, `1e-12` and
+   `5e-11`. Fixed; they now read correctly
 
 ### Regression
 - Original H743 project is a separate repository — unaffected
