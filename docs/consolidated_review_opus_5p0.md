@@ -80,9 +80,9 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 | | Count |
 |---|---|
 | Total distinct actions | **80** |
-| Open (☐) | 46 |
+| Open (☐) | 45 |
 | Partial (◐) | 1 |
-| Already done (✅) | 29 |
+| Already done (✅) | 30 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -142,7 +142,7 @@ defects.
 | ✅ | — | — | **P3.2** | ACT-26 (U4) | item 4 | **3/3** | Run the LED-on-PG8 test to distinguish "configured" from "working", and 1 Hz from 2 Hz. The only PTP hardware path with no waveform evidence — **DONE — and it did not need an oscilloscope. PG8 sampled over SWD at ~1 kHz: `ptp pps 1` → **1.000 Hz** (8 periods within 1 ms of nominal, ~47% duty), `ptp pps 2` → 2.001 Hz, `ptp pps 4` → 3.983 Hz, `ptp pps 0` → no transitions. The pulse exists and its frequency is correct. **Jitter** remains unmeasured and does need an instrument** |
 | ✅ | — | — | **P3.3** | — | — | 1/3 O | Zero `evt.data.rx` at the top of the `ETHHW_ProcessRx()` loop — `ts_s`/`ts_ns` are read unconditionally by `rx_thread` but only written when a timestamp was captured — **DONE: `memset(&evt, 0, sizeof(evt))` at the top of the dispatch loop. `ts_s`/`ts_ns` are assigned only when a context descriptor carried a timestamp but are copied into the pbuf unconditionally, so an untimestamped frame previously handed flexPTP whatever was on the stack. Verified: PTP starts, addend correct, 200 pings at 1400 B 0% loss** |
 | ✅ | — | — | **P3.4** | — | — | 1/3 O | Add a `_Static_assert` on `offsetof` for the `ETHHW_State` / RX-ring adjacency that `ETHHW_GetState()` depends on — **DONE: layout named as `ETHStateAndDescLayout` and asserted with `_Static_assert(offsetof(..., DMARxDscrTab) == sizeof(ETHHW_State))`. Proved the assertion bites by inserting a `uint32_t` between the members — build fails with the explanatory message rather than producing a driver that reads its state from inside a descriptor** |
-| ☐ | — | — | **P3.5** | — | — | 1/3 O | Reconcile `RX_MSG_Q_LEN` (32), `PBUF_POOL_SIZE` (8) and `ETH_RX_DESC_CNT` (24); record the reasoning |
+| ✅ | — | — | **P3.5** | — | — | 1/3 O | Reconcile `RX_MSG_Q_LEN` (32), `PBUF_POOL_SIZE` (8) and `ETH_RX_DESC_CNT` (24); record the reasoning — **DONE: `RX_MSG_Q_LEN` tied to `ETH_RX_DESC_CNT` (one event per descriptor is the hard ceiling — the old 32 was unreachable in its top third). `PBUF_POOL_SIZE` deliberately left at 8: it is the real throughput limit, and 300 pings of 1400 B at 100 / 250 / 500 pps all gave 0% loss. Relationship and the measurement recorded in `architecture.md`** |
 | ☐ | — | — | **P3.6** | — | — | 1/3 O | Add `LOCK_TCPIP_CORE()` around the lwIP accesses in `check_dhcp_state()`, which runs on `Tmr Svc` |
 | ☐ | — | — | **P3.7** | — | — | 1/3 O | Record which PTP message types `SNAPTYPSEL = 0b01` selects, and confirm it suits both e2e and p2p |
 | ☐ | — | — | **P3.8** | ACT-07 (B10, I3) | — | **⚠ SEVERITY** | Reorder `stm32h563zitx_FLASH.ld` to place `.FreeRTOS_sec` before `._user_heap_stack`. Verified: `ucHeap` at `0x200190d0` sits inside the `_sbrk` range (`_end` `0x200186d0` → ceiling `0x2003F800`) |

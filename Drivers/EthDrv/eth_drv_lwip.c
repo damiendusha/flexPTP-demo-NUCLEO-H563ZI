@@ -121,7 +121,18 @@ static void phy_thread(void *arg) {
 /* Forward declarations. */
 static void ethernetif_input(struct netif *netif);
 
-#define RX_MSG_Q_LEN (32)
+/* One event per RX descriptor is the hard ceiling: ETHHW_ProcessRx() marks a descriptor
+ * inFlight before queueing it and does not revisit it until rx_thread restores it, so no
+ * descriptor can contribute two entries. The old value of 32 was above that ceiling and
+ * therefore unreachable in its top third; tying it to the ring keeps the two in step if
+ * ETH_RX_DESC_CNT is ever changed.
+ *
+ * Note this is not the throughput limit. That is PBUF_POOL_SIZE (8 in Inc/lwipopts.h): a
+ * frame is dropped if rx_thread cannot allocate a pbuf for it, which happens before the
+ * queue could ever fill. Measured adequate -- 300 pings of 1400 bytes at 100, 250 and 500
+ * packets/s all returned 0% loss -- so the pool is deliberately left alone. If that ever
+ * becomes the constraint, raise PBUF_POOL_SIZE, not this. */
+#define RX_MSG_Q_LEN (ETH_RX_DESC_CNT)
 static void rx_thread(void *arg);
 
 /**

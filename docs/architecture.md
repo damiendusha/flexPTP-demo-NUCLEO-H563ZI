@@ -257,6 +257,27 @@ Notes:
 - **Heap**: FreeRTOS `heap_4`, 30 KB, in `.FreeRTOSHeapSection` in SRAM1. Thread stacks are
   allocated from it, so the nine threads above account for roughly 15 KB.
 
+### RX depths, and which one is the limit
+
+Three numbers govern the receive path, and they are not interchangeable:
+
+| Constant | Value | Role |
+|---|---|---|
+| `ETH_RX_DESC_CNT` | 24 | descriptors the MAC's DMA can fill before it stalls |
+| `RX_MSG_Q_LEN` | = `ETH_RX_DESC_CNT` | ISR → `rx_thread` queue depth |
+| `PBUF_POOL_SIZE` | 8 | frames lwIP can hold at once |
+
+`RX_MSG_Q_LEN` is tied to the ring rather than set independently: `ETHHW_ProcessRx()` marks a
+descriptor `inFlight` before queueing it and does not revisit it until `rx_thread` restores
+it, so one descriptor can never contribute two entries. It was previously 32 — above that
+ceiling, so its top third was unreachable.
+
+**The throughput limit is `PBUF_POOL_SIZE`, not the queue.** A frame is dropped when
+`rx_thread` cannot allocate a pbuf, which happens well before the queue could fill. Measured
+adequate: 300 pings of 1400 bytes at 100, 250 and 500 packets/s all returned 0% loss, so the
+pool is deliberately left at 8. If receive drops ever appear under load, that is the number
+to raise.
+
 ---
 
 ## Interrupts
