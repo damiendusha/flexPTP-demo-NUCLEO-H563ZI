@@ -63,9 +63,21 @@ static uint32_t __READ(uint16_t r, uint32_t *v) {
 static int phy_sweep_addresses(uint32_t addr0) {
     for (uint32_t addr = addr0; addr <= EPHY_MDIO_MAX_ADDR; addr++) {
         uint32_t regVal = 0;
-        ETHHW_ReadPHYRegister(
-            phyEth, addr, EPHY_BCR,
-            &regVal); // read the BCR, since it certainly will contain zero elements
+
+        /* A failed read does not write *pRegValue, so regVal keeps whatever it was
+         * initialised to and says nothing about whether a PHY answered. Ignoring the return
+         * code therefore made a dead, unpowered or unclocked MDIO bus "detect" a PHY at the
+         * very first address tried -- after which the ID registers read back as zero, no
+         * handler matched, and the link-status callback was left NULL (P1.3), while
+         * phy_soft_reset() span on an uninitialised value.
+         *
+         * Since F54 bounded the MDIO waits, a timeout returns rather than hanging, which
+         * makes this the expected path for a wiring or power fault rather than a remote one. */
+        if (ETHHW_ReadPHYRegister(phyEth, addr, EPHY_BCR, &regVal) != 0) {
+            continue; // no answer at this address
+        }
+
+        // an unpopulated address leaves the MDIO line floating high
         if (regVal != 0xFFFF) {
             return addr;
         }
