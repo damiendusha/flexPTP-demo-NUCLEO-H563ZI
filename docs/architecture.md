@@ -377,7 +377,8 @@ Two consequences worth internalising:
 ## The PTP Timestamp Path
 
 This is the part of the system where the layering is least obvious, and the part most
-likely to break silently (see F42, F48).
+likely to break silently — F48 (a signature drift that failed at compile time) and F42 (which
+took days precisely because the fault turned out to be outside the board entirely).
 
 **Receive:**
 
@@ -416,11 +417,14 @@ flexPTP sets pbuf->tx_cb = ptp_transmit_cb and pbuf->tag = uid   (nsd_lwip.c)
 `nsd_lwip.c`, and nothing enforces it. It has already drifted once (F48). Re-check it on
 any flexPTP bump.
 
-**Both halves of this path are verified working on hardware at the driver level.** Receive
-timestamps arrive via the context descriptor (T1/T2 carry real values), and transmit
-timestamps were instrumented at 698-for-698 through `ETHHW_ProcessTx()` into the callback.
-What remains broken (F42) is downstream of this diagram, inside flexPTP's message buffer:
-the timestamp is delivered but never matched back to the Delay_Req that requested it.
+**Both halves of this path are verified working on hardware.** Receive timestamps arrive via
+the context descriptor (T1/T2 carry real values), and transmit timestamps were instrumented
+at 698-for-698 through `ETHHW_ProcessTx()` into the callback.
+
+Nothing in this path is outstanding. F42 — which this section previously described as an
+unresolved defect in flexPTP's message buffer — was **resolved**: the site switch was
+discarding `Delay_Resp` frames, and no part of this port was ever at fault. See
+[port_review.md](port_review.md).
 
 Because timestamps are captured **in hardware**, PTP accuracy does not depend on thread
 scheduling or interrupt latency. Latency affects how quickly the servo *reacts*, not how
