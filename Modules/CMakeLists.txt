@@ -65,5 +65,16 @@ set(FLEXPTP_CPU_PARAMS ${cpu_PARAMS})
 # follows whatever type the target uses for int64_t. See finding F47.
 set(FLEXPTP_COMPILE_DEFS ${symbols_c_SYMB} __PRI64_PREFIX=__INT64)
 add_subdirectory(flexptp)
+
+# ptp_port_stm32h563.c is ours, but it is compiled into flexPTP's static library, so it
+# inherited that library's flags and was the only piece of first-party code building without
+# -Wall -Wextra. Warn on it explicitly. It is clean today; this keeps it that way.
+#
+# TARGET_DIRECTORY is required: source-file properties are scoped to the directory that
+# defines the target, and flexPTP's library is defined in Modules/flexptp, not here. Setting
+# it from this scope silently does nothing -- which is exactly how the gap went unnoticed.
+set_source_files_properties(${FLEXPTP_HWPORT_SRC}
+    TARGET_DIRECTORY flexptp
+    PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Wno-unused-parameter")
 target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC ${FLEXPTP_INCLUDE_EXPORT})
 target_link_libraries(${CMAKE_PROJECT_NAME} flexptp)

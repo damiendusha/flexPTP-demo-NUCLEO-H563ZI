@@ -133,6 +133,8 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F59 | **One duplicated Sync cycle latches the Kalman servo into NaN for ever** | **RESOLVED** | root-caused, fixed, verified on hardware |
 | F60 | embfmt cannot parse `%ll`, and renders NaN as a plausible `0.0000` | **RESOLVED** | reproduced on the host, fixed |
 | F61 | **`ETHHW_ProcessRx()` re-delivers frames already queued with the receive thread** | **RESOLVED** | measured: 57% of frames duplicated; 0 after the fix |
+| F62 | **Release build HardFaulted at the UID region** — F51's fix held only at `-O0` | **RESOLVED** | `volatile` added; verified on hardware |
+| F63 | lwIP DHCP `-Wstringop-overflow` in optimised builds | **Documented** | not reachable here; third-party, unpatched |
 | F58 | `eth_drv_lwip.c` RX copy never advances the source pointer across a chained pbuf | **RESOLVED** | proven by shrinking `PBUF_POOL_BUFSIZE`: DHCP failed entirely, then worked |
 | F43 | `PTP_ACCURACY_LIMIT_NS` (100 ns) is the implicit LOCKED criterion | Minor | plan Stage 20 |
 | F44 | `CMakePresets.json` requires Ninja; not documented as a prerequisite | Minor | plan Stage 19 |
@@ -142,7 +144,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F48 | `tx_cb` signature drift between pinned flexPTP and this project's `lwipopts.h` | Blocking | plan Stage 14 (fixed) |
 | F49 | `task_ptp_is_operating()` renamed to `is_flexPTP_operating()` upstream | Blocking | plan Stage 15 (fixed) |
 | F50 | ARMv8-M port names exception handlers directly; the H7-era remaps break the tick | Blocking | plan Stage 15 (fixed) |
-| F51 | H563 UID region rejects **byte** reads; `ETH_MAC_ADDR*` byte-indexed it → HardFault | Critical | fixed, verified on hardware |
+| F51 | H563 UID region rejects **byte** reads; `ETH_MAC_ADDR*` byte-indexed it → HardFault | Critical | fixed — but the first fix held only at `-O0`, see F62 |
 | F52 | `ptphw_init()` set the PTP addend before the subsecond increment → TSADDREG never clears | Critical | fixed, verified on hardware |
 | F53 | PTP timestamp counter is not clocked — PLL1Q output never enabled | **RESOLVED** | fixed, verified on hardware |
 | F54 | Six unbounded hardware waits; any clock, supply or PHY fault hangs the caller silently | **RESOLVED** | all bounded and reporting; the 8× addend loop was superstition |
@@ -1139,6 +1141,77 @@ With the fix, and the counters still in place: 201 servo samples over five minut
 duplicate corrections** by the F59 signature test, 200 of 201 applying a correction. Rebuilt
 without instrumentation: 111 of 111 correcting, zero duplicates, offset signed mean +16 ns with
 a magnitude of 28 µs.
+
+### F62 — the release build HardFaulted; F51's fix was optimisation-dependent *(RESOLVED)*
+
+Stage 16 asked for a clean build. Building the **release** preset for the first time revealed
+that it had never worked: no serial output, no DHCP, no ping. The debug build on the same
+tree was fine.
+
+Halted over SWD:
+
+```
+xpsr 0x21000003   exception 3 = HardFault
+CFSR 0x00008200   BFARVALID | PRECISERR
+BFAR 0x08FFF800   the UID region
+HFSR 0x40000000   FORCED
+pc   0x0800235c   Default_Handler self-loop
+```
+
+The same address as F51. The F51 fix reads the UID through a `const uint32_t *` and extracts
+bytes by shifting, which is correct C — but the pointee is ordinary constant memory as far as
+GCC is concerned, so **nothing forbids load narrowing**. At `-Og` it converted the word load
+and shift straight back into byte loads. Visible in the disassembly of `low_level_init`:
+
+```
+ldrb.w  r1, [r3, #2049]   @ 0x801     base r3 = 0x08FFF000
+ldrb.w  r1, [r3, #2050]   @ 0x802
+ldrb.w  r1, [r3, #2051]   @ 0x803
+```
+
+Byte reads at 0x08FFF800–805 — precisely the access F51 established as faulting. The debug
+build worked only because `-O0` optimises nothing.
+
+**Fix:** `volatile const uint32_t *`. `volatile` forbids the compiler from changing the width
+or number of accesses; the shifting extraction is then honoured as written. After the change
+the same function emits:
+
+```
+ldr.w   r3, [r2, #2048]   @ 0x800
+ldr.w   r3, [r2, #2052]   @ 0x804
+```
+
+Verified on hardware: the release build now boots, acquires 192.168.2.141, answers ping, and
+runs PTP — 91 of 92 samples applying a correction, zero duplicates, no timeout reports.
+
+The wider lesson is that a workaround for a hardware access-width constraint **must** be
+expressed with `volatile`. Written as ordinary C it is not a constraint at all, merely a
+suggestion the optimiser is free to ignore — and it will, at any level above `-O0`.
+
+### F63 — lwIP DHCP `-Wstringop-overflow` in optimised builds *(documented, not patched)*
+
+The release build emits four instances of:
+
+```
+dhcp.c:1454:30: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]
+  options[options_out_len++] = value;      /* dhcp_option_byte */
+  note: at offset 68 into destination object 'options' of size 68
+```
+
+inlined into `dhcp_discover` and `dhcp_reboot`. The buffer is `DHCP_OPTIONS_LEN` = 68 (lwIP's
+`DHCP_MIN_OPTIONS_LEN` default). The bound on `options_out_len` exists only inside
+`LWIP_ASSERT`, which compiles to nothing here — `LWIP_DEBUG` is not defined — so the optimiser
+has no constraint to reason from and reports the theoretical worst case.
+
+Not reachable in this configuration. `LWIP_NETIF_HOSTNAME` is 0, so neither path emits the
+variable-length hostname option; the longest message is `dhcp_reboot` at roughly 16 bytes —
+message type (3), requested IP (6), parameter request list (5–6), end marker (1) — against
+68 available.
+
+Left unpatched. It is a pinned third-party submodule, the code is not compiled with this
+project's warning flags, and patching it would mean a fourth patched submodule for a
+diagnostic. DHCP is exercised on every boot, including on the release build that exposed the
+warning.
 
 ### F58 — RX pbuf copy never advanced the source pointer *(RESOLVED)*
 

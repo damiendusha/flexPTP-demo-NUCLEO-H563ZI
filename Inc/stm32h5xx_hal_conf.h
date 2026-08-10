@@ -197,7 +197,13 @@ in voltage and temperature.*/
  * HardFault. Verified over SWD: word and half-word reads succeed, byte reads fail.
  * The H743 project indexed this pointer as (const uint8_t *), which is why the MAC address
  * bytes are now extracted from word reads in software instead. */
-#define UNIQUE_DEV_ID_BASE ((const uint32_t *)0x08FFF800)
+/* The volatile is load-bearing, not decoration. Without it the pointee is ordinary constant
+ * memory as far as GCC is concerned, and at -Og or above it narrows the word load below back
+ * into "ldrb" at the byte offset it wants -- reintroducing the very fault this works around.
+ * That is not hypothetical: the release build HardFaulted at 0x08FFF800 with byte loads
+ * visible in the disassembly, while the debug build worked purely because -O0 optimises
+ * nothing. volatile forbids the compiler from changing the width of the access. */
+#define UNIQUE_DEV_ID_BASE ((volatile const uint32_t *)0x08FFF800)
 
 /* Extract byte n of the 96-bit UID using 32-bit accesses only. */
 #define UNIQUE_DEV_ID_BYTE(n) \

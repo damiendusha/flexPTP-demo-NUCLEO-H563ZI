@@ -25,7 +25,7 @@
 - [x] **Stage 13** — `flexptp_options.h` (PTP `pll1_q_ck` 250 MHz / 5 ns)
 - [x] **Stage 14** — flexPTP H563 hardware port 🆕
 - [x] **Stage 15** — Global HAL header sweep
-- [ ] **Stage 16** — Build & warning cleanup
+- [x] **Stage 16** — Build & warning cleanup
 - [ ] **Stage 17** — Complete `docs/design_doc.md`
 - [ ] **Stage 18** — Provision ST's OpenOCD via `build.sh` 🆕
 - [ ] **Stage 19** — Project metadata & tooling (README, build.sh, VS Code) 🆕
@@ -448,8 +448,36 @@ Finish with `grep -rn "stm32h7\|STM32H7" --include='*.c' --include='*.h'` over
 
 ---
 
-### Stage 16 — Build & warning cleanup
+### Stage 16 — Build & warning cleanup ✅
 
+**Closed.** The audit found two things the "it builds clean" impression was hiding.
+
+**Warning coverage was incomplete.** `-Wall -Wextra` are set on the main executable, so the
+static libraries (HAL, lwIP, flexPTP, embfmt) never see them — correct, they are third party.
+But `Src/flexptp_port/ptp_port_stm32h563.c` is **ours** and is compiled into flexPTP's
+library, so it was the one piece of first-party code building unwarned. Now warned explicitly
+via `set_source_files_properties(... TARGET_DIRECTORY flexptp ...)`. It was already clean;
+the point is that it stays that way. Note the `TARGET_DIRECTORY`: source-file properties are
+scoped to the directory defining the target, and setting it from `Modules/CMakeLists.txt`
+without it silently does nothing — which is how the gap survived the first attempt.
+
+**The release preset had never been built, and did not work.** It HardFaulted at the UID
+region: F51's byte-access workaround was written without `volatile`, so at `-Og` GCC narrowed
+the word load straight back into `ldrb`. See [F62](#f62--the-release-build-hardfaulted-f51s-fix-was-optimisation-dependent-resolved).
+Fixed and verified on hardware.
+
+Final state:
+
+| Preset | Warnings | FLASH | SRAM1 | SRAM3 | Hardware |
+|---|---|---|---|---|---|
+| `debug` | **0** | 222 904 B (10.6%) | 133 328 B (50.9%) | 74 888 B (22.9%) | DHCP, ping, PTP locking |
+| `release` | 4, all lwIP [F63](#f63--lwip-dhcp--wstringop-overflow-in-optimised-builds-documented-not-patched) | 176 040 B (8.4%) | 130 KB (50.8%) | 74 888 B (22.9%) | DHCP, ping, PTP locking |
+
+SRAM2 is unused (64 KB free), and no region is above 51%. The remaining four warnings are one
+upstream lwIP diagnostic, in a pinned submodule not compiled with this project's warning
+flags, proven unreachable in this configuration.
+
+- Original checklist:
 - `cmake --preset debug && cmake --build build/debug`
 - Fix all remaining compilation errors and warnings
 - Target: clean build with `-Wall -Wextra`
