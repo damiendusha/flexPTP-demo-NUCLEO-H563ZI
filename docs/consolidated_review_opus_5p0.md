@@ -81,8 +81,8 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 |---|---|
 | Total distinct actions | **81** |
 | Open (☐) | 29 |
-| Partial (◐) | 1 |
-| Already done (✅) | 47 |
+| Partial (◐) | 0 |
+| Already done (✅) | 48 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -166,7 +166,7 @@ defects.
 | ✅ | — | — | **P4.11** | — | — | 1/3 O | Correct the thread name in `architecture.md:220` to match `TCPIP_THREAD_NAME` (`"TCP/IP"`) — **DONE: thread table now shows `TCP/IP`, the actual `TCPIP_THREAD_NAME`, with a note that these documents call it `tcpip_thread` after its lwIP source symbol** |
 | ✅ | — | — | **P4.12** | — | — | 1/3 O | Update the FreeRTOS version in `FreeRTOSConfig.h`'s header comment to V11.3.0 — **DONE: header comment now reads V11.3.0, matching the `FetchContent` pin, with a pointer to where the pin lives** |
 | ✅ | — | — | **P4.13** | — | — | 1/3 O | Remove the dead relative `Inc` include path from `Middlewares/CMakeLists.txt:14` — **DONE: the bare `Inc` entry (resolving to the non-existent `Middlewares/Inc`) removed, with a comment naming F32 so it is not re-added** |
-| ◐ | **Partial ◐** | — | **P4.14** | — | item 5 | 1/3 P | Add an `#error` guard on `HAL_DCACHE_MODULE_ENABLED` in `stm32h5xx_hal_conf.h`. **The comment half is already done** — the linker script and `design_doc.md` both carry the warning; the compile-time guard is the new part |
+| ✅ | **Partial ◐** | — | **P4.14** | — | item 5 | 1/3 P | Add an `#error` guard on `HAL_DCACHE_MODULE_ENABLED` in `stm32h5xx_hal_conf.h`. **The comment half is already done** — the linker script and `design_doc.md` both carry the warning; the compile-time guard is the new part — **DONE (was ◐): `#error` added on `HAL_DCACHE_MODULE_ENABLED` in the HAL config, naming the SRAM3 region, both remedies and where to read. Proved it bites by uncommenting the module define — the build stops with the message. The comment half already existed in the linker script and design_doc; this is the half that reaches someone flipping a HAL module on** |
 
 ### Priority 5 — housekeeping, tooling and upstream
 

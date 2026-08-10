@@ -216,6 +216,26 @@ in voltage and temperature.*/
 #define ETH_MAC_ADDR4    UNIQUE_DEV_ID_BYTE(4)
 #define ETH_MAC_ADDR5    UNIQUE_DEV_ID_BYTE(5)
 
+/* ####################################### Ethernet DMA / DCACHE coherency ########################################## */
+/*
+ * The Ethernet DMA descriptors and buffers live in SRAM3 (.EthDrv_sec) and are shared between
+ * the MAC's DMA and the CPU with NO cache maintenance anywhere in this project. That is
+ * correct only while DCACHE is off, which it is: it resets disabled and HAL_Init() does not
+ * enable it.
+ *
+ * Enabling DCACHE without addressing that turns every descriptor write-back and every
+ * received frame into a coherency question, and the failure mode is silent -- stale
+ * descriptors, frames that appear corrupted, timestamps that do not match their packets. On
+ * the evidence of this port, that would be attributed to the driver, the PHY or the network
+ * long before anyone suspected the cache.
+ *
+ * A comment in the linker script and a section in docs/design_doc.md already say so, and
+ * neither is read by someone flipping a HAL module on. This is.
+ */
+#if defined(HAL_DCACHE_MODULE_ENABLED)
+#error "Enabling DCACHE requires the SRAM3 Ethernet region (.EthDrv_sec) to be made non-cacheable via the MPU, or explicit clean/invalidate around every descriptor and buffer access. See docs/design_doc.md, 'Caches and DMA Coherency'. Delete this #error once that is done."
+#endif
+
 /* ############################################ Assert Selection #################################################### */
 /**
   * @brief Uncomment the line below to expanse the "assert_param" macro in the
