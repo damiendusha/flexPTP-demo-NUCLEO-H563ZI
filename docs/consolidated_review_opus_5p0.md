@@ -1,0 +1,317 @@
+# Consolidated Review — flexPTP-demo-NUCLEO-H563ZI
+
+A single reconciled action register merging every finding from the three independent reviews
+of the port at `df3ee3d`.
+
+**Sources**
+
+| Review | Document | Findings | Action IDs |
+|---|---|---|---|
+| Opus 5.0 | [`final_review_opus_5p0.md`](final_review_opus_5p0.md) | 68 (A1–A8, B1–B22, D1–D12, U1–U7, S1–S19) | `P1.1`–`P5.18` (56) |
+| Gemini 3.6 Flash | [`final_review_gemini_flash_3p6.md`](final_review_gemini_flash_3p6.md) | 36 (A1–A5, D1–D8, B1–B13, U1–U4, I1–I6) | `ACT-01`–`ACT-27` |
+| Gemini 3.1 Pro | [`final_review_gemini_pro_3p1.md`](final_review_gemini_pro_3p1.md) | 11 (Findings 1–11) | 6 unnumbered items |
+
+**Adjudication.** Where the reviews disagree, the resolution below is the one recorded in
+[`final_review_gemini_flash_3p6_review_opus_5p0.md`](final_review_gemini_flash_3p6_review_opus_5p0.md)
+and [`final_review_gemini_pro_3p1_review_opus_5p0.md`](final_review_gemini_pro_3p1_review_opus_5p0.md),
+each of which verified the disputed claims against the tree, the linker map, the CMSIS-RTOS2
+shim and ST's HAL. Every disputed row is marked and explained in
+[Disputes](#disputes--where-consensus-was-not-reached).
+
+---
+
+## Table of Contents
+
+- [Legend](#legend)
+- [Reconciliation summary](#reconciliation-summary)
+- [Action register](#action-register)
+- [Disputes — where consensus was not reached](#disputes--where-consensus-was-not-reached)
+- [Coverage analysis](#coverage-analysis)
+- [Recommended execution order](#recommended-execution-order)
+
+---
+
+## Legend
+
+**Status**
+
+| Symbol | Meaning |
+|---|---|
+| ☐ | Open — not started |
+| ◐ | Partial — some of the action already exists in the tree |
+| ✅ | Done — already complete; no work remains |
+| ⊘ | Closed without action — rejected or deferred, reason given |
+
+**Opus 5.0 ID** is the canonical identifier for the action, using the numbering scheme from
+[`final_review_opus_5p0.md`](final_review_opus_5p0.md). Its 56 original IDs (`P1.1`–`P5.18`)
+are retained unchanged; 18 new numbers were allocated in the same namespace for actions
+that originated in the other two reviews, and `X`-prefixed IDs mark items closed without
+action. A row with an `ACT-` or Pro entry but a newly minted `P`-number is therefore a
+finding Opus 5.0 did **not** make — the ID is a register key, not a claim of authorship.
+
+**Consensus**
+
+| Value | Meaning |
+|---|---|
+| `3/3` | All three reviews raised it |
+| `2/3 O+F` | Opus 5.0 + Flash 3.6 |
+| `2/3 O+P` | Opus 5.0 + Pro 3.1 |
+| `1/3 O` / `1/3 F` / `1/3 P` | Single-review finding, uncontested |
+| **`⚠ DISPUTED`** | Reviews disagree on whether to act at all |
+| **`⚠ SCOPE`** | Agreement on the action, disagreement on its extent |
+| **`⚠ SEVERITY`** | Agreement on the action, disagreement on its priority |
+| **`⚠ METHOD`** | Agreement on the goal, disagreement on the remedy |
+
+A single-review entry is *not* a dispute — the other reviews did not examine that area. Only
+`⚠` rows represent actual disagreement.
+
+---
+
+## Reconciliation summary
+
+| | Count |
+|---|---|
+| Total distinct actions | **79** |
+| Open (☐) | 73 |
+| Partial (◐) | 1 |
+| Already done (✅) | 1 |
+| Closed without action (⊘) | 4 |
+| Raised by all three reviews | 2 |
+| Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
+| Single-review, uncontested | 60 (Opus 45, Flash 11, Pro 4) |
+| **Rows in dispute (⚠)** | **11** — 5 outright, 6 contested boundaries |
+
+**Overlap is low.** Of 79 actions, only 14 were raised by more than one review — the three
+reports are far more complementary than redundant. Flash 3.6 dominates low-level driver
+defects (5 bugs no other review found); Opus 5.0 dominates documentation fidelity (12 of 14
+documentation actions); Pro 3.1 contributes 2 novel upstream-facing actions and no new
+defects.
+
+---
+
+## Action register
+
+### Priority 1 — correctness and reproducibility
+
+| Status | Opus 5.0 ID | Flash 3.6 ID | Pro 3.1 ID | Consensus | Description |
+|---|---|---|---|---|---|
+| ☐ | **P1.1** | — | — | 1/3 O | Make `build.sh` verify and apply `patches/embfmt/` and `patches/flexptp/` after the submodule update, failing loudly if neither apply nor reverse-apply succeeds. A fresh clone currently builds **without** the F59 servo fix and the F60/F66 formatting fixes |
+| ☐ | **P1.2** | — | — | 1/3 O | Document the patch-apply prerequisite in `README.md` under "Get the sources" |
+| ☐ | **P1.3** | ACT-10 (B9) | — | 2/3 O+F | Add a NULL guard to `phy_get_link_status()`, `phy_common.c:515` — unrecognised PHY currently HardFaults within 500 ms |
+| ☐ | **P1.4** | — | — | 1/3 O | Make `phy_sweep_addresses()` honour `ETHHW_ReadPHYRegister()`'s return value; a dead MDIO bus currently "detects" a PHY at address 0. Precondition for both P1.3 and P2.12 |
+| ☐ | **P1.5** | — | — | 1/3 O | Release `modifyMtx` on the early return in `cli_remove_command()`, `cli.c:521` — a bad index permanently wedges the command database |
+| ☐ | **P1.6** | — | — | 1/3 O | Reset `pHint = NULL` when shifting entries in `cli_remove_command()`, so `tidy_format_commands()` re-derives `pHint`/`pPadding` instead of writing through pointers into the next slot's buffer. **Must land with P1.10** |
+| ☐ | **P1.7** | ACT-08 (B7, I5) | — | 2/3 O+F | Serialise `MSG()` — mutex or critical section around format + push. Single 2049-byte static shared by six threads |
+| ☐ | **P1.8** | ACT-13 (D1) | — | **⚠ SCOPE** | Correct every stale "HCLK is the PTP clock" claim: `main.c:83-90`, `design_doc.md:172,196`, `implementation_plan.md:53`, `port_review.md:1548` |
+| ☐ | **P1.9** | — | — | 1/3 O | Fix `design_doc.md:131-132`'s clock tree to `RCC_SYSCLK_DIV1` / `RCC_HCLK_DIV2` — the current text reproduces the F45 silent-miscompile trap |
+| ☐ | **P1.10** | ACT-01 (B1) | — | 1/3 F | Fix the CLI mutex self-deadlock: `cli_register_command()` holds a non-recursive `modifyMtx` (`cli.c:461`) and calls `cli_remove_command()`, which re-acquires it (`cli.c:519`). Prefer an unlocked private helper over a recursive mutex. **Must land with P1.6** |
+
+### Priority 2 — robustness
+
+| Status | Opus 5.0 ID | Flash 3.6 ID | Pro 3.1 ID | Consensus | Description |
+|---|---|---|---|---|---|
+| ☐ | **P2.1** | — | — | 1/3 O | Implement `vApplicationStackOverflowHook()` and `vApplicationMallocFailedHook()` with a polled-UART panic reporter. Both currently resolve to the shim's weak stubs, which call `configASSERT(0)` |
+| ☐ | **P2.2** | — | — | 1/3 O | Make `configASSERT` report before halting — it is currently `taskDISABLE_INTERRUPTS(); for(;;);` |
+| ☐ | **P2.3** | ACT-03 (B2) | — | 2/3 O+F | Bound the ownership wait in `ETHHW_Transmit()`, `mac_drv.c:552`. Spins on `tcpip_thread` **while holding the lwIP core lock**; no watchdog exists to recover |
+| ☐ | **P2.4** | — | — | 1/3 O | Check `HAL_RCC_OscConfig()` / `HAL_RCC_ClockConfig()` return values; define `Error_Handler()`, which is declared at `main.c:31` and defined nowhere |
+| ☐ | **P2.5** | ACT-05 (B5) | — | **⚠ SCOPE** | Fix `get_line()`'s escape parser: bound `paramIdx` against `sizeof(escParam)` **and** move the `escParam[0]` read after the write (arrow-key history currently acts on the previous keypress) |
+| ☐ | **P2.6** | ACT-06 (B6) | — | 2/3 O+F | Fix the off-by-one write in `insert_carriage_return()` — change the guard to `len < maxLen` |
+| ☐ | **P2.7** | — | — | 1/3 O | Clamp `cli_register_command()`'s token count against `MAX_TOKEN_N` (8), not `TOK_ARR_LEN` (16) |
+| ☐ | **P2.8** | — | — | 1/3 O | Raise the `rx` thread above the console threads; six of nine threads currently share priority 24 |
+| ☐ | **P2.9** | — | — | 1/3 O | Check `HAL_UART_Transmit_DMA()`'s return in `serial_io_thread()` — on error it blocks forever on a completion flag that will never be set |
+| ☐ | **P2.10** | ACT-02 (B3) | — | 1/3 F | Replace `SET_BIT` with direct assignment when clearing `ETH->DMACSR` in `ETHHW_ISR()`. Read-modify-write on a w1c register clears every pending flag, including `AIS`/`FBE`, which nothing reads. ST's own `__HAL_ETH_DMA_CLEAR_IT` uses direct assignment |
+| ☐ | **P2.11** | ACT-04 (B4) | — | 1/3 F | Fix the transmit-sequence delta in `ETHHW_ProcessTx()`, `mac_drv.c:473`, to `int16_t delta = (int16_t)(txCntr - state->txCntAcked);`. `txCntr` increments on *every* transmit, so the 16-bit wrap arrives in minutes on a busy link |
+| ☐ | **P2.12** | ACT-09 (B8) | — | 1/3 F | Bound the `phy_soft_reset()` handshake, `phy_common.c:441-448` — a seventh unbounded wait that F54 missed. Also initialise `r` before the loop |
+| ☐ | **P2.13** | ACT-11 (B11) | — | **⚠ METHOD** | Add a length guard in `low_level_output()` before concatenating into `concat_buf[1528]`. Drop the frame and return `ERR_OK`/`ERR_IF`, **not** `ERR_MEM` |
+
+### Priority 3 — verification and structure
+
+| Status | Opus 5.0 ID | Flash 3.6 ID | Pro 3.1 ID | Consensus | Description |
+|---|---|---|---|---|---|
+| ☐ | **P3.1** | — | — | 1/3 O | Verify `MACPPSCR.PPSCTRL` encoding against RM0481; correct `ETHHW_PPS_FreqEnum` if the off-by-one is confirmed. `ETHHW_PTP_PPS_OFF = 0` cannot be right — simple mode has no "off" code. **Blocks P5.27** |
+| ☐ | **P3.2** | ACT-26 (U4) | item 4 | **3/3** | Run the LED-on-PG8 test to distinguish "configured" from "working", and 1 Hz from 2 Hz. The only PTP hardware path with no waveform evidence |
+| ☐ | **P3.3** | — | — | 1/3 O | Zero `evt.data.rx` at the top of the `ETHHW_ProcessRx()` loop — `ts_s`/`ts_ns` are read unconditionally by `rx_thread` but only written when a timestamp was captured |
+| ☐ | **P3.4** | — | — | 1/3 O | Add a `_Static_assert` on `offsetof` for the `ETHHW_State` / RX-ring adjacency that `ETHHW_GetState()` depends on |
+| ☐ | **P3.5** | — | — | 1/3 O | Reconcile `RX_MSG_Q_LEN` (32), `PBUF_POOL_SIZE` (8) and `ETH_RX_DESC_CNT` (24); record the reasoning |
+| ☐ | **P3.6** | — | — | 1/3 O | Add `LOCK_TCPIP_CORE()` around the lwIP accesses in `check_dhcp_state()`, which runs on `Tmr Svc` |
+| ☐ | **P3.7** | — | — | 1/3 O | Record which PTP message types `SNAPTYPSEL = 0b01` selects, and confirm it suits both e2e and p2p |
+| ☐ | **P3.8** | ACT-07 (B10, I3) | — | **⚠ SEVERITY** | Reorder `stm32h563zitx_FLASH.ld` to place `.FreeRTOS_sec` before `._user_heap_stack`. Verified: `ucHeap` at `0x200190d0` sits inside the `_sbrk` range (`_end` `0x200186d0` → ceiling `0x2003F800`) |
+| ☐ | **P3.9** | — | item 4 | 1/3 P | Characterise against a PHC-capable grandmaster (Intel I210 / I219-V / 82576) to establish whether `LOCKED` (100 ns) is reachable. Nothing on the target changes |
+
+### Priority 4 — documentation
+
+| Status | Opus 5.0 ID | Flash 3.6 ID | Pro 3.1 ID | Consensus | Description |
+|---|---|---|---|---|---|
+| ☐ | **P4.1** | — | — | 1/3 O | Remove the "F42 remains broken" paragraph from `architecture.md:375` — resolved; nothing in the port was at fault |
+| ☐ | **P4.2** | — | — | 1/3 O | Update `architecture.md:239` — the addend wait has been bounded since F54 |
+| ☐ | **P4.3** | — | — | 1/3 O | Remove the "MDIO shift bug must be fixed" note from `ptp_clock.md:252` — fixed at Stage 12 (F8) |
+| ☐ | **P4.4** | — | — | 1/3 O | Retitle the 4 ns section to "not adopted"; update `README.md:268` and `port_review.md`'s F5 row |
+| ☐ | **P4.5** | — | — | 1/3 O | Replace `port_review.md:58`'s *"nothing here has executed on a device"* with a current-status block |
+| ☐ | **P4.6** | — | — | 1/3 O | Extend `port_review.md`'s "Findings by phase" table to F66 and add the hardware bring-up phase |
+| ☐ | **P4.7** | — | — | 1/3 O | Mark F42's retained `### Status — F42 is open` section as superseded history |
+| ☐ | **P4.8** | — | — | 1/3 O | Settle the embfmt fix count between `README.md:209` ("two") and `architecture.md:52` ("three") — four defects, two findings, one patch |
+| ☐ | **P4.9** | — | — | 1/3 O | Clear the "Open: F54" heading in `design_doc.md:851` |
+| ☐ | **P4.10** | — | — | 1/3 O | Fix `mac_drv.h`'s two stale comments — the `TSENALL` claim (`:127`) and the 0.467 ns quantum (`:135`) |
+| ☐ | **P4.11** | — | — | 1/3 O | Correct the thread name in `architecture.md:220` to match `TCPIP_THREAD_NAME` (`"TCP/IP"`) |
+| ☐ | **P4.12** | — | — | 1/3 O | Update the FreeRTOS version in `FreeRTOSConfig.h`'s header comment to V11.3.0 |
+| ☐ | **P4.13** | — | — | 1/3 O | Remove the dead relative `Inc` include path from `Middlewares/CMakeLists.txt:14` |
+| ◐ | **P4.14** | — | item 5 | 1/3 P | Add an `#error` guard on `HAL_DCACHE_MODULE_ENABLED` in `stm32h5xx_hal_conf.h`. **The comment half is already done** — the linker script and `design_doc.md` both carry the warning; the compile-time guard is the new part |
+
+### Priority 5 — housekeeping, tooling and upstream
+
+| Status | Opus 5.0 ID | Flash 3.6 ID | Pro 3.1 ID | Consensus | Description |
+|---|---|---|---|---|---|
+| ☐ | **P5.1** | — | — | 1/3 O | Add CI: clean Debug + Release build, zero warnings under `-Wall -Wextra` |
+| ☐ | **P5.2** | ACT-14 (D2, I4) | — | 2/3 O+F | Remove the unconditional `DEBUG` from `CMakeLists.txt:93`; the `$<$<CONFIG:Debug>:DEBUG>` generator expression at line 132 already covers it |
+| ☐ | **P5.3** | ACT-15 (D3, I4) | — | **⚠ METHOD** | Decide whether `Release` should move from `-Og` to `-O2`/`-Os`; configure or delete the untested `relWithDebInfo` and `minSizeRel` presets. **Requires hardware re-verification** — see F62 |
+| ☐ | **P5.4** | — | — | 1/3 O | Use `bfifo_push_all()` in `serial_io_write()` — console output is silently truncated when the 16 KB FIFO fills |
+| ☐ | **P5.5** | ACT-12 (B12) | — | 2/3 O+F | Fix `get_line()`'s left-trim so the trimmed line reaches `process_cli_line()` (use `memmove`) |
+| ☐ | **P5.6** | — | — | 1/3 O | Fix `phy_setup_int_DP83848()`'s `READ`-where-`WRITE`-is-meant on MICR, `phy_common.c:89` |
+| ☐ | **P5.7** | — | — | 1/3 O | Fix `ETHHW_AuxTimestampCh()` to OR rather than assign, `mac_drv.c:803` |
+| ☐ | **P5.8** | — | — | 1/3 O | Fix the out-of-scope `netif` identifier in `rx_thread`'s MIB2 macros — compiles only because MIB2 stats are disabled |
+| ☐ | **P5.9** | — | — | 1/3 O | Fix the inverted return sense of `phy_read_reg()` / `phy_write_reg()` (0 means success) |
+| ☐ | **P5.10** | — | — | 1/3 O | Fix `phy_read_range()`'s stride (`a += 2` skips odd registers) and `phy_read_all_regs()`'s bound (a PHY address used as a register count) |
+| ☐ | **P5.11** | — | — | 1/3 O | Change `MSGchar()` to take a `char`; remove the unused `last_char` |
+| ☐ | **P5.12** | — | — | 1/3 O | Renumber `patches/flexptp/0002-…` to `0001-…`, or note the gap in the directory README |
+| ☐ | **P5.13** | — | — | 1/3 O | Remove the inert MPU-wrapper settings from `FreeRTOSConfig.h:81-84`, or comment why they are kept with `configENABLE_MPU 0` |
+| ☐ | **P5.14** | — | — | 1/3 O | Exclude `Src/etherlib_options.c` from LWIP builds |
+| ☐ | **P5.15** | ACT-27 (I6) | items 1, 2 | **3/3** | File the upstream reports and patches: F47 (`__PRI64_PREFIX`), F59 (servo NaN latch), F60/F66 (embfmt) |
+| ☐ | **P5.16** | — | — | 1/3 O | Add a `docs/` cross-reference and anchor checker to CI |
+| ☐ | **P5.17** | — | — | 1/3 O | Move `serial_io_init()`'s `osThreadNew()` after `osKernelInitialize()`, or record why the current order is safe |
+| ☐ | **P5.18** | — | — | 1/3 O | Comment `ETH_MAC_ADDR0`'s `0x02 \| (UNIQUE_DEV_ID_BYTE(0) & 0xFE)` so the locally-administered bit and the unicast mask read as two deliberate operations |
+| ☐ | **P5.19** | ACT-16 (D4, I4) *(part)* | — | 1/3 F | Remove `-u _printf_float` from `CMakeLists.txt:166` — verified as force-linking newlib's float formatter (25 references in the map) into a project that uses `embfmt` |
+| ☐ | **P5.20** | ACT-17 (D5) | — | **⚠ SEVERITY** | Remove the duplicate `main.c` / `syscall.c` / `sysmem.c` listings between `CMakeLists.txt:35-40` and `Src/CMakeLists.txt:1-13` |
+| ☐ | **P5.21** | ACT-19 (U2) | — | 1/3 F | Add a `NOLOAD` placement for `.ETHLibPool` in SRAM3, per the analysis already in `design_doc.md` |
+| ☐ | **P5.22** | — *(from U2)* | — | 1/3 F | Reconcile `ETH_BUFFER_SIZE`: `1536UL` in `eth_drv_etherlib.c:17` vs `1528UL` in `eth_drv_lwip.c:40` |
+| ☐ | **P5.23** | ACT-20 (B13) | — | 1/3 F | Add `\n` to `MSG("Turning PTP on!")`, `ptp_port_stm32h563.c:105` |
+| ☐ | **P5.24** | ACT-21 (D6) | — | 1/3 F | Fix `"currenty"` → `"currently"` in the boot banner, `main.c:133` |
+| ☐ | **P5.25** | ACT-22 (D7) | — | 1/3 F | Fix `"PPL_PULSETRAIN"` → `"PPS_PULSETRAIN"` in the `#error` directive, `ptp_port_stm32h563.c:71` |
+| ☐ | **P5.26** | ACT-23 (D8) | — | 1/3 F | Swap the inverted OPAMP / OTFDEC comments in `stm32h5xx_hal_conf.h:268-269` (inherited from ST's template) |
+| ☐ | **P5.27** | — | item 6 | 1/3 P | Upstream the H563 hardware port (`Src/flexptp_port/`) to flexPTP — its first Cortex-M33 target. **Blocked on P3.1**, or the PPS enum defect ships with it |
+| ☐ | **P5.28** | — | item 1 *(part)* | 1/3 P | Report flexPTP's **documentation** discrepancies upstream — F37 (`PTP_HW_GET_TIME` typed `TimestampI *`) and F38 (`SPRINTF` vs `FLEXPTP_SNPRINTF`) |
+
+### Closed without action
+
+| Status | Opus 5.0 ID | Flash 3.6 ID | Pro 3.1 ID | Consensus | Description |
+|---|---|---|---|---|---|
+| ⊘ | **X1** | ACT-18 (U1) | — | **⚠ DISPUTED** | *Change `FLEXPTP_INITIAL_PROFILE` to `"default"`.* **Rejected** — overrides a decision documented in four places; also cites flash option bytes, which are not application storage |
+| ⊘ | **X2** | ACT-24 (I2) | — | **⚠ DISPUTED** | *Wire `__io_putchar` to `MSGchar`.* **Rejected** — false premise (`__io_putchar` is a weak declaration, never defined) and invites newlib stdio back in. Superseded by **P2.1** |
+| ⊘ | **X3** | ACT-25 (I1) | — | **⚠ METHOD** | *Zero-copy TX refactor.* **Deferred** — goal endorsed, shown remedy will not compile (`bd` out of scope) and would race the DMA. Needs an API split, not a snippet |
+| ✅ | **X4** | — | item 3 | **⚠ DISPUTED** | *Delete `ETHHW_UpdatePTPTime()` and `PTP_UPDATE_CLOCK`.* **Already complete** — removed when F41 was resolved; only explanatory comments remain |
+| ⊘ | **X5** | ACT-16 (D4) *(part)* | — | **⚠ DISPUTED** | *Remove `-lstdc++` / `-lsupc++`.* **Rejected as stated** — both archives appear only as `LOAD` lines; nothing is extracted, so removal saves nothing |
+
+---
+
+## Disputes — where consensus was not reached
+
+Eleven rows carry a `⚠`. Five are outright disagreements about whether to act; six are
+agreements with a contested boundary.
+
+### Outright disagreements
+
+**X1 — change the default PTP profile (Flash ACT-18 vs Opus).**
+Flash 3.6 recommends switching `FLEXPTP_INITIAL_PROFILE` from `"gPTP"` to `"default"` so the
+board works out of the box through a switch. Opus 5.0 rejects it: the gPTP default is a
+documented product decision, warned about in `README.md` (twice), the boot banner,
+`design_doc.md` and `host_ptp_setup.md`, and gPTP is the profile most industrial users
+deploy. The item also proposes persisting the choice "in flash option bytes", which is
+technically wrong — option bytes are device configuration, not application storage.
+**Unresolved: this is the maintainer's call, not a defect fix.**
+
+**X2 — `__io_putchar` (Flash ACT-24 vs Opus).**
+Flash 3.6 states `syscall.c` *"defines a weak `__io_putchar` that drops characters"*. Verified:
+there is no definition — `syscall.c:35` is a weak *declaration*, so a live `_write()` would
+branch to address 0 and fault, not drop characters. Both symbols are unreferenced and
+garbage-collected (`__io_putchar` does not appear in the map). **Resolution: rejected, and
+replaced by P2.1**, a polled panic writer for the paths where the FIFO-backed console cannot
+work.
+
+**X4 — delete dead PTP update code (Pro item 3 vs the tree).**
+Pro 3.1 reports `nsec = 1000000000 - (nsec >> 1)` as a live suspect calculation. It was
+deleted when F41 was resolved. **Resolution: no action exists; Pro 3.1's finding is
+incorrect.**
+
+**X5 — drop the C++ runtime link flags (Flash ACT-16 part vs Opus).**
+Flash 3.6 groups `-u _printf_float`, `-lstdc++` and `-lsupc++` as *"adds dead code"*. Verified:
+`-u _printf_float` really does force-link the float formatter (**P5.19**, accepted), but the
+C++ archives contribute nothing. **Resolution: split — accept the first, reject the other two.**
+
+### Contested boundaries
+
+**P1.8 — `⚠ SCOPE`.** Both reviews flag `main.c:83`. Flash 3.6 stops there; Opus 5.0 found
+four more surviving HCLK claims, three of them in documentation. The wider scope is adopted.
+
+**P2.5 — `⚠ SCOPE`.** Both flag the `escParam` overflow. Opus 5.0 additionally found that
+`switch (escParam[0])` reads the array before it is written, so arrow-key history acts on the
+previous keypress. Both halves are in scope.
+
+**P2.13 — `⚠ METHOD`.** Agreement that `low_level_output()` needs a length guard; Flash 3.6's
+`return ERR_MEM` contradicts the warning in the function's own doc comment. `ERR_OK`/`ERR_IF`
+adopted.
+
+**P3.8 — `⚠ SEVERITY`.** Both agree the linker sections should be reordered and the mechanism
+is confirmed from the map. Flash 3.6 ranks it Priority 1 (Critical); Opus 5.0 ranks it
+Priority 3, because reaching it needs ~2.5 KB of *newlib* `malloc` in a project that
+deliberately avoids newlib's allocator. **Listed at P3; the fix is free, so the ranking
+affects order, not whether to do it.**
+
+**P5.3 — `⚠ METHOD`.** Both agree `-Og` is an odd choice for Release. Opus 5.0 attaches a
+blocking caveat: F62 records that the release build HardFaulted the first time it was built,
+because `-Og` narrowed a `uint32_t` UID load back into faulting byte loads. **Not a free
+edit** — it needs a hardware re-verification pass.
+
+**P5.20 — `⚠ SEVERITY`.** Both agree the CMake source lists are duplicated. Opus 5.0 verified
+that CMake deduplicates them (exactly one `Src/main.c.obj` in the map), so the effect is
+zero; Flash 3.6 lists it as a documentation-vs-code discrepancy, which is also the wrong
+category. **Kept as housekeeping.**
+
+---
+
+## Coverage analysis
+
+Which review found what, by area:
+
+| Area | Opus 5.0 | Flash 3.6 | Pro 3.1 |
+|---|---|---|---|
+| Driver / concurrency defects | 8 | **13** | 0 |
+| — unique to that review | 3 | **5** | 0 |
+| CLI / console defects | 8 | 4 | 0 |
+| Documentation fidelity (this project's docs) | **14** | 1 | 0 |
+| Build system | 5 | 5 | 0 |
+| Architecture-level weaknesses | **8** | 1 | 0 |
+| Upstream / process | 4 | 1 | **3** |
+| Verification gaps | 5 | 2 | 2 |
+
+**The five defects only Flash 3.6 found** — P1.10 (CLI mutex self-deadlock), P2.10 (w1c
+register corruption), P2.11 (16-bit counter wrap), P2.12 (unbounded PHY reset), P3.8 (heap
+collision) — are the strongest argument for having run three reviews. Two of them outrank
+anything in the other two reports.
+
+**The two actions only Pro 3.1 proposed** — P5.27 (upstream the hardware port) and P5.28
+(report the flexPTP documentation bugs) — are both outward-facing, and neither of the other
+reviews thought to look beyond the repository.
+
+**Documentation drift was found almost entirely by one review.** Fourteen of the fifteen
+documentation actions come from Opus 5.0 alone. The highest-value cluster is P1.8/P1.9: five
+surviving assertions that HCLK is the PTP clock — the belief that caused F53 — plus a clock
+tree written in the H7 divider spellings that F45 identifies as a silent-miscompile trap.
+
+**One coupling is easy to miss.** P1.6 and P1.10 are in the same function and must land
+together: P1.10 alone converts a hang into memory corruption, because the deadlock it removes
+is currently what prevents P1.6's dangling pointers from ever being dereferenced.
+
+---
+
+## Recommended execution order
+
+1. **P1.10 + P1.6 together**, then P1.5 — the CLI command database, fixed as one change.
+2. **P1.3 + P1.4 together** — the PHY NULL-callback fault and the sweep that makes it
+   reachable; P2.12 folds in naturally.
+3. **P1.1 + P1.2** — close the patch-reproducibility hole before anyone else builds the tree.
+4. **P1.7, P2.1, P2.2** — make the console safe and failures audible; every later diagnosis
+   depends on these.
+5. **P1.8 + P1.9** — the documentation corrections that would otherwise re-teach F53 and F45.
+6. **P2.10, P2.11, P2.3, P2.13** — the driver cluster, in one pass with one hardware
+   re-verification.
+7. **P3.1 then P3.2** — settle `PPSCTRL` on paper, then on the pin. P5.27 unblocks behind it.
+8. Everything else in priority order; P5.3 last, since it needs its own hardware pass.
