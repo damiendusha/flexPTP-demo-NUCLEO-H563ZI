@@ -156,7 +156,33 @@ target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
     >
     $<$<COMPILE_LANGUAGE:ASM>:-x assembler-with-cpp -MMD -MP>
     $<$<CONFIG:Debug>:-O0 -g3 -ggdb>
+
+    # Release stays at -Og. That is unusual -- "optimize for debugging" under a name that
+    # normally means -O2 -- so it is a decision rather than an oversight, and these are the
+    # measurements behind it:
+    #
+    #     -Og   FLASH 180 496 B   (current)
+    #     -O2   FLASH 180 952 B   LARGER by 456 B
+    #     -Os   FLASH 178 368 B   smaller by 2 128 B, i.e. 0.1% of the 2 MB part
+    #
+    # All three were built AND run on hardware: boot, PHY, link, DHCP, flexPTP start,
+    # "ptp addend" = 3435973836, ping 0% loss at 1400 bytes, no faults. So changing it is
+    # safe -- it simply buys nothing. Flash sits at 8.6% of 2 MB and the PTP servo runs once
+    # per Sync (1-8 Hz), so neither size nor speed constrains this firmware, while -Og keeps
+    # release images meaningfully debuggable, which on this project has repeatedly mattered.
+    #
+    # The F62 regression was checked at each level: no byte-wide loads of the UID region
+    # appear in any of the three disassemblies, so the `volatile` fix holds above the
+    # optimisation level it was originally tested at.
+    #
+    # To change it, edit the line below; all three levels are known-good.
     $<$<CONFIG:Release>:-Og -g0>
+
+    # These two presets previously received no project optimisation flags at all, falling
+    # back to CMake's defaults. Neither is hardware-tested; Debug and Release are the pair
+    # this project verifies.
+    $<$<CONFIG:RelWithDebInfo>:-O2 -g3>
+    $<$<CONFIG:MinSizeRel>:-Os -g0>
 )
 
 # Linker options

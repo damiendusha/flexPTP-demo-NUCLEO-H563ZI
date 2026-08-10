@@ -80,9 +80,9 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 | | Count |
 |---|---|
 | Total distinct actions | **81** |
-| Open (☐) | 5 |
+| Open (☐) | 4 |
 | Partial (◐) | 0 |
-| Already done (✅) | 72 |
+| Already done (✅) | 73 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -174,7 +174,7 @@ defects.
 |---|---|---|---|---|---|---|---|
 | ✅ | — | — | **P5.1** | — | — | 1/3 O | Add CI: clean Debug + Release build, zero warnings under `-Wall -Wextra` — **DONE: `.github/workflows/ci.yml` builds Debug and Release via `build.sh` (so the patch-apply step is exercised too), gates on **first-party** warnings only — vendored lwIP's four F63 instances are expected — re-checks that the patches are applied, and uploads the ELF and map** |
 | ✅ | — | — | **P5.2** | ACT-14 (D2, I4) | — | 2/3 O+F | Remove the unconditional `DEBUG` from `CMakeLists.txt:93`; the `$<$<CONFIG:Debug>:DEBUG>` generator expression at line 132 already covers it — **DONE: `DEBUG` removed from the unconditional `compile_DEFS`; the `$<$<CONFIG:Debug>:DEBUG>` generator expression already covered it, so Release no longer defines it** |
-| ☐ | — | — | **P5.3** | ACT-15 (D3, I4) | — | **⚠ METHOD** | Decide whether `Release` should move from `-Og` to `-O2`/`-Os`; configure or delete the untested `relWithDebInfo` and `minSizeRel` presets. **Requires hardware re-verification** — see F62 |
+| ✅ | — | — | **P5.3** | ACT-15 (D3, I4) | — | **⚠ METHOD** | Decide whether `Release` should move from `-Og` to `-O2`/`-Os`; configure or delete the untested `relWithDebInfo` and `minSizeRel` presets. **Requires hardware re-verification** — see F62 — **DONE — decided **keep `-Og`**, with the measurement recorded, resolving the ⚠ METHOD dispute. All three levels were built *and run on hardware*: `-O2` is 456 B **larger** than `-Og`, `-Os` is 2 128 B smaller (0.1% of a 2 MB part), and all three boot, sync and ping cleanly with no F62 byte-load regression. Changing is safe but buys nothing; `-Og` keeps release images debuggable. The two orphan presets (`relWithDebInfo`, `minSizeRel`) are now configured explicitly and both build** |
 | ✅ | — | — | **P5.4** | — | — | 1/3 O | Use `bfifo_push_all()` in `serial_io_write()` — console output is silently truncated when the 16 KB FIFO fills — **DONE: `bfifo_push_all()`, so a full FIFO blocks the producer instead of truncating the message mid-word. Correct for every current caller (all threads); ISR-context output goes through `serial_io_panic_write()` instead, noted at the call** |
 | ✅ | — | — | **P5.5** | ACT-12 (B12) | — | 2/3 O+F | Fix `get_line()`'s left-trim so the trimmed line reaches `process_cli_line()` (use `memmove`) — **DONE: left-trim now shifts in place with `memmove` so the caller's buffer is actually trimmed. Verified on target — `   osinfo` (three leading spaces) is accepted and answers, where before only the local pointer moved and `task_cli()` passed the untrimmed line on** |
 | ✅ | — | — | **P5.6** | — | — | 1/3 O | Fix `phy_setup_int_DP83848()`'s `READ`-where-`WRITE`-is-meant on MICR, `phy_common.c:89` — **DONE: `READ` → `WRITE` on the DP83848 MICR. The read discarded the value just computed, leaving the global interrupt enable clear so the PHY never asserted its interrupt pin. Not this board's PHY, but shipped broken** |
