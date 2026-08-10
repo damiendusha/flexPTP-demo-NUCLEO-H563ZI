@@ -57,6 +57,12 @@ source. Two submodules are the exception, and both changes are **permanent bug f
 > reporting upstream. See [patches/flexptp/README.md](../patches/flexptp/README.md) and
 > [patches/embfmt/README.md](../patches/embfmt/README.md).
 >
+> **`build.sh` applies them**, immediately after the submodule update, and **refuses to
+> build** if a submodule is neither pristine nor patched. This matters because omitting them
+> does not break the build — it produces a firmware that is silently wrong: the servo latches
+> to NaN on the first duplicated Sync (F59) while printing a plausible `0.0000` correction
+> (F60). Before that check existed, a fresh clone built exactly that firmware with no warning.
+>
 > The temporary F42/F61 instrumentation patch that used to sit alongside them was **dropped**
 > once both findings were resolved. `patches/flexptp/README.md` records how to recover it.
 

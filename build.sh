@@ -170,16 +170,81 @@ provision_openocd() {
     echo ""
 }
 
+# Two submodules carry local changes that git cannot record for us: the parent repository
+# stores only a submodule's commit pointer, so a working-tree edit inside Modules/ is
+# invisible to a clone and is discarded by "git submodule update". They live in patches/
+# and are applied here instead.
+#
+# Both are permanent bug fixes, not instrumentation, and skipping them does not break the
+# build -- it produces a firmware that is silently wrong:
+#   flexptp F59      one duplicated Sync latches the Kalman servo into NaN for ever, and
+#                    every visible indicator stays green while the clock free-runs
+#   embfmt  F60/F66  %ll conversions dropped, NaN printed as "0.0000", small %e values and
+#                    any rounding carry misreported
+# See docs/port_review.md for both.
+#
+# Format: "<submodule path>:<patch path>", both relative to PROJECT_ROOT.
+SUBMODULE_PATCHES=(
+    "Modules/embfmt:patches/embfmt/0001-formatting-fixes.patch"
+    "Modules/flexptp:patches/flexptp/0002-servo-nan-latch-fix.patch"
+)
+
+# Bring each submodule to its patched state, and refuse to build if that cannot be reached.
+# "Already applied" is detected by a reverse dry-run rather than by a marker file, so the
+# check stays correct however the tree got into its current state.
+apply_submodule_patches() {
+    local entry submodule_rel submodule patch name
+
+    for entry in "${SUBMODULE_PATCHES[@]}"; do
+        submodule_rel="${entry%%:*}"
+        submodule="${PROJECT_ROOT}/${submodule_rel}"
+        patch="${PROJECT_ROOT}/${entry#*:}"
+        name="$(basename "${patch}")"
+
+        if [ ! -f "${patch}" ]; then
+            error "Missing patch file: ${entry#*:}"
+            exit 1
+        fi
+
+        if [ ! -d "${submodule}/.git" ] && [ ! -f "${submodule}/.git" ]; then
+            error "Submodule ${submodule_rel} is not checked out."
+            echo "  Run: git submodule update --init --recursive"
+            exit 1
+        fi
+
+        if git -C "${submodule}" apply --check --reverse "${patch}" 2>/dev/null; then
+            info "${submodule_rel}: ${name} already applied"
+        elif git -C "${submodule}" apply --check "${patch}" 2>/dev/null; then
+            git -C "${submodule}" apply "${patch}"
+            success "${submodule_rel}: applied ${name}"
+        else
+            error "${submodule_rel}: cannot apply ${name}, and it is not already applied."
+            echo ""
+            echo "  The submodule working tree is neither pristine nor patched, so this"
+            echo "  script will not guess. Inspect and reset it:"
+            echo ""
+            echo "      git -C ${submodule_rel} diff"
+            echo "      git -C ${submodule_rel} checkout -- ."
+            echo ""
+            echo "  Building without this patch is not safe -- it yields a firmware that"
+            echo "  is silently wrong, not one that fails to build. See docs/port_review.md."
+            exit 1
+        fi
+    done
+}
+
 # Step 0: Build OpenOCD if asked
 if [ "${WITH_OPENOCD}" -eq 1 ]; then
     provision_openocd
 fi
 
-# Step 1: Initialize / update git submodules if needed
+# Step 1: Initialize / update git submodules, then apply the in-tree patches
 info "Checking git submodules..."
 if [ -d "${PROJECT_ROOT}/.git" ]; then
     git -C "${PROJECT_ROOT}" submodule update --init --recursive
 fi
+
+apply_submodule_patches
 
 # Step 2: Ensure toolchain is downloaded and extracted
 if [ ! -f "${TOOLCHAIN_DIR}/bin/arm-none-eabi-gcc" ]; then

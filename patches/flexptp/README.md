@@ -8,6 +8,9 @@ is destroyed by `git submodule update`. Anything that must survive lives here.
 
 ## Applying
 
+**`./build.sh` does this for you** and refuses to build if it cannot — see
+`apply_submodule_patches()`. Applying by hand is only needed when building without it:
+
 ```bash
 git -C Modules/flexptp apply "$PWD/patches/flexptp/<name>.patch"
 ```

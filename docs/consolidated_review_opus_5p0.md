@@ -95,7 +95,7 @@ defects.
 
 | Status | Opus 5.0 ID | Flash 3.6 ID | Pro 3.1 ID | Consensus | Description |
 |---|---|---|---|---|---|
-| ☐ | **P1.1** | — | — | 1/3 O | Make `build.sh` verify and apply `patches/embfmt/` and `patches/flexptp/` after the submodule update, failing loudly if neither apply nor reverse-apply succeeds. A fresh clone currently builds **without** the F59 servo fix and the F60/F66 formatting fixes |
+| ✅ | **P1.1** | — | — | 1/3 O | Make `build.sh` verify and apply `patches/embfmt/` and `patches/flexptp/` after the submodule update, failing loudly if neither apply nor reverse-apply succeeds. A fresh clone currently builds **without** the F59 servo fix and the F60/F66 formatting fixes — **DONE:** `build.sh` gained `apply_submodule_patches()`; all three paths tested on the tree (already-applied → skip, pristine → applies byte-identically, diverged → error + exit 1) |
 | ☐ | **P1.2** | — | — | 1/3 O | Document the patch-apply prerequisite in `README.md` under "Get the sources" |
 | ☐ | **P1.3** | ACT-10 (B9) | — | 2/3 O+F | Add a NULL guard to `phy_get_link_status()`, `phy_common.c:515` — unrecognised PHY currently HardFaults within 500 ms |
 | ☐ | **P1.4** | — | — | 1/3 O | Make `phy_sweep_addresses()` honour `ETHHW_ReadPHYRegister()`'s return value; a dead MDIO bus currently "detects" a PHY at address 0. Precondition for both P1.3 and P2.12 |

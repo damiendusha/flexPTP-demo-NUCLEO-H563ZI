@@ -8,6 +8,9 @@ clone and is destroyed by `git submodule update`. Anything that must survive liv
 
 ## Applying
 
+**`./build.sh` does this for you** and refuses to build if it cannot — see
+`apply_submodule_patches()`. Applying by hand is only needed when building without it:
+
 ```bash
 git -C Modules/embfmt apply "$PWD/patches/embfmt/0001-formatting-fixes.patch"
 ```
