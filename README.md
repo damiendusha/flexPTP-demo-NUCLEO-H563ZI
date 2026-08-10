@@ -20,9 +20,29 @@ behind it and every defect found along the way are documented in [`docs/`](docs/
 git clone <this-repository> flexPTP-demo-NUCLEO-H563ZI
 cd flexPTP-demo-NUCLEO-H563ZI
 git submodule update --init --recursive
+git -C Modules/embfmt  apply "$PWD/patches/embfmt/0001-formatting-fixes.patch"
+git -C Modules/flexptp apply "$PWD/patches/flexptp/0002-servo-nan-latch-fix.patch"
 ```
 
-`build.sh` does the submodule step for you.
+`./build.sh` does **both** steps for you, and refuses to build if the patches can be
+neither applied nor confirmed already applied. Use it, or run the four commands above.
+
+> [!IMPORTANT]
+> The last two commands are not optional. Two submodules carry local bug fixes that git
+> cannot record for us — the parent repository stores only a submodule's *commit pointer*,
+> so a working-tree change inside `Modules/` is invisible to a clone and is discarded by
+> `git submodule update`. They therefore live in [`patches/`](patches/) and must be applied.
+>
+> Skipping them does not break the build. It produces a firmware that is **silently wrong**:
+>
+> | Missing patch | Consequence |
+> |---|---|
+> | `flexptp/0002-servo-nan-latch-fix` | One duplicated `Sync` makes the measured Sync period zero; the Kalman servo computes `0.0/0.0` and NaN latches into its state **permanently**. The clock free-runs at ~18.7 ppm while every visible indicator stays green ([F59](docs/port_review.md)) |
+> | `embfmt/0001-formatting-fixes` | `%ll` conversions dropped, `NaN` printed as a plausible `0.0000`, small `%e` values and any rounding carry misreported ([F60](docs/port_review.md), [F66](docs/port_review.md)) — this is what disguised F59 as a working servo |
+>
+> Both are permanent fixes rather than instrumentation, and both are worth reporting
+> upstream. See [`patches/flexptp/README.md`](patches/flexptp/README.md) and
+> [`patches/embfmt/README.md`](patches/embfmt/README.md).
 
 ## Building
 
@@ -208,7 +228,8 @@ ROOT
 Two submodules carry local changes, kept in [`patches/`](patches/) because the parent
 repository records only submodule commit pointers: a servo fix in flexPTP and two formatting
 fixes in embfmt. Both are described in [`docs/port_review.md`](docs/port_review.md) and are
-worth reporting upstream.
+worth reporting upstream. **`./build.sh` applies them and will not build without them** —
+see [Get the sources](#get-the-sources) for why that matters.
 
 ### Printing and logging
 
