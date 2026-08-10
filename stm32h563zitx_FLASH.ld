@@ -150,6 +150,27 @@ SECTIONS
     __bss_end__ = _ebss;
   } >SRAM1
 
+  /*
+   * FreeRTOS heap FIRST, then the newlib heap/stack reservation.
+   *
+   * This order matters. _sbrk() in Src/sysmem.c starts the newlib heap at `_end` and bounds
+   * it only against `_estack - _Min_Stack_Size` -- it never consults _Min_Heap_Size. So
+   * everything placed AFTER `_end` and below the stack is inside the range malloc() can hand
+   * out.
+   *
+   * With .FreeRTOS_sec after ._user_heap_stack, the 30 KB ucHeap sat squarely in that range:
+   * measured at ucHeap = 0x200190d0 with _end = 0x200186d0 and the _sbrk ceiling at
+   * 0x2003F800. After roughly 2.5 KB of cumulative newlib allocation, malloc() would have
+   * begun returning pointers inside the FreeRTOS heap -- silently corrupting task stacks and
+   * control blocks.
+   *
+   * Reversing the two puts ucHeap below `_end`, out of reach of _sbrk entirely.
+   */
+  .FreeRTOS_sec (NOLOAD) :
+  {
+    *(.FreeRTOSHeapSection)
+  } >SRAM1
+
   /* User_heap_stack section, used to check that there is enough RAM left */
   ._user_heap_stack :
   {
@@ -159,12 +180,6 @@ SECTIONS
     . = . + _Min_Heap_Size;
     . = . + _Min_Stack_Size;
     . = ALIGN(8);
-  } >SRAM1
-
-  /* FreeRTOS heap region — placed in SRAM1 after stack */
-  .FreeRTOS_sec (NOLOAD) :
-  {
-    *(.FreeRTOSHeapSection)
   } >SRAM1
 
   /*
