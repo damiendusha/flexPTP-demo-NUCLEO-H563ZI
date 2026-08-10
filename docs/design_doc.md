@@ -15,6 +15,7 @@ NUCLEO-H563ZI (STM32H563, Cortex-M33).
 - [RMII Pin Map](#rmii-pin-map)
 - [RXER Pin Note](#rxer-pin-note)
 - [mac_drv.c Comparison](#mac_drvc-comparison)
+- [Caches and DMA Coherency](#caches-and-dma-coherency)
 - [Stage Log](#stage-log)
 
 Companion documents: [architecture.md](architecture.md) (module stack, threads, interrupts) ·
@@ -206,21 +207,181 @@ only for a 250 MHz HCLK.
 
 ## EtherLib Porting Guide
 
-*To be completed in Stage 17.*
+EtherLib is Epagris' in-house Ethernet stack and an alternative to lwIP. It is present as a
+submodule and selectable with `ETH_STACK` in the top-level `CMakeLists.txt`:
 
-The EtherLib in-house Ethernet stack is included as a git submodule but is not
-compiled in the initial port. This section will document what needs to change to
-enable EtherLib support.
+```cmake
+set(ETH_STACK "LWIP")   # or "ETHERLIB"
+```
+
+**It is not compiled in this port and has never been built for the H563.** Only the lwIP path
+is exercised. The pieces that would have to be checked are listed below; none is known to be
+broken, but none has been tried either.
+
+### What already exists
+
+| Piece | State |
+|---|---|
+| `Modules/etherlib` submodule | Present, pinned at `ec35be5` |
+| `Inc/etherlib_options.h` | Complete — pool size, ARP cache, timers, and the CMSIS-OS2 binding |
+| `Src/etherlib_options.c` | Provides `ETHLIB_OS_THREAD_CREATE()` and the recursive-mutex attribute |
+| `Drivers/EthDrv/eth_drv_etherlib.c` | The EtherLib-side driver shim, alongside `eth_drv_lwip.c` |
+| `Modules/CMakeLists.txt` | Already branches on `ETH_STACK` and wires `FLEXPTP_NSD` to match |
+
+So the wiring is in place. What is missing is a linker placement, and verification.
+
+### The `.ETHLibPool` placement — measure it, do not assume
+
+`Inc/etherlib_options.h` puts EtherLib's 32 KB dynamic pool into a named section:
+
+```c
+#define ETHLIB_MEMORY_POOL_TOTAL_SIZE (2 * 16384)
+#define ETHLIB_MEMORY_POOL_ATTRIBUTES section(".ETHLibPool")
+```
+
+`Modules/etherlib/dynmem.c` then declares `sDynMemPool` with that attribute and hands it to
+`mp_init()`. **The linker script has no placement for `.ETHLibPool`** — neither here nor in
+the H743 project (finding F29).
+
+The consequence was measured rather than guessed, by compiling a stand-in 32 KB array with
+the same section attribute into the current build:
+
+| | Without a live reference | With a live reference |
+|---|---|---|
+| Outcome | Silently **discarded** — the section appears in the map's *Discarded input sections* list | Placed as an **orphan** output section |
+| Placement | — | VMA `0x20000a6c` (SRAM1, immediately after `.data`), **load address `0x080366c0` in FLASH** |
+| FLASH | unchanged | **222 904 → 255 680 B** (+32 KB) |
+| SRAM1 | unchanged | **133 328 → 166 096 B** (+32 KB) |
+
+The build is compiled with `-fdata-sections -ffunction-sections -Wl,--gc-sections`, which is
+why the unreferenced case vanishes without a word. With EtherLib actually compiled the pool
+*is* referenced, so the second column is what you get — and it is wrong in two ways:
+
+1. **32 KB of zeros are stored in the image.** The orphan section is `PROGBITS` with a load
+   address, so it occupies flash for no purpose.
+2. **The pool is never initialised.** The startup copy loop runs `_sdata` … `_edata`, and the
+   measured symbols were `_edata = 0x20000a6c` and `sTestPool = 0x20000a6c` — the pool starts
+   exactly where the copy stops. `_sbss` was `0x20008a70`, *after* the pool, so the zeroing
+   loop skips it too. It is neither copied nor cleared, and holds whatever the SRAM powered
+   up with.
+
+The fix is a `NOLOAD` placement next to the other Ethernet regions in
+`stm32h563zitx_FLASH.ld`:
+
+```ld
+  .ETHLib_sec (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(.ETHLibPool)
+    . = ALIGN(4);
+  } >SRAM3
+```
+
+SRAM3 has room — the Ethernet buffers and the lwIP heap use 74 888 B of 320 KB, and with lwIP
+deselected the 16 KB lwIP heap is not there at all. `NOLOAD` removes the flash cost and makes
+the "uninitialised" status explicit rather than accidental; `mp_init()` initialises the pool
+header itself, so zeroing is not required.
+
+### Remaining work to enable EtherLib
+
+1. Add the linker placement above.
+2. Build with `ETH_STACK=ETHERLIB` and fix what falls out. `Src/etherlib_options.c`,
+   `Drivers/EthDrv/eth_drv_etherlib.c` and `Src/ethernet/ethernet_etherlib.c` have **never
+   been compiled** in this port — the F51 UID lesson applies, since
+   `eth_drv_etherlib.c:97` builds its MAC from the same `ETH_MAC_ADDR*` macros.
+3. Check the flexPTP network-stack driver: `FLEXPTP_NSD` follows `ETH_STACK`, so the
+   EtherLib NSD gets selected automatically, but the `tx_cb` contract that bit us in F48 is
+   lwIP-specific and the EtherLib equivalent has not been checked.
+4. `CHECKSUM_BY_HARDWARE` in `Inc/lwipopts.h` is lwIP-only; EtherLib has its own arrangement.
+5. Re-run the PTP verification. EtherLib changes the RX/TX path completely, so F58 and F61 —
+   both in `eth_drv_lwip.c` and `mac_drv.c` respectively — need re-examining on that path.
+   `mac_drv.c` is shared, so the F61 fix carries over; the F58 pbuf-copy fix does not, because
+   EtherLib has no pbufs.
 
 ---
 
 ## TrustZone Migration Guide
 
-*To be completed in Stage 17.*
+This port runs **flat and non-secure**: `TZEN` disabled, one image, no partitioning. That is
+a deliberate choice — the demo has nothing to isolate — and it is the configuration every
+measurement in these documents was taken on. This section is what a migration would involve.
+**None of it has been tried.**
 
-The initial port runs in non-secure flat mode (TZEN=0) using the `ARM_CM33_NTZ`
-FreeRTOS port. This section will document how to migrate to a TrustZone-partitioned
-build when needed.
+### Current state
+
+| Setting | Value | Where |
+|---|---|---|
+| `TZEN` option bit | disabled (`0xC3`) | `FLASH_OPTSR2_PRG`, RM0481 §3.6.1 |
+| FreeRTOS port | `GCC_ARM_CM33_NTZ_NONSECURE` | `Middlewares/CMakeLists.txt` |
+| `configENABLE_TRUSTZONE` | `0` | `Inc/FreeRTOSConfig.h` |
+| `configRUN_FREERTOS_SECURE_ONLY` | `0` | `Inc/FreeRTOSConfig.h` |
+| `configENABLE_MPU` | `0` | `Inc/FreeRTOSConfig.h` |
+| Flash / SRAM | `0x08000000` / `0x20000000` — the non-secure aliases | `stm32h563zitx_FLASH.ld` |
+
+`TZEN` is an option byte, not a runtime setting: it is programmed with the debugger, it
+changes which boot-address option bytes the device honours (`SECBOOTADD` instead of
+`NSBOOTADD`, RM0481 §3.3.1), and it cannot be flipped from the running application.
+
+### What a partitioned build requires
+
+**Two images, not one.** The secure image boots, configures the partitioning, and branches to
+the non-secure image. The address aliases are fixed by the architecture (RM0481 §2, Figure 6):
+
+| Region | Non-secure | Secure |
+|---|---|---|
+| Flash | `0x08000000` | `0x0C000000` |
+| SRAM1/2/3 | `0x20000000` | `0x30000000` |
+| Peripherals | `0x40000000` | `0x50000000` |
+
+The linker script and the vector table move accordingly; secure and non-secure have
+**separate vector tables**, and SysTick, the MPU and parts of the SCB are banked (RM0481
+§3.6.2), so the non-secure FreeRTOS gets its own SysTick.
+
+**FreeRTOS changes.** Swap `FREERTOS_PORT` from `GCC_ARM_CM33_NTZ_NONSECURE` to the
+TrustZone-aware **`GCC_ARM_CM33_NONSECURE`** in `Middlewares/CMakeLists.txt`, and set
+`configENABLE_TRUSTZONE = 1`. The secure image builds the companion **`GCC_ARM_CM33_SECURE`**
+port, which supplies `secure_context.c`, `secure_context_port.c` and `secure_heap.c` — the
+context management that lets non-secure tasks call secure functions. Both port names are
+already recognised by the fetched kernel (`portable/CMakeLists.txt`), and the sources sit
+side by side under `portable/GCC/ARM_CM33/{non_secure,secure}` and `ARM_CM33_NTZ/non_secure`.
+
+**Partitioning the CPU's view** uses the SAU: eight programmable regions, configurable only
+in secure-privileged state, and defaulting to all-secure when TrustZone is enabled (RM0481
+§3.6.3). Non-secure code that must call into the secure world needs NSC regions and `SG` entry
+points.
+
+### The trap: SAU does not govern the Ethernet DMA
+
+This is the part that would bite, and it is stated plainly in RM0481 §3.6.3:
+
+> *The SAU/IDAU settings are applicable only to the Cortex-M33. The other masters, like DMA,
+> are not affected by these policies.*
+
+The Ethernet MAC has its own DMA and is one of those "other masters". Partitioning memory with
+the SAU does **nothing** to it. Access for non-CPU masters is governed by the **GTZC**
+(RM0481 §3.6.4): `TZSC` gates securable peripherals, and the block-based controller governs
+SRAM. So a partitioned build has to:
+
+1. Assign the **ETH peripheral** in TZSC to whichever world runs the driver. A securable
+   peripheral made secure-only automatically issues secure transactions when it is a bus
+   master — which then have to be permitted at the memory end.
+2. Assign the **SRAM3 blocks** holding `.EthDrv_sec` (descriptors and 74 888 B of buffers) so
+   the ETH DMA's transactions are allowed. Descriptors and buffers are written by the DMA and
+   read by the CPU, so both masters must reach the same blocks with compatible attributes.
+3. Route the **ETH interrupt** to the right world. The NVIC has a per-interrupt target-state
+   register; the ETH IRQ must land in the world that owns `ETHHW_ISR()`.
+
+Getting any of these wrong does not produce a clean compile error. It produces bus faults, or
+DMA writes that are silently dropped — which, on the evidence of this port, would then be
+attributed to the driver, the PHY or the switch before anyone suspected the memory controller.
+
+### Recommendation
+
+Do not do this unless the product needs isolation. There is no PTP or networking benefit, the
+Ethernet DMA path above is genuinely fiddly, and the flat build is the one with hardware
+evidence behind it. If it must be done, bring up the secure/non-secure split with a trivial
+application **first** and add Ethernet last, so that when DMA access fails the change that
+caused it is obvious.
 
 ---
 
@@ -265,21 +426,138 @@ ever moved, that port file is the only file to change.
 
 ## RXER Pin Note
 
-*To be completed in Stage 17; the GPIO change itself lands in Stage 12.*
+The H743 project configures **PG2** as `ETH_RMII_MII_RXER` in `ETHHW_InitClocks()`. This port
+drops it. Three independent facts say it could not have worked here anyway.
 
-The H743 project configures PG2 as ETH_RMII_MII_RXER. This pin has been dropped
-in the H563 port. This section will explain why and how to re-enable it.
+**1. RMII has no receive-error signal on this part.** The complete set of `ETH_RMII_*`
+signals in the STM32H563ZI datasheet is seven:
+
+```
+ETH_RMII_REF_CLK   ETH_RMII_CRS_DV   ETH_RMII_RXD0   ETH_RMII_RXD1
+ETH_RMII_TX_EN     ETH_RMII_TXD0     ETH_RMII_TXD1
+```
+
+The datasheet lists them as combined entries with their MII counterparts —
+`ETH_MII_RX_CLK/ETH_RMII_REF_CLK`, `ETH_MII_RX_DV/ETH_RMII_CRS_DV`,
+`ETH_MII_TX_EN/ETH_RMII_TX_EN` — which is worth knowing when grepping the AF tables, because
+a naive text extraction splits those names across lines and invents signals that do not exist.
+There is no RMII error line. The only receive-error signal the part has is
+**`ETH_MII_RX_ER`**, and MII is a different interface — this board is RMII, fixed by the
+50 MHz `RMII_REF_CLK` the PHY drives into PA1.
+
+**2. PG2 has no Ethernet alternate function on the H563.** Its full AF list is
+`TIM8_BKIN`, `UART12_RX`, `FMC_A12`, `LPTIM6_ETR`, `EVENTOUT` — no `ETH_*` entry at any AF
+number. Configuring PG2 as `GPIO_AF11_ETH` on this part selects nothing; AF11 on PG2 is not
+Ethernet. On the H563 `ETH_MII_RX_ER` appears on **PB10** and **PI10** only.
+
+**3. MB1404 does not route it.** UM3115 contains **no mention of RXER or RX_ER anywhere**.
+Its Ethernet solder-bridge table lists exactly the eight RMII signals above, and PG2 appears
+only in the expansion-connector tables — Zio `CN9` pin 42 (`D49`), as a plain GPIO. The pin
+goes to a header, not to the LAN8742A.
+
+So the H743 line was vestigial in the same way the PB5 PPS setup was (see
+[RMII Pin Map](#rmii-pin-map)): carried forward, configuring a pin the board does not connect.
+Dropping it is not a reduction in function.
+
+**To re-enable it** you would need MII rather than RMII — a different PHY interface, a
+different pin count, `ETH_MII_RX_ER` on PB10 or PI10, and a board that routes it. That is a
+hardware change, not a firmware one. Nothing in this port would need to change first.
+
+**Practical consequence:** none. In RMII the PHY signals receive errors in-band, and the MAC
+records them in the error counters. Those counters were read during the F42 investigation —
+CRC, alignment and missed-frame counts were all zero — so the diagnostic value RX_ER would
+have added was available anyway.
 
 ---
 
 ## mac_drv.c Comparison
 
-*To be completed in Stage 17.*
+The project uses a **custom register-level MAC driver** and does not call ST's HAL ETH driver
+at all, even though `stm32h5xx_hal_eth.c` is compiled into the HAL library. This is inherited
+from the H743 project, not a decision taken here — but it is worth understanding, because it
+determines who owns the defects.
 
-This section will provide a detailed comparison of:
-1. The custom register-level MAC driver (`mac_drv.c`)
-2. The ST HAL ETH driver (`stm32h5xx_hal_eth.c`)
-3. The original H7 implementation
+| | `Drivers/EthDrv/mac_drv.c` | `stm32h5xx_hal_eth.c` |
+|---|---|---|
+| Size | 859 lines | 3 524 lines |
+| Descriptors | `ETHHW_DescFull` = the 4 hardware DWORDs **plus a software extension** | `ETH_DMADescTypeDef`, hardware layout plus HAL-private backup fields |
+| Descriptor memory | Project-allocated, `.EthDrv_sec` in SRAM3 | Application-allocated, handed over in `ETH_InitTypeDef` |
+| TX timestamp delivery | Per-descriptor `tsCbPtr` / `tsCbArg` in the extension, invoked from `ETHHW_ProcessTx()` | `HAL_ETH_TxPtpCallback(uint32_t *buff, ETH_TimeStampTypeDef *ts)`, keyed on the buffer pointer |
+| RX timestamp | Context descriptor paired in `ETHHW_ProcessRx()`, carried on the event | `HAL_ETH_PTP_GetRxTimestamp()` |
+| PTP clock control | `ETHHW_{Init,Set,Get}PTP*` — thin wrappers over `MACTSCR`/`MACSSIR`/`MACTSAR` | `HAL_ETH_PTP_SetConfig()` and friends, with a configured/not-configured state machine |
+| State | One `ETHHW_State` struct in the descriptor region | `ETH_HandleTypeDef` with `gState`, `RxState`, error codes, callbacks |
+
+### Why the custom driver exists
+
+The deciding feature is the **descriptor extension**. flexPTP needs a transmit timestamp
+matched back to the message that produced it, and `ETHHW_DescExt` carries a callback pointer
+and a caller tag alongside each descriptor, so the match is structural. ST's HAL solves the
+same problem with `HAL_ETH_TxPtpCallback()` keyed on the buffer address, which works but ties
+the identity to a pointer the application must keep alive and unique.
+
+The H743 project made this choice; this port inherited it. Rewriting on top of the HAL was
+never in scope, and doing so now would discard the one part of the system that has been
+exercised hardest.
+
+### What it cost
+
+Everything the HAL would have provided had to be got right locally, and three defects in this
+area were found on hardware during this port:
+
+| | |
+|---|---|
+| **F57** | `ETHHW_ProcessTx()` kept per-pass scan state outside the loop, so a drained ring could re-dispatch a descriptor |
+| **F61** | `ETHHW_ProcessRx()` judged descriptors by the OWN bit alone and re-delivered frames already queued — **57 % of all frames** under ordinary PTP traffic |
+| **F54** | Six unbounded hardware waits, any of which turned a clock fault into a silent hang |
+
+None of these would have existed with the HAL driver, which is far more widely exercised. On
+the other side, the HAL brings its own weight — a handle state machine, a callback registry —
+and its PTP support is newer than the H743 project. The honest summary is that the custom
+driver is smaller and fits flexPTP better, and that this port paid for it in debugging time.
+
+### Differences from the H7 implementation
+
+The driver is a register-level port, so the H7 → H5 changes are register and pin changes
+rather than structural ones. The substantive ones are recorded in
+[Stage 12](#stage-12--ethernet-mac-driver-port) and
+[port_review.md](port_review.md): `SYSCFG` → `SBS` for the RMII selection (F11), the MDIO
+`CR` divider that double-shifted an already-positioned mask (F8), `RMII_TXD1` moving
+PB13 → PB15 (F7), and PG2/PB5 dropped (above, and the RMII pin map). The descriptor layout,
+the ring-walking logic and the callback mechanism are unchanged from the H743 version — which
+is precisely why F57 and F61 are latent there too.
+
+---
+
+## Caches and DMA Coherency
+
+**Both caches are off, and nothing in this project turns them on.** That is why the Ethernet
+DMA regions in SRAM3 need no cache maintenance as built, and it is worth stating explicitly
+because the assumption is invisible in the code — there is no maintenance call to notice the
+absence of.
+
+| Check | Result |
+|---|---|
+| ICACHE after reset | Disabled — `EN` in `ICACHE_CR` resets to 0 (RM0481 §8.7) |
+| DCACHE after reset | Disabled — `EN` in `DCACHE_CR` resets to 0 (RM0481 §9.7) |
+| `HAL_Init()` | Sets NVIC priority grouping and the SysTick source. Does not touch either cache |
+| `HAL_ICACHE_MODULE_ENABLED` / `HAL_DCACHE_MODULE_ENABLED` | Both commented out in `Inc/stm32h5xx_hal_conf.h`, so the drivers are not even compiled |
+| Application code | No `HAL_ICACHE_Enable()`, `HAL_DCACHE_Enable()`, `SCB_EnableICache()` or `SCB_EnableDCache()` anywhere in `Src/`, `Drivers/EthDrv/` or `Inc/` |
+
+The H7 needed care here: the Cortex-M7 has an architectural D-cache, and the H743 project put
+the Ethernet buffers in AXI-SRAM (`RAM_D1`) for that reason — the comment carried into
+`stm32h563zitx_FLASH.ld` records it as "accessible by the Ethernet DMA without cache coherency
+issues (when MPU was configured correctly)". **This project configures no MPU regions at all**
+— there is no `HAL_MPU_Enable()` or `ARM_MPU_*` call anywhere in `Src/`, `Drivers/EthDrv/` or
+`Inc/` — which is consistent, because with both caches off there is nothing to be coherent
+with. The H5 has no Cortex-M7 cache; ICACHE and DCACHE are separate peripherals on the bus,
+disabled at reset.
+
+**If you enable DCACHE**, the SRAM3 Ethernet region becomes a coherency problem immediately —
+descriptors are written by the DMA and read by the CPU, and buffers likewise. Either mark
+`.EthDrv_sec` non-cacheable through the MPU, or add clean/invalidate around every descriptor
+access. The linker script carries a comment to this effect at the `.EthDrv_sec` placement.
+Note that the region is 74 888 B spanning descriptors *and* buffers, so the MPU region needs
+to cover both.
 
 ---
 

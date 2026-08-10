@@ -26,7 +26,7 @@
 - [x] **Stage 14** — flexPTP H563 hardware port 🆕
 - [x] **Stage 15** — Global HAL header sweep
 - [x] **Stage 16** — Build & warning cleanup
-- [ ] **Stage 17** — Complete `docs/design_doc.md`
+- [x] **Stage 17** — Complete `docs/design_doc.md`
 - [x] **Stage 18** — Provision ST's OpenOCD via `build.sh` 🆕
 - [x] **Stage 19** — Project metadata & tooling (README, build.sh, VS Code) 🆕
 - [ ] **Stage 20** — Flash & test on hardware
@@ -489,7 +489,31 @@ flags, proven unreachable in this configuration.
 
 ---
 
-### Stage 17 — Complete design documentation
+### Stage 17 — Complete design documentation ✅
+
+**Closed.** All four stubs in [design_doc.md](design_doc.md) are written, plus a new
+*Caches and DMA Coherency* section. Facts were checked against RM0481, the STM32H563ZI
+datasheet, UM3115 and the build itself rather than transcribed:
+
+- **EtherLib** — the `.ETHLibPool` consequence was **measured**, not reasoned about. Compiling
+  a stand-in array with that section attribute showed the orphan section landing at
+  `0x20000a6c` with a **load address in FLASH**, costing 32 KB of flash and 32 KB of SRAM1 —
+  and starting exactly at `_edata`, so the startup copy loop stops just before it and the
+  `.bss` zeroing loop begins after it. The pool is neither copied nor cleared. A `NOLOAD`
+  placement in SRAM3 is given.
+- **TrustZone** — the load-bearing fact is RM0481 §3.6.3: *"The SAU/IDAU settings are
+  applicable only to the Cortex-M33. The other masters, like DMA, are not affected."* The
+  Ethernet DMA is such a master, so partitioning is a GTZC problem, not an SAU one.
+- **RXER** — three independent confirmations that PG2 could never have worked: the H563 has no
+  RMII error signal at all (only `ETH_MII_RX_ER`, on PB10/PI10); PG2 has **no** ETH alternate
+  function on this part; and UM3115 never mentions RXER, routing PG2 to Zio `CN9` pin 42.
+- **mac_drv.c** — compared against `stm32h5xx_hal_eth.c` (859 lines versus 3 524), including
+  what the custom driver buys (the per-descriptor TX-timestamp extension flexPTP needs) and
+  what it cost (F57, F61, F54).
+
+Two claims were corrected during review rather than shipped: an eight-signal RMII list that
+turned out to include two PDF line-wrap artefacts, and an assertion about the H743 project's
+MPU configuration that nothing in this repository supports.
 
 `docs/design_doc.md` already exists and has been filled incrementally since Stage 1.
 Complete the remaining sections:
