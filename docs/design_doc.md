@@ -866,8 +866,8 @@ to static review.
 `PLLQ` 4 → 2 plus `__HAL_RCC_PLL1_CLKOUT_ENABLE(RCC_PLL1_DIVQ)`. Verified:
 `MACSTSR` advances 7 → 11 across ~4 s, `TSADDREG` clears, `MACTSAR` = `0xCCCCCCCC`.
 
-**Open:**
-- **F54** — `ETHHW_SetPTPAddend()` waits on `TSADDREG` with no timeout, eight times over.
+**Open at the time of this stage — since resolved:**
+- **F54** — *(resolved)* `ETHHW_SetPTPAddend()` waited on `TSADDREG` with no timeout, eight times over.
   This is what turned F53 from "PTP does not lock" into a silent hang of the `ptp` thread,
   taking the PTP CLI commands down with it. Inherited from the H743 driver, where the wait
   always completed. Deliberately not yet fixed: a silent timeout would trade one invisible

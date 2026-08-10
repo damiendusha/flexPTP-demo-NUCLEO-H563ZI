@@ -783,10 +783,15 @@ Twice the symptom disappeared after a reflash and was credited to the change; bo
 revert showed the change was irrelevant. Only the experiments that *reproduced the failure
 on demand* produced reliable information.
 
-### Status
+### Status — SUPERSEDED (retained as history)
 
-F42 is **open**. The next measurement — counting `PTN_TRANSMIT_DONE` handler entries against
-`sTxCbFIFO` depth — is inside the flexPTP submodule, so it needs a decision about
+> Everything in this subsection describes the state of the investigation *before* the direct-
+> cable experiment. **F42 is resolved** — see [the resolution above](#resolved-the-network-was-discarding-delay_resp).
+> The next step proposed here was never needed, because the fault was not in the flexPTP
+> submodule or anywhere else on the board.
+
+~~F42 is **open**.~~ The next measurement — counting `PTN_TRANSMIT_DONE` handler entries
+against `sTxCbFIFO` depth — is inside the flexPTP submodule, so it needs a decision about
 instrumenting vendored code.
 
 ### Superseded diagnosis
