@@ -80,9 +80,9 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 | | Count |
 |---|---|
 | Total distinct actions | **81** |
-| Open (☐) | 11 |
+| Open (☐) | 9 |
 | Partial (◐) | 0 |
-| Already done (✅) | 66 |
+| Already done (✅) | 68 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -192,8 +192,8 @@ defects.
 | ✅ | — | — | **P5.18** | — | — | 1/3 O | Comment `ETH_MAC_ADDR0`'s `0x02 \| (UNIQUE_DEV_ID_BYTE(0) & 0xFE)` so the locally-administered bit and the unicast mask read as two deliberate operations — **DONE: commented as two deliberate operations — `| 0x02` sets locally-administered (the UID is not an assigned OUI), `& 0xFE` clears the multicast bit so a UID with bit 0 set cannot produce an unroutable multicast source address** |
 | ✅ | — | — | **P5.19** | ACT-16 (D4, I4) *(part)* | — | 1/3 F | Remove `-u _printf_float` from `CMakeLists.txt:166` — verified as force-linking newlib's float formatter (25 references in the map) into a project that uses `embfmt` — **DONE (removed), but **the size claim was wrong**: a proper A/B — build, remove flag, rebuild — gives **0 bytes** difference, with `printf_float` absent from the map either way. My earlier "25 references" came from a grep that also matched `vfprintf`. Removed as a misleading dead flag, not as a saving; the cross-review is corrected accordingly** |
 | ✅ | — | — | **P5.20** | ACT-17 (D5) | — | **⚠ SEVERITY** | Remove the duplicate `main.c` / `syscall.c` / `sysmem.c` listings between `CMakeLists.txt:35-40` and `Src/CMakeLists.txt:1-13` — **DONE: `main.c`/`syscall.c`/`sysmem.c` removed from the root `sources_SRCS`, leaving `Src/CMakeLists.txt` as the single owner. Verified the map still has exactly one `main.c.obj` — CMake had been deduplicating them, so this is tidying with no functional effect, as recorded** |
-| ☐ | — | — | **P5.21** | ACT-19 (U2) | — | 1/3 F | Add a `NOLOAD` placement for `.ETHLibPool` in SRAM3, per the analysis already in `design_doc.md` |
-| ☐ | — | — | **P5.22** | — *(from U2)* | — | 1/3 F | Reconcile `ETH_BUFFER_SIZE`: `1536UL` in `eth_drv_etherlib.c:17` vs `1528UL` in `eth_drv_lwip.c:40` |
+| ✅ | — | — | **P5.21** | ACT-19 (U2) | — | 1/3 F | Add a `NOLOAD` placement for `.ETHLibPool` in SRAM3, per the analysis already in `design_doc.md` — **DONE: `.ETHLib_sec (NOLOAD)` added in SRAM3 per `design_doc.md`'s analysis. Verified in the map — section present at `0x20062488`, size 0, SRAM3 usage unchanged at 74 888 B, so it costs nothing until EtherLib is actually compiled** |
+| ✅ | — | — | **P5.22** | — *(from U2)* | — | 1/3 F | Reconcile `ETH_BUFFER_SIZE`: `1536UL` in `eth_drv_etherlib.c:17` vs `1528UL` in `eth_drv_lwip.c:40` — **DONE: `eth_drv_etherlib.c` now uses 1528, matching `eth_drv_lwip.c` and `PBUF_POOL_BUFSIZE`. The 8-byte disagreement meant switching `ETH_STACK` silently changed both the SRAM3 footprint and the per-frame capacity** |
 | ✅ | — | — | **P5.23** | ACT-20 (B13) | — | 1/3 F | Add `\n` to `MSG("Turning PTP on!")`, `ptp_port_stm32h563.c:105` — **DONE: verified on target — *"Turning PTP on!"* now ends its own line instead of running into *"Own clock ID:"*** |
 | ✅ | — | — | **P5.24** | ACT-21 (D6) | — | 1/3 F | Fix `"currenty"` → `"currently"` in the boot banner, `main.c:133` — **DONE: banner reads *"currently compiled against"*; confirmed on target that `currenty` no longer appears** |
 | ✅ | — | — | **P5.25** | ACT-22 (D7) | — | 1/3 F | Fix `"PPL_PULSETRAIN"` → `"PPS_PULSETRAIN"` in the `#error` directive, `ptp_port_stm32h563.c:71` — **DONE: the `#error` now names `PPS_PULSETRAIN`, matching the macro `ptphw_set_pps_freq()` actually tests** |

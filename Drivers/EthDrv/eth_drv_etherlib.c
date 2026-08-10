@@ -14,7 +14,11 @@
 // --------- Ethernet buffers ----------
 // -------------------------------------
 
-#define ETH_BUFFER_SIZE (1536UL)
+/* 1528, matching eth_drv_lwip.c. The two drivers size the same DMA buffer region from the
+ * same descriptor counts, and disagreeing by 8 bytes meant switching ETH_STACK silently
+ * changed the SRAM3 footprint and the per-frame capacity. 1528 is the value the lwIP path
+ * has been exercised at, and is also PBUF_POOL_BUFSIZE in Inc/lwipopts.h. */
+#define ETH_BUFFER_SIZE (1528UL)
 
 uint8_t ETHBuffer[(ETH_RX_DESC_CNT + ETH_TX_DESC_CNT) * ETH_BUFFER_SIZE] __attribute__((section(".ETHBufferSection"))); /* Ethernet Receive Buffers */
 

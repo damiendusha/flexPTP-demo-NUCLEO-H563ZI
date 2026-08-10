@@ -203,6 +203,30 @@ SECTIONS
     *(.lwIPHeapSection)
   } >SRAM3
 
+  /*
+   * EtherLib's 32 KB dynamic pool. Declared by Inc/etherlib_options.h as
+   * section(".ETHLibPool") and had no placement at all -- neither here nor in the H743
+   * project (finding F29).
+   *
+   * That is not harmless once EtherLib is actually compiled. Measured by linking a stand-in
+   * array with the same attribute: unreferenced it was discarded silently by --gc-sections,
+   * and referenced it landed as an ORPHAN output section -- PROGBITS with a load address, so
+   * 32 KB of zeros stored in flash, placed immediately after .data and therefore covered by
+   * neither the startup copy loop (which stops at _edata) nor the bss zeroing loop (which
+   * starts after it). Uninitialised, and paid for in flash.
+   *
+   * NOLOAD in SRAM3 removes the flash cost and makes "not initialised" explicit rather than
+   * accidental; mp_init() sets up the pool header itself, so zeroing is not required.
+   * Placed now rather than when EtherLib is first built, so that build does not also have to
+   * diagnose this.
+   */
+  .ETHLib_sec (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(.ETHLibPool)
+    . = ALIGN(4);
+  } >SRAM3
+
   /* Remove information from the standard libraries */
   /DISCARD/ :
   {
