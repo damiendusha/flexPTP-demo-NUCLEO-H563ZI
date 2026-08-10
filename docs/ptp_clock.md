@@ -18,7 +18,7 @@ project, and cannot be improved on this part.
 - [Why the source is `pll1_q_ck`](#why-the-source-is-pll1_q_ck)
 - [How the hardware clock works](#how-the-hardware-clock-works)
 - [The K > 1 constraint](#the-k--1-constraint)
-- [Why a 4 ns increment is unreachable](#why-a-4-ns-increment-is-unreachable)
+- [Why a 4 ns increment is not adopted](#why-a-4-ns-increment-is-not-adopted)
 - [Selected configuration](#selected-configuration)
 - [Coupled decisions](#coupled-decisions)
 - [History](#history)
@@ -162,7 +162,7 @@ The last row is the reason the AHB prescaler matters here (see
 wrapped addend and a clock running at a wrong-but-plausible rate — considerably harder to
 diagnose than a dead clock.
 
-## Why a 4 ns increment is unreachable
+## Why a 4 ns increment is not adopted
 
 Timestamp **granularity equals SSINC**, not the clock frequency: the nanosecond counter
 advances in increment-sized steps, so captured timestamps quantise to the increment.

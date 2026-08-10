@@ -92,7 +92,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F2 | Both planned PTP configs have K = 1.0 → addend of 0 | Critical | [ptp_clock.md](ptp_clock.md#the-k--1-constraint), plan Stage 13 |
 | F3 | H563 has no ETH PTP clock mux — **but the fixed source is `pll1_q_ck`, not HCLK** (partly wrong; corrected) | Critical | [ptp_clock.md](ptp_clock.md#why-the-source-is-pll1_q_ck), design doc, plan diff table |
 | F4 | PLL1_Q cannot produce 200 MHz alongside 250 MHz SYSCLK | Critical | [ptp_clock.md](ptp_clock.md#pll-arithmetic-for-reference) |
-| F5 | A 4 ns increment is unreachable on this device | Critical | [ptp_clock.md](ptp_clock.md#why-a-4-ns-increment-is-unreachable) |
+| F5 | A 4 ns increment is unreachable on this device (**partly wrong; corrected** — reachable via `PLLQ = 1`, but not adopted) | Critical | [ptp_clock.md](ptp_clock.md#why-a-4-ns-increment-is-not-adopted) |
 | F6 | AHB prescaler must change `DIV2` → `DIV1` | Critical | plan Stage 10, [ptp_clock.md](ptp_clock.md#coupled-decisions) |
 | F7 | ETH_TXD1 moves PB13 → PB15 | Critical | design doc RMII Pin Map, plan decisions + Stage 12 |
 | F8 | MDIO divider write double-shifts a positioned mask | Critical | plan Stage 12 (with before/after code) |
@@ -224,6 +224,19 @@ Timestamp granularity equals the subsecond increment, and the increment must exc
 clock period. A 4 ns increment with H743-parity headroom (K = 1.2) needs 300 MHz; even a
 marginal K = 1.05 needs 262.5 MHz. The device ceiling is 250 MHz. Granularity is therefore
 5 ns — the same as the H743 — and cannot be improved.
+
+> ### ⚠ Correction (same root cause as F3)
+>
+> The conclusion followed from the F3 error: if the PTP clock were HCLK, it would indeed be
+> capped at 250 MHz. It is not — `clk_ptp_ref_i` is `pll1_q_ck`, and `PLLQ = 1` would give
+> **500 MHz and K = 2.0**, a valid 4 ns configuration.
+>
+> It remains **not adopted**, but for engineering reasons rather than impossibility: the
+> maximum frequency of `clk_ptp_ref_i` has not been checked against the datasheet, `PLLQ = 1`
+> would pin PLL1Q at 500 MHz and remove it as a source for anything else, and the gain —
+> 5 ns to 4 ns of quantisation — sits far below the noise floor of this board's
+> ST-Link-sourced clock. See
+> [ptp_clock.md](ptp_clock.md#why-a-4-ns-increment-is-not-adopted).
 
 ### F6 — AHB prescaler
 

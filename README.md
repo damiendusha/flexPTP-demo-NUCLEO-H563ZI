@@ -286,7 +286,7 @@ PID servo expose `ptp servo params` instead.
 |---|---|
 | [`docs/architecture.md`](docs/architecture.md) | Module inventory and versions, layering, boot sequence, threads and priorities, interrupts, clocking, the PTP timestamp path, memory layout |
 | [`docs/design_doc.md`](docs/design_doc.md) | Porting decisions and their rationale, submodule pinning, clock tree, pin map, stage-by-stage log |
-| [`docs/ptp_clock.md`](docs/ptp_clock.md) | Full derivation of the PTP timestamp clock and why a 4 ns increment is unreachable on this part |
+| [`docs/ptp_clock.md`](docs/ptp_clock.md) | Full derivation of the PTP timestamp clock, and why a 4 ns increment is possible but not adopted |
 | [`docs/host_ptp_setup.md`](docs/host_ptp_setup.md) | Running a PTP master on a Linux host, and what to check when nothing happens |
 | [`docs/port_review.md`](docs/port_review.md) | Every finding of the port review, with evidence — including the ones that cost days |
 | [`docs/implementation_plan.md`](docs/implementation_plan.md) | The staged work plan and what remains |
