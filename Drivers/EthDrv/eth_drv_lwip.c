@@ -214,6 +214,22 @@ static err_t low_level_output(struct netif *netif, struct pbuf *p) {
     pbuf_remove_header(p, ETH_PAD_SIZE); /* drop the padding word */
 #endif
 
+    /* Not reachable at netif->mtu = 1500 (1514 bytes on the wire against a 1528-byte
+     * buffer), but the copy below had no bound of any kind -- so an MTU change, a jumbo
+     * frame or a malformed chain would overrun a static buffer with no diagnostic.
+     *
+     * Deliberately NOT ERR_MEM: this function's own doc comment carries lwIP's warning that
+     * returning ERR_MEM from linkoutput "can lead to strange results", because the stack does
+     * not retry a frame dropped for memory reasons. An over-length frame will never fit, so
+     * report it and drop it. */
+    if (p->tot_len > (u16_t)ETH_TX_BUF_SIZE) {
+        MSG("ETH: TX frame of %u bytes exceeds the %u-byte buffer; dropped\n",
+            (unsigned)p->tot_len, (unsigned)ETH_TX_BUF_SIZE);
+        LINK_STATS_INC(link.lenerr);
+        LINK_STATS_INC(link.drop);
+        return ERR_IF;
+    }
+
     /* Concat pbufs into a single buffer */
     for (q = p; q != NULL; q = q->next) {
         /* Send the data from the pbuf to the interface, one pbuf at a
