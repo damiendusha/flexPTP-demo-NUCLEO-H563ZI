@@ -266,7 +266,21 @@ Notes:
 | **USART3** | 60 | 76 | **12** | `USART3_IRQHandler` | `serial_io.c` |
 | **GPDMA1 Ch0** | 27 | 43 | **12** | `GPDMA1_Channel0_IRQHandler` | `serial_io.c` |
 
-Every other vector resolves to `Default_Handler`, an infinite loop.
+**`HardFault`, `MemManage`, `BusFault` and `UsageFault` report and halt** — they are naked
+handlers in `Src/main.c` that recover the exception frame, print `CFSR`, `HFSR`, the faulting
+`PC` and `LR` through the polled UART writer, and decode the causes this port has actually
+hit. Every other vector still resolves to `Default_Handler`, an infinite loop.
+
+That matters more on this part than it looks. The Cortex-M33 port programs `PSPLIM` on every
+context switch, so **a task stack overflow is trapped by hardware** (`UFSR.STKOF`) on the
+offending push, long before FreeRTOS's `configCHECK_FOR_STACK_OVERFLOW` pattern check would
+run at the next switch. `vApplicationStackOverflowHook()` is therefore almost never the thing
+that catches an overflow here — this handler is. Measured:
+
+| Failure | Reported |
+|---|---|
+| Task stack overflow | `CFSR` = `0x00100000` → *UFSR.STKOF — stack overflow (PSPLIM)* |
+| Call through a NULL pointer | `CFSR` = `0x00000100`, `PC` = `0x00000000` → *BFSR.IBUSERR* |
 
 ### The FreeRTOS priority constraint
 

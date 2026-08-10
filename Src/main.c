@@ -300,6 +300,98 @@ static void panic_write_ulong(unsigned long v) {
     serial_io_panic_write(&buf[i]);
 }
 
+static void panic_write_hex32(uint32_t v) {
+    static const char digits[] = "0123456789abcdef";
+    char buf[11];
+
+    buf[0] = '0';
+    buf[1] = 'x';
+    for (unsigned i = 0U; i < 8U; i++) {
+        buf[2U + i] = digits[(v >> (28U - (4U * i))) & 0xFU];
+    }
+    buf[10] = '\0';
+
+    serial_io_panic_write(buf);
+}
+
+/* Fault reporter.
+ *
+ * Every fault vector resolved to Default_Handler -- an infinite loop that prints nothing --
+ * so a bad pointer, an unaligned access or a stack overflow all produced the same result: a
+ * board that went quiet. That is not hypothetical here. Both P1.3's null callback and P2.1's
+ * stack-overflow test ended up in exactly this loop, and each had to be diagnosed by halting
+ * over SWD and reading CFSR by hand.
+ *
+ * Stack overflow deserves special mention: the CM33 port programs PSPLIM on every context
+ * switch, so the hardware raises UsageFault.STKOF on the offending push, long before
+ * FreeRTOS's software pattern check would run at the next switch. UsageFault is not enabled
+ * in SHCSR, so it escalates here. This handler -- not vApplicationStackOverflowHook() -- is
+ * what actually catches a stack overflow on this target.
+ *
+ * `frame` is the exception stack frame, so the reported PC is the faulting instruction
+ * rather than an address inside this handler. */
+void fault_report(const uint32_t *frame, const char *name) {
+    const uint32_t cfsr = SCB->CFSR;
+    const uint32_t hfsr = SCB->HFSR;
+
+    serial_io_panic_write("\n\n*** FATAL: ");
+    serial_io_panic_write(name);
+    serial_io_panic_write("\n  CFSR = ");
+    panic_write_hex32(cfsr);
+    serial_io_panic_write("   HFSR = ");
+    panic_write_hex32(hfsr);
+    serial_io_panic_write("\n  PC   = ");
+    panic_write_hex32(frame[6]);
+    serial_io_panic_write("   LR   = ");
+    panic_write_hex32(frame[5]);
+
+    // decode the causes this project has actually hit, so the reader need not consult the ARM ARM
+    if ((cfsr & (1UL << 20)) != 0U) {
+        serial_io_panic_write("\n  UFSR.STKOF  - stack overflow (PSPLIM). Raise that task's stack_size.");
+    }
+    if ((cfsr & (1UL << 8)) != 0U) {
+        serial_io_panic_write("\n  BFSR.IBUSERR - instruction bus error, typically a call through a NULL pointer.");
+    }
+    if ((cfsr & (1UL << 15)) != 0U) {
+        serial_io_panic_write("\n  BFSR.BFARVALID - faulting address = ");
+        panic_write_hex32(SCB->BFAR);
+    }
+    if ((cfsr & (1UL << 7)) != 0U) {
+        serial_io_panic_write("\n  MMFSR.MMARVALID - faulting address = ");
+        panic_write_hex32(SCB->MMFAR);
+    }
+
+    serial_io_panic_write("\nHalted.\n");
+
+    for (;;) {
+    }
+}
+
+/* Naked so the exception frame pointer is recovered before the compiler touches the stack:
+ * EXC_RETURN bit 2 selects which stack the frame was pushed onto. */
+#define FAULT_HANDLER(fn, label)                        \
+    void fn(void) __attribute__((naked));               \
+    void fn(void) {                                     \
+        __asm volatile(                                 \
+            "  cpsid i                          \n"     \
+            "  tst   lr, #4                     \n"     \
+            "  ite   eq                         \n"     \
+            "  mrseq r0, msp                    \n"     \
+            "  mrsne r0, psp                    \n"     \
+            "  ldr   r1, =" label "             \n"     \
+            "  b     fault_report               \n");   \
+    }
+
+FAULT_HANDLER(HardFault_Handler, "fault_name_hard")
+FAULT_HANDLER(MemManage_Handler, "fault_name_mem")
+FAULT_HANDLER(BusFault_Handler, "fault_name_bus")
+FAULT_HANDLER(UsageFault_Handler, "fault_name_usage")
+
+const char fault_name_hard[] = "HardFault";
+const char fault_name_mem[] = "MemManage fault";
+const char fault_name_bus[] = "BusFault";
+const char fault_name_usage[] = "UsageFault";
+
 /* Reached from configASSERT(). A failed FreeRTOS assertion is a programming error, and the
  * previous definition halted with interrupts disabled and printed nothing -- indistinguishable
  * from a hang, and the same signature that made F53 costly. Safe from an ISR: the writer
