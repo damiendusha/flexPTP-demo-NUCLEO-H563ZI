@@ -146,7 +146,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F52 | `ptphw_init()` set the PTP addend before the subsecond increment → TSADDREG never clears | Critical | fixed, verified on hardware |
 | F53 | PTP timestamp counter is not clocked — PLL1Q output never enabled | **RESOLVED** | fixed, verified on hardware |
 | F54 | Six unbounded hardware waits; any clock, supply or PHY fault hangs the caller silently | **RESOLVED** | all bounded and reporting; the 8× addend loop was superstition |
-| F55 | Welcome message tells users to fit an **8 MHz** oscillator at X3; on MB1404 X3 is **25 MHz** | Wrong advice | plan Stage 19 |
+| F55 | Welcome message told users to fit an **8 MHz** oscillator at X3; on MB1404 X3 is **25 MHz** and already fitted | **RESOLVED** | banner rewritten with the full recipe |
 | F56 | `PTP_LOG_TRANSMISSION` exists in flexPTP's enum but has no CLI switch | Minor (cost hours) | documented |
 | F57 | `ETHHW_ProcessTx()` never reset its per-pass descriptor count — could re-dispatch a stale index | Latent bug | fixed |
 
@@ -877,6 +877,22 @@ following the current text would fit the wrong part.
 Acting on it also requires firmware changes: `HSE_VALUE` becomes 25000000, and `PLLM` must
 be re-derived, since `init_pll()` assumes `HSE_VALUE / 2000000` yields an integer in the
 2–4 MHz `RCC_PLL1_VCIRANGE_1` window (25/2 = 12.5 does not).
+
+**Resolved.** The banner now states that X3 is already fitted at 25 MHz, and gives the whole
+recipe rather than half of it:
+
+| | Value | |
+|---|---|---|
+| Hardware | SB3, SB4 **ON**; SB49 **OFF**; C70/C71 at 5.6 pF | per UM3115 |
+| `HSE_VALUE` | 25000000 | |
+| `HSEState` | `RCC_HSE_ON` | a crystal, not the MCO's bypass input |
+| `PLLM` | **5** → VCI 5 MHz | `HSE_VALUE / 2000000` is 12.5 and silently truncates to 12 |
+| `PLLRGE` | `RCC_PLL1_VCIRANGE_2` | the 4–8 MHz window, not 2–4 |
+| `PLLN` | **100** → VCO 500 MHz | the `PLLN = TARGET_SYSCLK_MHZ` identity holds only at a 2 MHz VCI |
+| `PLLP` / `PLLQ` | 2 / 2, unchanged | SYSCLK 250 MHz, `pll1_q_ck` 250 MHz |
+
+The banner says explicitly that changing `HSE_VALUE` alone is not enough and **fails
+silently**, and that the path is untested on this port — nobody has run this board from X3.
 
 ### F56 — `PTP_LOG_TRANSMISSION` has no CLI switch
 

@@ -138,9 +138,11 @@ void print_welcome_message() {
                           "Once the IP-address is secured, you might start the flexPTP module by typing 'flexptp'. 'Have a great time! :)'\n\n" ANSI_COLOR_RESET,
         ETH_STACK, ETH_STACK);
 
-    MSG(ANSI_COLOR_BRED "By default, the MCU clock is sourced by the onboard (STLink) board controller on this devboard. According to our observations, this clock signal is loaded "
-                        "with heavy noise rendering the clock synchronization unable to settle precisely. We highly recommend to solder a 8 MHz oscillator onto "
-                        "the designated X3 pads to achieve the best results!\n\n" ANSI_COLOR_RESET);
+    MSG(ANSI_COLOR_BRED "By default the MCU is clocked from the on-board ST-Link's 8 MHz MCO. That signal is noisy enough to limit how precisely synchronization settles, "
+                        "so a crystal is the better reference -- and on this board (MB1404) one is already fitted: X3, 25 MHz, 20 ppm. Nothing needs soldering onto empty pads.\n\n"
+                        "Selecting it takes both hardware and firmware changes (see docs/port_review.md, F55): SB3 and SB4 ON, SB49 OFF, C70/C71 populated with 5.6 pF; then "
+                        "HSE_VALUE = 25000000, HSEState = RCC_HSE_ON, and a re-derived PLL -- PLLM 5, PLLN 100, PLLRGE = RCC_PLL1_VCIRANGE_2. Changing HSE_VALUE alone is not "
+                        "enough and fails silently: init_pll() computes PLLM as HSE_VALUE/2000000, and 25/2 is not an integer. This path is untested on this port.\n\n" ANSI_COLOR_RESET);
 
     // MSG("Freq: %u\n", SystemCoreClock);
 }

@@ -619,18 +619,18 @@ The build is now clean — zero errors, zero warnings. `patches/flexptp/0002-ser
 and `patches/embfmt/0001-ll-length-modifier-and-non-finite-doubles.patch` remain applied:
 those are permanent fixes, not instrumentation.
 
-### 2. Known bugs, not yet fixed
+### 2. Known bugs — **all clear**
 
-**F61, F58, F54 and F41 are fixed** — see [port_review.md](port_review.md). F54 turned out to cover
-six unbounded hardware waits, not one; all are now bounded and report which handshake failed,
-and the 8× addend-write loop was measured to be unnecessary. F61 turned out to be a race
-in the RX descriptor handoff that duplicated **57% of received frames** under ordinary PTP
-traffic, not the rare event it appeared to be; F58 was proven by shrinking `PBUF_POOL_BUFSIZE`
-until DHCP itself failed.
+Every finding on this list has been fixed and verified on hardware. Details in
+[port_review.md](port_review.md).
 
-| Finding | Severity | Notes |
-|---|---|---|
-| **F55** — wrong hardware advice | User-facing | The welcome message repeats the H743 project's "solder an 8 MHz oscillator onto X3". On MB1404 X3 is **already fitted and is 25 MHz** (SB3/SB4 ON, SB49 OFF); using it needs `HSE_VALUE` 25000000 and a re-derived `PLLM` |
+| Finding | What it turned out to be |
+|---|---|
+| **F61** | Not the rare event it appeared to be. A race in the RX descriptor handoff: `ETHHW_ProcessRx()` judged descriptors by the OWN bit alone, which stays clear until `rx_thread` restores them, so any RX interrupt in that span re-delivered queued frames. Measured at **57% of all frames** under ordinary PTP traffic. Fixed with an `inFlight` marker in the descriptor extension |
+| **F58** | The RX copy never advanced its source pointer. Proven rather than assumed: shrinking `PBUF_POOL_BUFSIZE` to 256 stopped **DHCP itself** from completing, and the fix restored it |
+| **F54** | Six unbounded hardware waits, not one — including MDIO, where a missing PHY would hang the boot. All bounded through one helper that names the failing handshake. The 8× addend-write loop was measured to be unnecessary and removed |
+| **F41** | Unreachable, and its subtract path halved every backward correction. Removed rather than repaired: fixing code that has never run yields something that looks verified and is not |
+| **F55** | The welcome message told users to solder an 8 MHz part onto X3. On MB1404 X3 is already fitted and is 25 MHz. Rewritten with the full recipe, including that changing `HSE_VALUE` alone fails silently |
 
 ### 3. Unfinished stages
 
