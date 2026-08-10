@@ -59,12 +59,39 @@ source — with one **temporary** exception, noted below.
 | **stm32h5xx-hal-driver** | `v1.7.0-8-g0fff6e2` | git submodule | **As-is.** Configured by `Inc/stm32h5xx_hal_conf.h`; 12 of 61 modules enabled |
 | **CMSIS Core (M)** | 5.6 | in-tree, `Drivers/CMSIS/Include` | **As-is.** Inherited from the H743 project, not refreshed |
 | **CMSIS Device STM32H5xx** | 1.7.0 | in-tree, `Drivers/CMSIS/Device` | **As-is.** From `STMicroelectronics/cmsis_device_h5` |
-| **CMSIS-RTOS2 shim** | ST distribution | in-tree, `Drivers/CMSIS/CMSIS_RTOS_V2` | **Patched.** One line: `stm32h7xx.h` → `stm32h5xx.h` (Stage 15). This is a vendored copy, not a submodule, so the edit is in-repo and visible in git history |
+| **CMSIS-RTOS2 shim** | ST distribution | in-tree, `Drivers/CMSIS/CMSIS_RTOS_V2` | **Patched — one `#include` directive.** In `cmsis_os2.c`, `#include "stm32h7xx.h"` became `#include "stm32h5xx.h"`. No header file was copied or rewritten; see the note below. Vendored copy, not a submodule, so the edit is in-repo and visible in git history |
 | **FreeRTOS-Kernel** | `V11.3.0` | CMake `FetchContent`, pinned tag | **As-is.** Configured by `Inc/FreeRTOSConfig.h` |
 | **lwIP** | `3d896ba` (`STABLE-2_2_1_RELEASE-34`) | git submodule | **As-is, but extended.** `Inc/lwipopts.h` injects four fields into `struct pbuf` via lwIP's `LWIP_PBUF_CUSTOM_DATA` hook — a supported extension point, not a patch. See [The PTP Timestamp Path](#the-ptp-timestamp-path) |
 | **flexPTP** | `76aaf67` (`RC1.0-11`) | git submodule | **Patched.** A permanent servo fix (F59, `patches/flexptp/0002-…`) plus temporary F42 instrumentation (see above), and two external workarounds. (1) `__PRI64_PREFIX=__INT64` compile definition, because flexPTP uses a glibc-internal macro newlib lacks (F47). (2) The STM32H5 hardware port is supplied by this project, since flexPTP ships none |
 | **embfmt** | `670a349` | git submodule | **Patched.** Formatted-print backend for `MSG()`. `%ll` conversions were dropped entirely and NaN printed as `0.0000`; see [F60](port_review.md#f60--embfmt-drops-ll-conversions-and-renders-nan-as-00000-resolved) and `patches/embfmt/` |
 | **EtherLib** | `ec35be5` | git submodule | **Present but not compiled.** Alternative to lwIP, selectable via the `ETH_STACK` CMake variable |
+
+> **What "patched" means for the CMSIS-RTOS2 shim.** It is easy to read the row above as a
+> header having been copied or converted. It was neither.
+>
+> The shim is four files, taken verbatim from the H743 project in Stage 1 (`d0f0b2a`). The
+> whole of its subsequent history is one line in `cmsis_os2.c`, made in Stage 15 (`51031d9`):
+>
+> ```diff
+> --- a/Drivers/CMSIS/CMSIS_RTOS_V2/cmsis_os2.c
+> +++ b/Drivers/CMSIS/CMSIS_RTOS_V2/cmsis_os2.c
+> @@ -34,7 +34,7 @@
+> -#include "stm32h7xx.h"
+> +#include "stm32h5xx.h"
+> ```
+>
+> `git diff d0f0b2a HEAD -- Drivers/CMSIS/CMSIS_RTOS_V2/` reports **1 file changed, 1
+> insertion, 1 deletion**; `cmsis_os2.h`, `freertos_mpool.h` and `freertos_os2.h` have never
+> been touched.
+>
+> The device header itself was **not** modified, converted or hand-written.
+> `stm32h5xx.h` is ST's own CMSIS device header, added unmodified as part of the H5 device
+> pack in Stage 3 (`f4e4b2f`) and living at
+> `Drivers/CMSIS/Device/ST/STM32H5xx/Include/stm32h5xx.h` — the *CMSIS Device STM32H5xx* row
+> above. `stm32h7xx.h` does not exist anywhere in this repository; the H7 device headers were
+> removed in Stage 3, which is exactly why this `#include` had to change.
+>
+> So the shim was retargeted at a different device header, not ported.
 
 Project-owned code that would otherwise look like a third-party module:
 
