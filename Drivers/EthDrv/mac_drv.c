@@ -512,15 +512,27 @@ void ETHHW_ProcessTx(ETH_TypeDef *eth) {
     }
 }
 
+/* DMACSR is write-1-to-clear, so it must be written with ONLY the bits being acknowledged.
+ *
+ * This used to use SET_BIT, i.e. "DMACSR |= bit" -- a read-modify-write. The read returns
+ * every flag currently asserted, the OR changes nothing, and the write-back then clears all
+ * of them. Acknowledging RI silently acknowledged TI, AIS, FBE, RBU and anything else that
+ * happened to be set.
+ *
+ * Within one invocation that was mostly survivable, because both branches below test the
+ * `csr` snapshot rather than the live register. The real damage is at the edges: a flag that
+ * asserts between the snapshot and the write-back is destroyed without ever being seen, and
+ * the error flags -- AIS, FBE, RPS, TPS -- are wiped every interrupt, which is why nothing in
+ * this driver has ever been able to report a DMA fault.
+ *
+ * ST's own __HAL_ETH_DMA_CLEAR_IT (stm32h5xx_hal_eth.h:1623) is a direct assignment for
+ * exactly this reason. */
 void ETHHW_ISR(ETH_TypeDef *eth) {
     uint32_t csr = READ_REG(eth->DMACSR);
 
-    // MSG("ETH [0x%X]\n", csr);
-
     if (csr & ETH_DMACSR_NIS) {    // Normal Interrupt Summary
         if (csr & ETH_DMACSR_RI) {  // Receive Interrupt
-            SET_BIT(ETH->DMACSR, ETH_DMACSR_RI);
-            SET_BIT(ETH->DMACSR, ETH_DMACSR_NIS);
+            WRITE_REG(eth->DMACSR, ETH_DMACSR_RI | ETH_DMACSR_NIS);
 
             ETHHW_EventDesc evt;
             evt.type = ETHHW_EVT_RX_NOTFY;
@@ -531,13 +543,22 @@ void ETHHW_ISR(ETH_TypeDef *eth) {
         // only RX. Measured NOT to be the cause of F42 (the TX path delivers 100% of
         // timestamps either way), but the exclusive form is latently wrong under load.
         if (csr & ETH_DMACSR_TI) {  // Transmit Interrupt
-            SET_BIT(ETH->DMACSR, ETH_DMACSR_TI);
+            WRITE_REG(eth->DMACSR, ETH_DMACSR_TI | ETH_DMACSR_NIS);
 
             ETHHW_ProcessTx(eth);
         }
     }
 
-    SET_BIT(ETH->DMACSR, ETH_DMACSR_NIS);
+    // Abnormal Interrupt Summary: previously wiped by the read-modify-writes above without
+    // anyone looking at it. Report it instead -- a DMA bus error or a stopped process is
+    // exactly the kind of fault this driver used to absorb in silence.
+    if (csr & ETH_DMACSR_AIS) {
+        WRITE_REG(eth->DMACSR, (csr & (ETH_DMACSR_AIS | ETH_DMACSR_FBE | ETH_DMACSR_RBU |
+                                       ETH_DMACSR_TBU | ETH_DMACSR_RPS | ETH_DMACSR_TPS |
+                                       ETH_DMACSR_CDE | ETH_DMACSR_ETI | ETH_DMACSR_RWT)));
+    }
+
+    WRITE_REG(eth->DMACSR, ETH_DMACSR_NIS);
 }
 
 void ETHHW_Transmit(ETH_TypeDef *eth, const uint8_t *buf, uint16_t len, uint8_t txOpts, void *txOptArgs) {

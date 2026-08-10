@@ -80,9 +80,9 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 | | Count |
 |---|---|
 | Total distinct actions | **80** |
-| Open (☐) | 58 |
+| Open (☐) | 57 |
 | Partial (◐) | 1 |
-| Already done (✅) | 17 |
+| Already done (✅) | 18 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -128,7 +128,7 @@ defects.
 | ☐ | — | — | **P2.7** | — | — | 1/3 O | Clamp `cli_register_command()`'s token count against `MAX_TOKEN_N` (8), not `TOK_ARR_LEN` (16) |
 | ☐ | — | — | **P2.8** | — | — | 1/3 O | Raise the `rx` thread above the console threads; six of nine threads currently share priority 24 |
 | ☐ | — | — | **P2.9** | — | — | 1/3 O | Check `HAL_UART_Transmit_DMA()`'s return in `serial_io_thread()` — on error it blocks forever on a completion flag that will never be set |
-| ☐ | — | — | **P2.10** | ACT-02 (B3) | — | 1/3 F | Replace `SET_BIT` with direct assignment when clearing `ETH->DMACSR` in `ETHHW_ISR()`. Read-modify-write on a w1c register clears every pending flag, including `AIS`/`FBE`, which nothing reads. ST's own `__HAL_ETH_DMA_CLEAR_IT` uses direct assignment |
+| ✅ | — | — | **P2.10** | ACT-02 (B3) | — | 1/3 F | Replace `SET_BIT` with direct assignment when clearing `ETH->DMACSR` in `ETHHW_ISR()`. Read-modify-write on a w1c register clears every pending flag, including `AIS`/`FBE`, which nothing reads. ST's own `__HAL_ETH_DMA_CLEAR_IT` uses direct assignment — **DONE: all four acknowledgements are now `WRITE_REG` of just the bits being cleared, and `AIS` is acknowledged and reported instead of being wiped unseen. **Not demonstrable from software** — the race needs a flag to assert between the ISR's read and its write-back — so the evidence is correctness by inspection, corroborated by ST's own `__HAL_ETH_DMA_CLEAR_IT` using direct assignment, plus a regression: 500 pings at 1400 B, 0% loss, PTP addend correct** |
 | ☐ | — | — | **P2.11** | ACT-04 (B4) | — | 1/3 F | Fix the transmit-sequence delta in `ETHHW_ProcessTx()`, `mac_drv.c:473`, to `int16_t delta = (int16_t)(txCntr - state->txCntAcked);`. `txCntr` increments on *every* transmit, so the 16-bit wrap arrives in minutes on a busy link |
 | ✅ | — | — | **P2.12** | ACT-09 (B8) | — | 1/3 F | Bound the `phy_soft_reset()` handshake, `phy_common.c:441-448` — a seventh unbounded wait that F54 missed. Also initialise `r` before the loop — **DONE: bounded at 100 x 5 ms with `r` initialised and a failed MDIO read treated as still-in-reset rather than exiting on stale data; reports on expiry. Verified on target with a PHY scaffolded to never clear BCR.RESET: *"soft reset did not complete after 500 ms"* and boot continued** |
 | ☐ | — | — | **P2.13** | ACT-11 (B11) | — | **⚠ METHOD** | Add a length guard in `low_level_output()` before concatenating into `concat_buf[1528]`. Drop the frame and return `ERR_OK`/`ERR_IF`, **not** `ERR_MEM` |
