@@ -55,8 +55,23 @@ split is worth noticing.
 - Linked-image checks: memory-region usage, entry point, and the first two vector-table
   words against the linker script.
 
-Still not done: **no hardware**. Nothing here has executed on a device. Every claim in this
-document is a static or build-time one.
+### Phase 3 — hardware bring-up (F51 onward)
+
+Everything from F51 on was found by running the firmware on a board. That is a different kind
+of evidence from Phases 1 and 2, and the document mixes all three, so **check which phase a
+finding came from before trusting how it was established**:
+
+| Phase | Findings | Evidence |
+|---|---|---|
+| Static review | F1–F43 | reading code, headers and documentation |
+| Implementation | F44–F50 | configuring, compiling and linking |
+| Hardware bring-up | F51–F66 | executing on the target, read over SWD and the console |
+
+> **This paragraph used to read "Still not done: **no hardware**. Nothing here has executed on
+> a device."** It was true when Phases 1 and 2 were written and has not been true since F51.
+> It is corrected rather than deleted because the split between what was *reasoned* and what
+> was *measured* is the most useful thing this document records — see
+> [Findings by phase](#findings-by-phase).
 
 ---
 
@@ -66,6 +81,14 @@ document is a static or build-time one.
 |---|---|---|
 | Static review | F1–F43 (43) | Reading code, headers and documentation |
 | Implementation | F44–F50 (7) | Configuring, compiling and linking |
+| **Hardware bring-up** | **F51–F66 (16)** | **Executing on the target; SWD register reads, console captures and `tcpdump`** |
+
+The third phase is the one that changed the most conclusions. It produced the two defects
+that were invisible to both earlier phases (F51's byte-access fault, F52's init ordering),
+corrected two findings the static review had got wrong (F3's HCLK inference, and F5 which
+followed from it), and resolved F42 by proving the fault was outside the board entirely. It
+also produced the only two findings that were *retracted*: F5, and B6 in the later
+`final_review_opus_5p0.md`, both disproved by measurement rather than argument.
 
 The split is worth recording, because the two phases caught different *kinds* of problem
 and the second kind was not reachable by inspection:

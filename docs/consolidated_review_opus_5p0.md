@@ -80,9 +80,9 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 | | Count |
 |---|---|
 | Total distinct actions | **81** |
-| Open (☐) | 38 |
+| Open (☐) | 36 |
 | Partial (◐) | 1 |
-| Already done (✅) | 38 |
+| Already done (✅) | 40 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -157,8 +157,8 @@ defects.
 | ✅ | — | — | **P4.2** | — | — | 1/3 O | Update `architecture.md:239` — the addend wait has been bounded since F54 — **DONE: the note now records that every handshake is bounded and reports (F54), including the two the original sweep missed — the TX descriptor wait (P2.3) and the PHY reset (P2.12). The neighbouring `tcpip_thread` bullet also updated for `rx` at 32** |
 | ✅ | — | — | **P4.3** | — | — | 1/3 O | Remove the "MDIO shift bug must be fixed" note from `ptp_clock.md:252` — fixed at Stage 12 (F8) — **DONE: the "must be fixed as part of the MAC driver port" warning is replaced by a note recording that F8 was fixed at Stage 12, with the current code shown and the hardware evidence (PHY enumerates, MDC at 2.45 MHz)** |
 | ✅ | — | — | **P4.4** | — | — | 1/3 O | Retitle the 4 ns section to "not adopted"; update `README.md:268` and `port_review.md`'s F5 row — **DONE: section retitled *"Why a 4 ns increment is not adopted"* (heading, TOC and inbound link), README's documentation table reworded, and `port_review.md`'s F5 given a correction block matching F3's — the unreachability claim followed from the same HCLK error, and `PLLQ = 1` would give 500 MHz and K = 2.0** |
-| ☐ | — | — | **P4.5** | — | — | 1/3 O | Replace `port_review.md:58`'s *"nothing here has executed on a device"* with a current-status block |
-| ☐ | — | — | **P4.6** | — | — | 1/3 O | Extend `port_review.md`'s "Findings by phase" table to F66 and add the hardware bring-up phase |
+| ✅ | — | — | **P4.5** | — | — | 1/3 O | Replace `port_review.md:58`'s *"nothing here has executed on a device"* with a current-status block — **DONE: the *"no hardware, nothing here has executed on a device"* paragraph is replaced by a Phase 3 block that tabulates all three evidence types and tells the reader to check which phase a finding came from. Kept as a correction rather than deleted, since the reasoned-vs-measured split is what makes the document useful** |
+| ✅ | — | — | **P4.6** | — | — | 1/3 O | Extend `port_review.md`'s "Findings by phase" table to F66 and add the hardware bring-up phase — **DONE: "Findings by phase" extended with the hardware bring-up row (F51–F66, 16 findings) plus a note on what that phase changed — two defects invisible to earlier phases, two corrected findings (F3, F5), F42 resolved off-board, and the only two retractions in the project** |
 | ☐ | — | — | **P4.7** | — | — | 1/3 O | Mark F42's retained `### Status — F42 is open` section as superseded history |
 | ☐ | — | — | **P4.8** | — | — | 1/3 O | Settle the embfmt fix count between `README.md:209` ("two") and `architecture.md:52` ("three") — four defects, two findings, one patch |
 | ☐ | — | — | **P4.9** | — | — | 1/3 O | Clear the "Open: F54" heading in `design_doc.md:851` |
