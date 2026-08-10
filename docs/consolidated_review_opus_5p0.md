@@ -80,9 +80,9 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 | | Count |
 |---|---|
 | Total distinct actions | **81** |
-| Open (☐) | 41 |
+| Open (☐) | 40 |
 | Partial (◐) | 1 |
-| Already done (✅) | 35 |
+| Already done (✅) | 36 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -154,7 +154,7 @@ defects.
 | Status | Flash 3.6 Verified | Pro 3.1 Verified | Opus 5.0 ID | Flash 3.6 ID | Pro 3.1 ID | Consensus | Description |
 |---|---|---|---|---|---|---|---|
 | ✅ | — | — | **P4.1** | — | — | 1/3 O | Remove the "F42 remains broken" paragraph from `architecture.md:375` — resolved; nothing in the port was at fault — **DONE: the paragraph now states the path is fully verified and records F42's actual resolution — the site switch was discarding Delay_Resp and nothing in the port was at fault. The section preamble no longer implies F42 is live** |
-| ☐ | — | — | **P4.2** | — | — | 1/3 O | Update `architecture.md:239` — the addend wait has been bounded since F54 |
+| ✅ | — | — | **P4.2** | — | — | 1/3 O | Update `architecture.md:239` — the addend wait has been bounded since F54 — **DONE: the note now records that every handshake is bounded and reports (F54), including the two the original sweep missed — the TX descriptor wait (P2.3) and the PHY reset (P2.12). The neighbouring `tcpip_thread` bullet also updated for `rx` at 32** |
 | ☐ | — | — | **P4.3** | — | — | 1/3 O | Remove the "MDIO shift bug must be fixed" note from `ptp_clock.md:252` — fixed at Stage 12 (F8) |
 | ☐ | — | — | **P4.4** | — | — | 1/3 O | Retitle the 4 ns section to "not adopted"; update `README.md:268` and `port_review.md`'s F5 row |
 | ☐ | — | — | **P4.5** | — | — | 1/3 O | Replace `port_review.md:58`'s *"nothing here has executed on a device"* with a current-status block |

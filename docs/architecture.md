@@ -245,12 +245,15 @@ Notes:
   continuous CLI load both gave 0% loss and ~0.40 ms mean RTT. A 115200-baud console cannot
   generate enough load to starve it. The ordering is kept as correct-by-construction, not as
   a demonstrated optimisation.
-- **`tcpip_thread` is the only thread above the pack.** Everything else at 24 can be
-  preempted by it, which is what keeps the network stack responsive under console load.
-- **The `ptp` thread can be wedged by the MAC driver.** `ETHHW_SetPTPAddend()` waits on
-  `MACTSCR.TSADDREG` with no timeout; if the PTP timestamp unit is not running, that wait
-  never returns and the thread is stuck inside the driver, taking the `ptp pps` and
-  `ptp addend` CLI commands with it. See F53/F54 in [port_review.md](port_review.md).
+- **`tcpip_thread` is the highest application thread**, with `rx` above the console at 32.
+  Everything else at 24 can be preempted by both, which is what keeps the receive path and
+  the network stack ahead of console output.
+- **The `ptp` thread can no longer be wedged by the MAC driver.** `ETHHW_SetPTPAddend()`
+  once waited on `MACTSCR.TSADDREG` with no timeout, so a timestamp unit that was not
+  running left the thread stuck inside the driver and took the `ptp pps` and `ptp addend`
+  CLI commands with it — the visible half of F53. Every hardware handshake in the driver is
+  now bounded and reports on expiry (F54), including the transmit descriptor wait and the
+  PHY reset, which the original F54 sweep missed. See [port_review.md](port_review.md).
 - **`ptp` sits at the same priority as the CLI and the console writer.** flexPTP's timing
   does not depend on winning that race, because timestamps are captured in hardware — see
   below.
