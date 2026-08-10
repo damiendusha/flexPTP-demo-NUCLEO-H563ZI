@@ -450,13 +450,37 @@ static bool phy_populate_handlers() {
 
 // ----------------
 
+/* Bounded, because this ran during boot with no limit at all: a PHY that never clears
+ * BCR.RESET -- damaged, unclocked, or simply absent behind a bus that answers -- blocked the
+ * startup task for ever, taking the CLI, Ethernet and flexPTP with it. That is the seventh
+ * wait of the shape F54 set out to eliminate, and it was missed.
+ *
+ * `r` is also initialised now. A failed READ does not write its output, so the first pass
+ * used to test uninitialised stack, and a failed read is deliberately treated as "still in
+ * reset" rather than allowed to end the loop early on a garbage value.
+ *
+ * 100 x 5 ms = 500 ms, against a LAN8742A reset specified to complete in well under a
+ * millisecond. */
+#define PHY_SOFT_RESET_TRIES (100U)
+
 static void phy_soft_reset() {
     WRITE(EPHY_BCR, EPHY_BCR_RESET);
-    uint32_t r;
+
+    uint32_t r = EPHY_BCR_RESET;
+    uint32_t tries = PHY_SOFT_RESET_TRIES;
+
     do {
         osDelay(5);
-        READ(EPHY_BCR, r);
-    } while (r & EPHY_BCR_RESET);
+        if (__READ(EPHY_BCR, &r) != 0U) {
+            r = EPHY_BCR_RESET; // no answer -- keep waiting, do not exit on stale data
+        }
+        tries--;
+    } while (((r & EPHY_BCR_RESET) != 0U) && (tries > 0U));
+
+    if ((r & EPHY_BCR_RESET) != 0U) {
+        MSG(ANSI_COLOR_BRED "PHY: soft reset did not complete after %u ms (BCR.RESET still set)\n" ANSI_COLOR_RESET,
+            PHY_SOFT_RESET_TRIES * 5U);
+    }
 }
 
 uint32_t ETHHW_setupPHY(ETH_TypeDef *eth) {

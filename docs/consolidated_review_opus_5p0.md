@@ -80,9 +80,9 @@ A single-review entry is *not* a dispute — the other reviews did not examine t
 | | Count |
 |---|---|
 | Total distinct actions | **80** |
-| Open (☐) | 60 |
+| Open (☐) | 59 |
 | Partial (◐) | 1 |
-| Already done (✅) | 15 |
+| Already done (✅) | 16 |
 | Closed without action (⊘) | 4 |
 | Raised by all three reviews | 2 |
 | Raised by two reviews | 12 (6 clean, 6 with a contested boundary) |
@@ -130,7 +130,7 @@ defects.
 | ☐ | — | — | **P2.9** | — | — | 1/3 O | Check `HAL_UART_Transmit_DMA()`'s return in `serial_io_thread()` — on error it blocks forever on a completion flag that will never be set |
 | ☐ | — | — | **P2.10** | ACT-02 (B3) | — | 1/3 F | Replace `SET_BIT` with direct assignment when clearing `ETH->DMACSR` in `ETHHW_ISR()`. Read-modify-write on a w1c register clears every pending flag, including `AIS`/`FBE`, which nothing reads. ST's own `__HAL_ETH_DMA_CLEAR_IT` uses direct assignment |
 | ☐ | — | — | **P2.11** | ACT-04 (B4) | — | 1/3 F | Fix the transmit-sequence delta in `ETHHW_ProcessTx()`, `mac_drv.c:473`, to `int16_t delta = (int16_t)(txCntr - state->txCntAcked);`. `txCntr` increments on *every* transmit, so the 16-bit wrap arrives in minutes on a busy link |
-| ☐ | — | — | **P2.12** | ACT-09 (B8) | — | 1/3 F | Bound the `phy_soft_reset()` handshake, `phy_common.c:441-448` — a seventh unbounded wait that F54 missed. Also initialise `r` before the loop |
+| ✅ | — | — | **P2.12** | ACT-09 (B8) | — | 1/3 F | Bound the `phy_soft_reset()` handshake, `phy_common.c:441-448` — a seventh unbounded wait that F54 missed. Also initialise `r` before the loop — **DONE: bounded at 100 x 5 ms with `r` initialised and a failed MDIO read treated as still-in-reset rather than exiting on stale data; reports on expiry. Verified on target with a PHY scaffolded to never clear BCR.RESET: *"soft reset did not complete after 500 ms"* and boot continued** |
 | ☐ | — | — | **P2.13** | ACT-11 (B11) | — | **⚠ METHOD** | Add a length guard in `low_level_output()` before concatenating into `concat_buf[1528]`. Drop the frame and return `ERR_OK`/`ERR_IF`, **not** `ERR_MEM` |
 | ✅ | **Verified ✅** | — | **P2.14** | — | — | *new, found while testing P2.1* | **DONE:** naked `HardFault`/`MemManage`/`BusFault`/`UsageFault` handlers recover the exception frame and report `CFSR`, `HFSR`, `PC`, `LR` plus a decode of STKOF / IBUSERR / BFARVALID / MMARVALID. Both paths verified on target: stack overflow → `0x00100000` STKOF; NULL call → `0x00000100` IBUSERR with `PC = 0x00000000`. Original finding: report faults instead of looping silently in `Default_Handler`. Measured on target: a task stack overflow raises **`CFSR` = `0x00100000` (UFSR.STKOF)** — the ARMv8-M hardware stack-limit fault — because the CM33 port programs `PSPLIM` on every context switch. UsageFault is not enabled in `SHCSR`, so it escalates to HardFault → `Default_Handler` → silent infinite loop. **`vApplicationStackOverflowHook()` therefore never runs for a real overflow**, which makes P2.1 alone insufficient for its own stated purpose |
 
