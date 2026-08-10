@@ -74,8 +74,6 @@ static uint32_t insert_carriage_return(char *str, uint32_t maxLen) {
     return len;
 }
 
-static char last_char = '\n';
-
 void MSG(const char *format, ...) {
     // held across format, carriage-return insertion and the push, so a whole line reaches
     // the FIFO before another thread may reuse lineBuf
@@ -88,14 +86,16 @@ void MSG(const char *format, ...) {
     lineLen = insert_carriage_return(lineBuf, STDIO_OUTPUT_LINEBUF_LEN); // insert carriage returns
     if (lineLen > 0) {
         serial_io_write(lineBuf, lineLen); // send line to the CDC
-        last_char = lineBuf[lineLen - 1];
     }
 
     msg_unlock(locked);
 }
 
-void MSGchar(int c) {
-    serial_io_write((const char *)&c, 1);
+/* Takes a char, not an int. The old signature took the address of the int parameter and sent
+ * one byte from it, which is only the intended character on a little-endian target -- an
+ * accident this port happens to survive rather than a decision. */
+void MSGchar(char c) {
+    serial_io_write(&c, 1);
 }
 
 void MSGraw(const char *str) {

@@ -5,7 +5,7 @@
 
 void MSG_init(void); // create MSG()'s lock; call once, before the scheduler starts
 void MSG(const char *format, ...); // custom printf() replacement
-void MSGchar(int c); // print a single character
+void MSGchar(char c); // print a single character
 void MSGraw(const char * str); // print a raw string
 
 #endif /* STANDARD_OUTPUT_STANDRAD_OUTPUT */

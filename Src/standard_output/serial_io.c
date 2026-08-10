@@ -118,7 +118,16 @@ void USART3_IRQHandler() {
 }
 
 void serial_io_write(const char *str, uint32_t len) {
-    bfifo_push(&fifo, (const uint8_t *)str, len);
+    /* bfifo_push() returns how much it actually took, and stops at the free space -- so with
+     * the return discarded, a full FIFO silently truncated the message mid-word and the
+     * caller never knew. bfifo_push_all() blocks on the write semaphore until everything is
+     * in, which is the right trade for a diagnostic channel: the producer waits, rather than
+     * the evidence being cut short exactly when there is a lot of it.
+     *
+     * Safe for every current caller -- all of them are threads. It must NOT be called from an
+     * ISR, where the semaphore wait cannot complete; ISR-context output goes through
+     * serial_io_panic_write() instead. */
+    bfifo_push_all(&fifo, (const uint8_t *)str, len);
 }
 
 /* Last-resort output for the paths where the normal console cannot work: fault handlers,
