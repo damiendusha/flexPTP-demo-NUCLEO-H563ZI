@@ -463,7 +463,7 @@ without it silently does nothing — which is how the gap survived the first att
 
 **The release preset had never been built, and did not work.** It HardFaulted at the UID
 region: F51's byte-access workaround was written without `volatile`, so at `-Og` GCC narrowed
-the word load straight back into `ldrb`. See [F62](#f62--the-release-build-hardfaulted-f51s-fix-was-optimisation-dependent-resolved).
+the word load straight back into `ldrb`. See [F62](port_review.md#f62--the-release-build-hardfaulted-f51s-fix-was-optimisation-dependent-resolved).
 Fixed and verified on hardware.
 
 Final state:
@@ -471,7 +471,7 @@ Final state:
 | Preset | Warnings | FLASH | SRAM1 | SRAM3 | Hardware |
 |---|---|---|---|---|---|
 | `debug` | **0** | 222 904 B (10.6%) | 133 328 B (50.9%) | 74 888 B (22.9%) | DHCP, ping, PTP locking |
-| `release` | 4, all lwIP [F63](#f63--lwip-dhcp--wstringop-overflow-in-optimised-builds-documented-not-patched) | 176 040 B (8.4%) | 130 KB (50.8%) | 74 888 B (22.9%) | DHCP, ping, PTP locking |
+| `release` | 4, all lwIP [F63](port_review.md#f63--lwip-dhcp--wstringop-overflow-in-optimised-builds-documented-not-patched) | 176 040 B (8.4%) | 130 KB (50.8%) | 74 888 B (22.9%) | DHCP, ping, PTP locking |
 
 SRAM2 is unused (64 KB free), and no region is above 51%. The remaining four warnings are one
 upstream lwIP diagnostic, in a pinned submodule not compiled with this project's warning
@@ -540,7 +540,7 @@ flashing works in the same shell as the build, and the script closes by printing
 `program … verify reset` command line.
 
 Two corrections to the recipe below, both found by running it rather than reading it — see
-[F64](#f64--sts-openocd-does-not-build-as-specified-resolved):
+[F64](port_review.md#f64--sts-openocd-does-not-build-as-specified-resolved):
 
 - **`--disable-werror` is required.** OpenOCD enables `-Werror` for git checkouts and this
   0.12.0-era tree does not compile under GCC 15.2 (`angie.c`, `ulink.c`, `ti_icdi_usb.c`).
@@ -603,7 +603,7 @@ a valid manual option for developers who have it.
 
 **Closed.** Everything below was done, plus two things the checklist did not anticipate:
 
-- **[F65](#f65--the-debuggers-freertos-awareness-was-broken-resolved)**: `launch.json` ran
+- **[F65](port_review.md#f65--the-debuggers-freertos-awareness-was-broken-resolved)**: `launch.json` ran
   `$_CHIPNAME.cpu0 configure -rtos FreeRTOS`, which the H5 target rejects outright, so
   FreeRTOS thread awareness never worked. Also fixed a pre-existing typo, `STM32F743.svd`
   for `STM32H743.svd`, in the Attach configuration.
@@ -659,7 +659,9 @@ flat `0x08000000` layout and the `ARM_CM33_NTZ` port assume a non-TrustZone part
 previously provisioned with TZEN=1 will not boot this image.
 
 - Flash firmware to NUCLEO-H563ZI board
-- Verify: serial output, DHCP, PTP sync, 1PPS, CLI
+- Verify: serial output, DHCP, PTP sync, 1PPS, CLI — **1PPS and the LOCKED criterion are
+  blocked on equipment not available here; see [Blocked on equipment](#blocked-on-equipment)
+  for what is and is not demonstrated, and what would close each**
 - Confirm the PTP clock behaves as derived in `ptp_clock.md` — check `ptp addend` reports
   ~3435973836 and that the servo converges rather than railing
 - Document results in the design doc
@@ -759,10 +761,73 @@ done but has never been signed off against the [Verification Plan](#verification
 2. **DHCP**: Ethernet link-up → DHCP address acquired and printed
 3. **PTP Sync**: Run against a PTP grandmaster → `ptp log` shows converging offset and the
    stack reaches **LOCKED**, i.e. offset inside `PTP_ACCURACY_LIMIT_NS` (default 100 ns, F43).
-   A stack that syncs but never locks usually means a broken TX-timestamp path (F42), not a
-   servo problem
+   — **sync verified; LOCKED cannot be reached on the current bench, see
+   [Blocked on equipment](#blocked-on-equipment)**
 4. **1PPS Output**: Measure PPS pulse on oscilloscope — verify frequency and jitter
+   — **blocked: no oscilloscope, see [Blocked on equipment](#blocked-on-equipment)**
 5. **CLI**: All flexPTP CLI commands respond correctly (`?`, `flexptp`, profile switching)
 
 ### Regression
 - Original H743 project is a separate repository — unaffected
+
+### Blocked on equipment
+
+Two verification items cannot be completed with the hardware available. Both are recorded
+here rather than quietly dropped, because in each case what *is* demonstrated is easy to
+mistake for the whole requirement.
+
+#### LOCKED is unreachable against a software-timestamping master
+
+Not "untried" — **provably out of reach with this equipment**. The host NIC has no PTP
+hardware clock:
+
+```
+$ ethtool -T enp5s0
+Capabilities:
+        software-transmit
+        software-receive
+        software-system-clock
+PTP Hardware Clock: none
+Hardware Transmit Timestamp Modes: none
+```
+
+so `ptp4l` must run with `-S`, and every timestamp it produces is taken in software, well
+above the wire. The resulting floor is **tens of microseconds**; `PTP_ACCURACY_LIMIT_NS` is
+**100 ns**. Three orders of magnitude apart. No amount of tuning on the target closes that,
+because the error is not the target's.
+
+| | |
+|---|---|
+| **Demonstrated** | The delay exchange completes, the servo engages and *stays* engaged, and the offset is **centred on the master rather than drifting** — signed mean between +16 ns and +1.5 µs across runs, with essentially every sample applying a correction and the addend actively tuned. The addend at reset reads `3435973836`, matching the `2³²/1.25` derivation in [ptp_clock.md](ptp_clock.md) exactly |
+| **Not demonstrated** | The board's own synchronization accuracy, and the `LOCKED` state — which has never appeared in any capture |
+
+The offset *magnitude* (~18–28 µs typical, ~70–120 µs peak) is a measurement of the host, not
+of this port. Quoting it as the port's accuracy would be wrong.
+
+**To close:** a NIC with a PHC — Intel I210, I219-V and 82576 are the usual choices — then
+drop `-S` and re-run. Nothing on the target needs to change.
+
+#### 1PPS output is unmeasured
+
+No oscilloscope is available. This is the **only part of the PTP hardware port with no
+waveform evidence behind it**.
+
+| | |
+|---|---|
+| **Verified** | PG8 is configured as `GPIO_AF11_ETH` in `Src/flexptp_port/ptp_port_stm32h563.c`; the CLI responds — `ptp pps` reports *"PPS frequency: 1 Hz"* and `ptp pps 1` is accepted without error |
+| **Not verified** | That a pulse actually appears on the pin, its frequency accuracy, or its jitter |
+
+Configuration state is not a waveform. The PPS path could be misconfigured at the register
+level, or the pin could be driven by something else, and nothing above would notice.
+
+**To close**, in descending order of rigour:
+
+1. **Oscilloscope on PG8** — the stated requirement. PG8 is brought out on the ST morpho
+   connector (UM3115 Table 25, CN12 pin 66 — confirm against the table before probing).
+2. **Logic analyser or frequency counter** — establishes that the pulse train exists and its
+   period is right, but not its jitter, which is the interesting part.
+3. **LED and series resistor on PG8** — a 1 Hz blink confirms the output is toggling at all.
+   Crude, but it distinguishes "configured" from "working", which is the gap that matters
+   most right now.
+
+Option 3 costs almost nothing and would move this from *no evidence* to *some evidence*.

@@ -860,6 +860,22 @@ ethertype 0x88F7) with `PTP_DM_P2P` — not UDP/IPv4. A linuxptp master must the
 the gPTP profile, e.g.
 `ptp4l -f /usr/share/doc/linuxptp/configs/gPTP.cfg -i <iface> -S -m --serverOnly=1 --priority1=100`.
 
+### Verification limits
+
+Two of the Stage 20 verification items cannot be completed with the equipment here, and the
+distinction matters when reading everything above:
+
+- **The offset figures in these documents measure the host, not the board.** The host NIC
+  reports `PTP Hardware Clock: none`, so `ptp4l` runs with software timestamping and the floor
+  is tens of microseconds against a 100 ns `LOCKED` threshold. What is demonstrated is that
+  the servo engages and holds the offset centred on the master; the board's own accuracy is
+  **unmeasured**.
+- **1PPS has never been observed.** PG8 is configured and the CLI reports 1 Hz, but no scope
+  has been on the pin. Configuration state is not a waveform.
+
+Both are detailed in [implementation_plan.md](implementation_plan.md#blocked-on-equipment),
+including what would close each.
+
 ### Hardware bring-up — PTP interoperability
 Tested against `linuxptp` 4.4 on a Linux host.
 

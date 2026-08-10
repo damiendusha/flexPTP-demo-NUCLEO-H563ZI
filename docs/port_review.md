@@ -34,15 +34,15 @@ split is worth noticing.
   build/IDE configuration.
 - Symbol-level verification of every HAL and CMSIS identifier the port depends on, against
   `Drivers/stm32h5xx-hal-driver/Inc/` and `Drivers/CMSIS/Device/ST/STM32H5xx/Include/stm32h563xx.h`
-  — the **device** header, not the family header (see [F3](#f3)).
+  — the **device** header, not the family header (see [F3](#f3--no-eth-ptp-clock-mux-on-this-device)).
 - File-inventory diff against upstream `epagris/flexPTP-demo-NUCLEO-H743ZI` to confirm the
   Stage 1 copy was faithful, and to recover baseline values for comparison.
 - Constant-folding the flexPTP addend macro under GCC to confirm the arithmetic in
-  [F2](#f2) rather than reasoning about it.
+  [F2](#f2--both-planned-configurations-produce-an-addend-of-zero) rather than reasoning about it.
 - Cross-check of the flexPTP README, the published documentation and the porting guide
   (`epagris.github.io/flexPTP`) against the **pinned** submodule `RC1.0-11-g76aaf67`
   (2026-03-06). The website documents whatever is current on `master`; where the two
-  disagree, the pinned source wins — see [F37](#f37) and [F38](#f38).
+  disagree, the pinned source wins — see [F37](#f37--ptp_hw_get_time-is-documented-with-the-wrong-type) and [F38](#f38--sprintf-vs-flexptp_snprintf).
 
 ### Phase 2 — implementation (F44 onward)
 
@@ -90,7 +90,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 |---|---|---|---|
 | F1 | PTP baseline misstated: H743 uses 240 MHz, not 200 MHz | Critical | [ptp_clock.md](ptp_clock.md#history) |
 | F2 | Both planned PTP configs have K = 1.0 → addend of 0 | Critical | [ptp_clock.md](ptp_clock.md#the-k--1-constraint), plan Stage 13 |
-| F3 | H563 has no ETH PTP clock mux — **but the fixed source is `pll1_q_ck`, not HCLK** (partly wrong; corrected) | Critical | [ptp_clock.md](ptp_clock.md#why-there-is-no-clock-source-to-choose), design doc, plan diff table |
+| F3 | H563 has no ETH PTP clock mux — **but the fixed source is `pll1_q_ck`, not HCLK** (partly wrong; corrected) | Critical | [ptp_clock.md](ptp_clock.md#why-the-source-is-pll1_q_ck), design doc, plan diff table |
 | F4 | PLL1_Q cannot produce 200 MHz alongside 250 MHz SYSCLK | Critical | [ptp_clock.md](ptp_clock.md#pll-arithmetic-for-reference) |
 | F5 | A 4 ns increment is unreachable on this device | Critical | [ptp_clock.md](ptp_clock.md#why-a-4-ns-increment-is-unreachable) |
 | F6 | AHB prescaler must change `DIV2` → `DIV1` | Critical | plan Stage 10, [ptp_clock.md](ptp_clock.md#coupled-decisions) |
@@ -184,7 +184,7 @@ give exactly K = 1.0. Confirmed by constant-folding the flexPTP macro:
 
 Full derivation in [ptp_clock.md](ptp_clock.md).
 
-### F3 — No ETH PTP clock mux on this device {#f3}
+### F3 — No ETH PTP clock mux on this device
 
 `RCC_CCIPR5_ETHPTPCLKSEL`, `RCC_CCIPR4_ETHPTPDIV`, `ETHCLKSEL` and `ETHREFCLKSEL` do not
 exist in `stm32h563xx.h`. The HAL guards all ETHPTP clock-selection code with
@@ -332,7 +332,7 @@ empirically rather than assuming.
 These concern the flexPTP library contract rather than this repository. They are recorded
 because two of them will actively mislead whoever implements the hardware port.
 
-### F37 — `PTP_HW_GET_TIME` is documented with the wrong type {#f37}
+### F37 — `PTP_HW_GET_TIME` is documented with the wrong type
 
 Both the published guide and the pinned `manual/porting.dox:46,54` state that `pt` is of
 type `TimestampI *`. The code disagrees at every call site:
@@ -347,7 +347,7 @@ and `ptp_port_stm32h743_lwip.h:23` declares `void ptphw_gettime(TimestampU * pTi
 signature mismatch. Stage 14's instruction to derive from `ptp_port_stm32h743_lwip.c` avoids
 this; the reason is now stated there so the correct type is not "corrected" to match the docs.
 
-### F38 — `SPRINTF` vs `FLEXPTP_SNPRINTF` {#f38}
+### F38 — `SPRINTF` vs `FLEXPTP_SNPRINTF`
 
 The guide lists `SPRINTF(str,n,...)` among the required printing routines. The pinned code
 calls `FLEXPTP_SNPRINTF` (`timeutils.c:135`) and never references `SPRINTF`. Our
