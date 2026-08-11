@@ -1352,7 +1352,7 @@ The wider lesson is that a workaround for a hardware access-width constraint **m
 expressed with `volatile`. Written as ordinary C it is not a constraint at all, merely a
 suggestion the optimiser is free to ignore — and it will, at any level above `-O0`.
 
-### F63 — lwIP DHCP `-Wstringop-overflow` in optimised builds *(documented, not patched)*
+### F63 — lwIP DHCP `-Wstringop-overflow` in optimised builds *(RESOLVED by P6.6)*
 
 The release build emits four instances of:
 
@@ -1364,18 +1364,28 @@ dhcp.c:1454:30: warning: writing 1 byte into a region of size 0 [-Wstringop-over
 
 inlined into `dhcp_discover` and `dhcp_reboot`. The buffer is `DHCP_OPTIONS_LEN` = 68 (lwIP's
 `DHCP_MIN_OPTIONS_LEN` default). The bound on `options_out_len` exists only inside
-`LWIP_ASSERT`, which compiles to nothing here — `LWIP_DEBUG` is not defined — so the optimiser
-has no constraint to reason from and reports the theoretical worst case.
+`LWIP_ASSERT`.
+
+**Correction (finding D-a).** This section used to say that assertion "compiles to nothing here
+— `LWIP_DEBUG` is not defined". That is wrong twice over. `LWIP_ASSERT` is gated on
+`LWIP_NOASSERT`, not `LWIP_DEBUG` (`lwip/debug.h:115`), and `LWIP_NOASSERT` is defined nowhere
+in this project — so the assertion was always compiled. The real reason the optimiser had no
+constraint to reason from is that the assertion did not *stop*: the old macro printed and fell
+through, so the write happened whether the bound held or not, and GCC correctly reported the
+worst case.
+
+That also made the mistake load-bearing rather than cosmetic: believing lwIP's assertions were
+compiled out is precisely why nobody noticed they had never worked (F72).
 
 Not reachable in this configuration. `LWIP_NETIF_HOSTNAME` is 0, so neither path emits the
 variable-length hostname option; the longest message is `dhcp_reboot` at roughly 16 bytes —
 message type (3), requested IP (6), parameter request list (5–6), end marker (1) — against
 68 available.
 
-Left unpatched. It is a pinned third-party submodule, the code is not compiled with this
-project's warning flags, and patching it would mean a fourth patched submodule for a
-diagnostic. DHCP is exercised on every boot, including on the release build that exposed the
-warning.
+No longer present. P6.6 gave `LWIP_PLATFORM_ASSERT` a halt, which makes the assertion
+`noreturn` as far as GCC is concerned, so the bound on `options_out_len` finally constrains the
+path that follows. The Release build went from **4 warnings to 0** with no change to lwIP
+itself — the submodule stayed pinned and unpatched, exactly as this section wanted.
 
 ### F58 — RX pbuf copy never advanced the source pointer *(RESOLVED)*
 
@@ -1882,6 +1892,93 @@ RM0481 says — the board demonstrates it, in both directions, on demand.
 Boot, PHY, link, DHCP, `osinfo` heap 13 840 B, flexPTP → MASTER, addend 3435973836, ping
 1400 B 0% loss, 2000-packet 500 pps flood 0% loss, console back-pressure 10/10 dumps. No DMA
 error reported in normal operation.
+
+### F72 — every lwIP assertion was a silent no-op *(RESOLVED)* [N5]
+
+`Modules/lwip_port/arch/cc.h` carried lwIP's stock macro:
+
+```c
+#define LWIP_PLATFORM_ASSERT(x) do {printf("Assertion \"%s\" failed at line %d in %s\n", \
+                                     x, __LINE__, __FILE__); } while(0)
+```
+
+It could neither print nor stop.
+
+**It could not print.** `printf` → `_write` → `__io_putchar`, which is declared `__weak` in
+`Src/syscall.c` and defined nowhere. The linker resolved the undefined weak symbol to address 0
+and relaxed the call away entirely — visible in the image:
+
+```
+080041a0 <_write>:
+  80041aa:  ldrb.w  r0, [r4], #1
+  80041ae:  nop.w              <-- "bl __io_putchar" was here
+  80041b2:  adds    r5, #1
+```
+
+`_write()` walked the buffer, emitted nothing and returned `len`, so every byte was reported
+written and none left the chip.
+
+**It did not stop.** No halt, no `abort()`. A failed assertion formatted a string into the void
+and carried on into the condition it was guarding.
+
+The cost was not theoretical. `Inc/lwipopts.h` deliberately enables
+`LWIP_FREERTOS_CHECK_CORE_LOCKING` and `LWIP_ASSERT_CORE_LOCKED()`, which route every unlocked
+lwIP call into `sys_check_core_locking()` → `LWIP_ASSERT`. That is the automated form of the bug
+P3.6 fixed by hand in `check_dhcp_state()`, and **it had never been able to fire.**
+
+#### Verified
+
+Scaffolded a genuine violation — `netif_set_link_up()` called from `phy_thread`, which does not
+hold the core lock:
+
+```
+*** FATAL: lwIP assertion failed
+  Function called without core lock
+  at /home/damien/.../Modules/lwip_port/sys_arch.c
+Halted.
+```
+
+Three things followed from the one change:
+
+| | |
+|---|---|
+| the check works | a core-lock violation is now caught the moment it happens, by name |
+| **13 736 bytes** of flash returned | Release 181 100 → 167 364 B. `printf` and `_vfprintf_r` are no longer in the link; they were pulled in by `eth_drv_lwip.c`'s two `LWIP_ASSERT`s and by nothing else |
+| **F63 resolved for free** | a halting assertion is `noreturn`, so GCC can finally use the `options_out_len` bound. Release went from 4 warnings to 0, with lwIP still pinned and unpatched |
+
+`serial_io_panic_write()` was already the right tool and already existed: polled, no FIFO, no
+DMA, no RTOS object, safe with interrupts disabled or the scheduler stopped.
+
+### F73 — `init_ethernet()` built the netif without the core lock *(RESOLVED)*
+
+Found by F72, within one boot of the lwIP assertions becoming real — which is the best argument
+for that change that could have been asked for.
+
+`init_ethernet()` calls `netif_add()`, `netif_set_default()` and `netif_set_link_callback()`
+from the `init` thread. With `LWIP_TCPIP_CORE_LOCKING = 1` all three require the core lock, and
+`netif_add()` asserts it outright (`netif.c:297`). None of them held it, and had not since the
+port began. Backtrace from the halt:
+
+```
+#0  sys_check_core_locking ()            at Modules/lwip_port/sys_arch.c:598
+#1  netif_add (netif=0x2000dd14 <intf>)  at Modules/lwip/src/core/netif.c:297
+#2  init_ethernet ()                     at Src/ethernet/ethernet_lwip.c:85
+#3  task_startup (arg=0x0)               at Src/main.c:174
+```
+
+This is the same class as P3.6, which found the equivalent problem in `check_dhcp_state()` by
+inspection and noted at the time that it was "the only place in the project that got this
+wrong". It was not; it was the only place anyone had looked. The automated check that would
+have caught both had been inert since the port began (F72).
+
+**Fix.** `LOCK_TCPIP_CORE()` / `UNLOCK_TCPIP_CORE()` around the whole group. The lock is held
+across `netif_add()` deliberately: it calls `ethernetif_init()`, which calls `netif_set_up()` —
+another API that asserts the lock — so one bracket around the group is both simpler and more
+correct than three.
+
+**Verified.** Boot clean with no assertion, DHCP 192.168.2.141, flexPTP → MASTER, addend
+3435973836, ping 1400 B 0% loss, and a soak of flexPTP + a 500 pps flood + 12 back-to-back help
+dumps: 12/12 dumps, CLI responsive, 1500-packet flood 0% loss, no assertion anywhere.
 
 ---
 

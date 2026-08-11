@@ -471,7 +471,7 @@ Final state:
 | Preset | Warnings | FLASH | SRAM1 | SRAM3 | Hardware |
 |---|---|---|---|---|---|
 | `debug` | **0** | 222 904 B (10.6%) | 133 328 B (50.9%) | 74 888 B (22.9%) | DHCP, ping, PTP locking |
-| `release` | 4, all lwIP [F63](port_review.md#f63--lwip-dhcp--wstringop-overflow-in-optimised-builds-documented-not-patched) | 176 040 B (8.4%) | 130 KB (50.8%) | 74 888 B (22.9%) | DHCP, ping, PTP locking |
+| `release` | 0 since P6.6 (was 4, all lwIP [F63](port_review.md#f63--lwip-dhcp--wstringop-overflow-in-optimised-builds-resolved-by-p66)) | 176 040 B (8.4%) | 130 KB (50.8%) | 74 888 B (22.9%) | DHCP, ping, PTP locking |
 
 SRAM2 is unused (64 KB free), and no region is above 51%. The remaining four warnings are one
 upstream lwIP diagnostic, in a pinned submodule not compiled with this project's warning

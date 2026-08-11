@@ -44,7 +44,7 @@ three of the four High items are unlikely-but-terminal rather than routine.
 | [N2](#n2--the-tx-ownership-wait-is-compiled-away-above--og) | High | `EthDrv` | TX ownership retry loop optimised away at `-O2`/`-O3` | ✅ **fixed** (F70) |
 | [N3](#n3--rx-dma-suspension-on-rbu-is-never-cleared) | High | `EthDrv` | RBU suspend is never cleared; AIS flags discarded silently | ✅ **fixed** (F71), mechanism now **confirmed on hardware** |
 | [N4](#n4--known-vendor--unknown-model-dereferences-null-at-boot) | High | `phy_drv` | Known OUI + unknown model dereferences NULL `phyName` | ✅ **fixed** (F69) |
-| [N5](#n5--every-lwip-assertion-is-a-silent-no-op) | Medium | `lwip_port` | lwIP assertions print nothing and do not halt; ~9 KB wasted | **Measured** |
+| [N5](#n5--every-lwip-assertion-is-a-silent-no-op) | Medium | `lwip_port` | lwIP assertions print nothing and do not halt; ~9 KB wasted | ✅ **fixed** (F72) |
 | [N6](#n6--the-isr-logging-contract-is-self-contradictory) | Medium | `standard_output` | ISR-logging contract contradicts itself; ISR path can hang | ✅ **fixed** (F68) |
 | [N7](#n7--bfifo_pop-hands-the-write-token-to-a-second-writer) | Medium | `blocking_io` | `bfifo_pop()` releases the writer token mid-push | ✅ **fixed** (F67) |
 | [N8](#n8--cli-tokenizer-one-byte-overflow-and-cross-thread-reuse) | Medium | `cliutils` | 1-byte `.bss` overflow + static buffer/`strtok` shared across threads | **Read** |
@@ -57,7 +57,7 @@ three of the four High items are unlikely-but-terminal rather than routine.
 | [N15](#n10--n16--low-and-latent) | Low | `lwipopts` | `#undef LWIP_PROVIDE_ERRNO` undone by `cc.h` | **Read** |
 | [N16](#n10--n16--low-and-latent) | Low | CI | No `pipefail`: a failing build can pass green | **Read** |
 | [N17](#n17--the-flash-figure-depends-on-the-build-directory-path-new-in-this-consolidation) | Low | Build | Flash size varies with the build-directory path | **Measured**, new here |
-| [D-a](#documentation) | Doc | `port_review.md` | F63 gives the wrong reason (`LWIP_DEBUG` vs `LWIP_NOASSERT`) | **Measured** |
+| [D-a](#documentation) | Doc | `port_review.md` | F63 gives the wrong reason (`LWIP_DEBUG` vs `LWIP_NOASSERT`) | ✅ **corrected**, and F63 itself resolved |
 | [D-b](#documentation) | Doc | `architecture.md` | RX table calls a permanent stall a stall | **Read** |
 | [D-c](#documentation) | Doc | `README.md` | embfmt URL disagrees with `.gitmodules` | **Read** |
 | [H-1…H-5](#housekeeping) | Hygiene | repo | Untracked scripts, docs-CI submodule constraint, dead config | **Read** |
@@ -261,6 +261,22 @@ The cost is concrete: `lwipopts.h` deliberately enables `LWIP_FREERTOS_CHECK_COR
 hand in `check_dhcp_state()`, **and it has never been able to fire**. The map shows `printf`
 pulled in by `eth_drv_lwip.c.obj (printf)` — the two `LWIP_ASSERT`s in that file — dragging the
 float-capable `_vfprintf_r` (8 836 B) and its support in with it.
+
+> ✅ **Fixed** in P6.6 — and it immediately earned its keep: the very first boot with working
+> assertions halted on a **real** core-lock violation that had been present since the port
+> began. `init_ethernet()` calls `netif_add()`, `netif_set_default()` and
+> `netif_set_link_callback()` from the `init` thread without the lock, and `netif_add()`
+> asserts it. P3.6 had fixed the same class of bug in `check_dhcp_state()` and concluded it was
+> "the only place in the project that got this wrong"; it was only the only place anyone had
+> looked. Fixed as [F73](port_review.md).
+>
+> Verified by scaffolding a real violation — `netif_set_link_up()` from
+> `phy_thread`, which holds no core lock — which now prints `*** FATAL: lwIP assertion failed /
+> Function called without core lock` and halts. Flash returned: **13 736 bytes** (Release
+> 181 100 → 167 364 B), more than the ~9 KB estimated. And F63 resolved itself: a halting
+> assertion is `noreturn`, so GCC can use the `options_out_len` bound and the Release build
+> went from **4 warnings to 0** with lwIP still pinned and unpatched. Recorded as
+> [F72](port_review.md).
 
 **Fix.** Point `LWIP_PLATFORM_ASSERT` at `serial_io_panic_write()` (written for exactly this
 class of caller: polled, no FIFO, no RTOS object, safe at any priority) and halt. Both reviews

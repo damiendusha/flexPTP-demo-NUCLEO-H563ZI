@@ -80,8 +80,33 @@ typedef uint32_t sys_prot_t;
 
 #endif
 
-#define LWIP_PLATFORM_ASSERT(x) do {printf("Assertion \"%s\" failed at line %d in %s\n", \
-                                     x, __LINE__, __FILE__); } while(0)
+/* A failed lwIP assertion now says so and stops.
+ *
+ * The stock macro here was printf(), and it could do neither. printf() reaches newlib's
+ * _write(), which calls __io_putchar() -- declared weak in Src/syscall.c and defined nowhere,
+ * so the linker resolved it to address 0 and relaxed the call into a `nop.w`. _write() walked
+ * the buffer, emitted not one character and returned len. And the macro had no halt, so
+ * execution continued into whatever the assertion was guarding.
+ *
+ * That mattered most for the check this project deliberately turns on: lwipopts.h enables
+ * LWIP_FREERTOS_CHECK_CORE_LOCKING and LWIP_ASSERT_CORE_LOCKED(), routing every unlocked lwIP
+ * call into sys_check_core_locking() -> LWIP_ASSERT. It is the automated form of the bug P3.6
+ * fixed by hand in check_dhcp_state(), and it had never been able to fire (finding N5).
+ *
+ * serial_io_panic_write() is the project's writer for exactly this situation: polled, no FIFO,
+ * no DMA, no RTOS object, safe with interrupts disabled or the scheduler stopped. Halting is
+ * right for a violated stack invariant, and it also gets rid of ~9 KB of newlib printf that
+ * was linked in solely for this macro. */
+#include "standard_output/serial_io.h"
+
+#define LWIP_PLATFORM_ASSERT(x)                                              \
+    do {                                                                     \
+        serial_io_panic_write("\n\n*** FATAL: lwIP assertion failed\n  ");    \
+        serial_io_panic_write(x);                                            \
+        serial_io_panic_write("\n  at " __FILE__ "\nHalted.\n");             \
+        for (;;) {                                                           \
+        }                                                                    \
+    } while (0)
 
 /* Define random number generator function */
 #define LWIP_RAND() ((u32_t)rand())

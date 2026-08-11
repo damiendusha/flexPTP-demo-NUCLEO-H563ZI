@@ -81,6 +81,21 @@ void init_ethernet() {
     ip_addr_set_zero_ip4(&netmask);
     ip_addr_set_zero_ip4(&router);
 
+    /* All three of these are lwIP API calls made from the "init" thread, and with
+     * LWIP_TCPIP_CORE_LOCKING = 1 every one of them requires the core lock. They ran without
+     * it since the port began -- netif_add() asserts it explicitly (netif.c:297) -- and
+     * nothing said so, because lwIP's assertions could not print or halt (F72). The first
+     * boot after that was fixed stopped here with "Function called without core lock", and
+     * the backtrace named this line.
+     *
+     * Same class as P3.6, which fixed check_dhcp_state() by inspection. This one is the reason
+     * the automated check was worth turning back on.
+     *
+     * The lock is held across netif_add() deliberately: it calls ethernetif_init(), which
+     * calls netif_set_up() -- another API that asserts the lock -- so bracketing the whole
+     * group is both simpler and more correct than three separate critical sections. */
+    LOCK_TCPIP_CORE();
+
     // add network interface
     netif_add(&intf,
               &ipaddr,
@@ -95,6 +110,8 @@ void init_ethernet() {
 
     // register a link change callback
     netif_set_link_callback(&intf, link_chg_cb);
+
+    UNLOCK_TCPIP_CORE();
 
     // initialize and start the DHCP-handling
     checkDhcpTmr = osTimerNew(check_dhcp_state, osTimerPeriodic, NULL, NULL);

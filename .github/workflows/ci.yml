@@ -34,9 +34,11 @@ jobs:
       - name: Build
         run: ./build.sh -t ${{ matrix.config }} -b build/${{ matrix.config }} 2>&1 | tee build.log
 
-      # The gate is first-party warnings, not all warnings: vendored lwIP emits four
-      # -Wstringop-overflow instances in dhcp.c under optimisation (finding F63, documented
-      # and unreachable as configured), and lwipcore is not built with this project's flags.
+      # The gate is first-party warnings, not all warnings: lwipcore is not built with this
+      # project's flags, so a vendored warning must not fail the build. As of P6.6 there are
+      # none -- the four -Wstringop-overflow instances in dhcp.c (F63) went away when the lwIP
+      # assertion macro gained a halt -- but the distinction is kept, because the next
+      # submodule bump can reintroduce one and that is not this project's bug to fix.
       - name: Fail on first-party warnings
         run: |
           total=$(grep -c 'warning:' build.log || true)
