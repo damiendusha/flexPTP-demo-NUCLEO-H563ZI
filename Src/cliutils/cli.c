@@ -79,12 +79,32 @@ void cli_init() {
 #define CLI_LINEBUF_LENGTH (191)
 #define TOK_ARR_LEN (16)
 
+/* Copy a token and terminate it.
+ *
+ * strncpy() does NOT terminate when the source is at least as long as the limit, so a token of
+ * exactly MAX_TOK_LEN characters or more left ppTok[i] unterminated and every later strcmp()
+ * ran off the end into the next array element (finding N12). Copy one fewer and terminate. */
+static void copy_token(char *dst, const char *src, uint32_t dstSize) {
+    strncpy(dst, src, dstSize - 1U);
+    dst[dstSize - 1U] = '\0';
+}
+
 static void tokenize_cli_line(char *pLine, CliToken_Type ppTok[], uint32_t tokMaxLen, uint32_t tokMaxCnt, uint32_t *pTokCnt) {
     uint32_t len = strlen(pLine);
 
-    // copy to prevent modifying original one
-    static char pLineCpy[CLI_LINEBUF_LENGTH];
-    strcpy(pLineCpy, pLine);
+    /* Local, one byte larger, and strtok_r.
+     *
+     * It was `static char pLineCpy[CLI_LINEBUF_LENGTH]` -- 191 bytes for a line that can be
+     * 191 characters plus a terminator, so a full-length command overran a .bss object by one
+     * byte. And being static, it was shared: this function is entered from the "cli" thread
+     * parsing input AND from cli_register_command() on the "ptp" thread, which registers ~19
+     * commands when flexPTP starts and re-registers them on `ptp reset`. modifyMtx protects
+     * the command table, not this buffer -- and strtok()'s state was shared the same way
+     * (finding N8). 192 bytes of stack costs nothing on a 2 KB task. */
+    char pLineCpy[CLI_LINEBUF_LENGTH + 1];
+    char *pSave = NULL;
+
+    copy_token(pLineCpy, pLine, sizeof(pLineCpy));
 
     *pTokCnt = 0;
 
@@ -94,17 +114,20 @@ static void tokenize_cli_line(char *pLine, CliToken_Type ppTok[], uint32_t tokMa
     }
 
     // first token
-    char *pTok = strtok(pLineCpy, " ");
-    strncpy(&ppTok[0][0], pTok, tokMaxLen);
+    char *pTok = strtok_r(pLineCpy, " ", &pSave);
+    if (pTok == NULL) {
+        return; // nothing but separators
+    }
+    copy_token(&ppTok[0][0], pTok, tokMaxLen);
     (*pTokCnt)++;
 
     // further tokens
     while ((*pTokCnt < tokMaxCnt) && (pTok != NULL)) {
-        pTok = strtok(NULL, " ");
+        pTok = strtok_r(NULL, " ", &pSave);
 
         if (pTok != NULL) {
-            strncpy(&ppTok[*pTokCnt][0], pTok, tokMaxLen); // store token
-            (*pTokCnt)++;                                  // increment processed token count
+            copy_token(&ppTok[*pTokCnt][0], pTok, tokMaxLen); // store token
+            (*pTokCnt)++;                                     // increment processed token count
         }
     }
 }
@@ -506,8 +529,11 @@ int cli_register_command(char *pCmdParsHelp, uint8_t cmdTokCnt,
     // store minimal argument count parameter
     pCmd->minArgCnt = minArgCnt;
 
-    // copy help line
-    strncpy(pCmd->pHelp, pCmdParsHelp, MAX_HELP_LEN);
+    // copy help line, terminated: strncpy leaves it open when the source reaches the limit,
+    // and everything downstream -- strchr for the '\t', strlen for the padding -- assumes a
+    // terminator (finding N12). The longest line today is ~75 chars against MAX_HELP_LEN 192,
+    // so this is latent rather than live, but nothing enforces that.
+    copy_token(pCmd->pHelp, pCmdParsHelp, MAX_HELP_LEN);
 
     // zero out hint part (tidy() will fill it)
     pCmd->pHint = NULL;

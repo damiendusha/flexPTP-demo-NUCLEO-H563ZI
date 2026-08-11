@@ -1980,6 +1980,34 @@ correct than three.
 3435973836, ping 1400 B 0% loss, and a soak of flexPTP + a 500 pps flood + 12 back-to-back help
 dumps: 12/12 dumps, CLI responsive, 1500-packet flood 0% loss, no assertion anywhere.
 
+### F74 — CLI tokenizer: a one-byte overflow and shared state *(RESOLVED)* [N8, N12]
+
+Three defects in `tokenize_cli_line()` and its callers, all in `Src/cliutils/cli.c`.
+
+**A one-byte `.bss` overflow.** `sLineBuf` is `CLI_LINEBUF_LENGTH + 1` (192 bytes) and
+`get_line()` can fill all of it, but the working copy was `static char
+pLineCpy[CLI_LINEBUF_LENGTH]` — 191. A maximum-length command line was `strcpy`'d one byte past
+the end of a static object.
+
+**Shared state across two threads.** That buffer was `static`, and `strtok()` keeps its state
+globally. `tokenize_cli_line()` is entered from the `cli` thread parsing input *and* from
+`cli_register_command()` on the `ptp` thread, which registers ~19 commands when flexPTP starts
+and re-registers them on `ptp reset`. `modifyMtx` protects the command table, not this buffer.
+
+**Unterminated `strncpy`.** Tokens of at least `MAX_TOK_LEN` (32) characters and help lines of
+at least `MAX_HELP_LEN` (192) were left without a terminator, so later `strcmp()` and `strlen()`
+walked into the next array element. Latent — the longest help line is ~75 characters — but
+nothing enforced that.
+
+**Fix.** The copy is a local, one byte larger; `strtok_r()` replaces `strtok()`; and a
+`copy_token()` helper copies `n-1` and terminates, used for tokens and for the help line. 192
+bytes of stack on a 2 KB task costs nothing, and removing the shared state removes the race
+rather than guarding it.
+
+**Verified on hardware.** A 191-character line (the overflow case), a 250-character line and a
+40-character token are each rejected with the normal "Unknown command" response and no fault;
+`osinfo`, `flexptp`, `ptp addend` and `?` (21 registered commands listed) all behave.
+
 ---
 
 ## Minor Findings

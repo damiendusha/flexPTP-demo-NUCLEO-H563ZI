@@ -47,11 +47,11 @@ three of the four High items are unlikely-but-terminal rather than routine.
 | [N5](#n5--every-lwip-assertion-is-a-silent-no-op) | Medium | `lwip_port` | lwIP assertions print nothing and do not halt; ~9 KB wasted | ✅ **fixed** (F72) |
 | [N6](#n6--the-isr-logging-contract-is-self-contradictory) | Medium | `standard_output` | ISR-logging contract contradicts itself; ISR path can hang | ✅ **fixed** (F68) |
 | [N7](#n7--bfifo_pop-hands-the-write-token-to-a-second-writer) | Medium | `blocking_io` | `bfifo_pop()` releases the writer token mid-push | ✅ **fixed** (F67) |
-| [N8](#n8--cli-tokenizer-one-byte-overflow-and-cross-thread-reuse) | Medium | `cliutils` | 1-byte `.bss` overflow + static buffer/`strtok` shared across threads | **Read** |
+| [N8](#n8--cli-tokenizer-one-byte-overflow-and-cross-thread-reuse) | Medium | `cliutils` | 1-byte `.bss` overflow + static buffer/`strtok` shared across threads | ✅ **fixed** (F74) |
 | [N9](#n9--no-memory-barriers-at-descriptor-handoff) | Medium | `EthDrv` | No `__DMB()`/`__DSB()` around descriptor ownership handoff | ✅ **fixed** (F70) |
 | [N10](#n10--n16--low-and-latent) | Low | `EthDrv` | EtherLib RX path strands a descriptor per allocation failure | **Read** |
 | [N11](#n10--n16--low-and-latent) | Low | `ethernet` | Wire-sized VLA in the EtherLib UDP callback | **Read** |
-| [N12](#n10--n16--low-and-latent) | Low | `cliutils` | `strncpy` without termination in two places | **Read** |
+| [N12](#n10--n16--low-and-latent) | Low | `cliutils` | `strncpy` without termination in two places | ✅ **fixed** (F74) |
 | [N13](#n10--n16--low-and-latent) | Low | `EthDrv` | FCS not stripped; every RX frame is 4 bytes long | **Read** |
 | [N14](#n10--n16--low-and-latent) | Low | `EthDrv` | Dropped TX frame reported to lwIP as sent | **Read** |
 | [N15](#n10--n16--low-and-latent) | Low | `lwipopts` | `#undef LWIP_PROVIDE_ERRNO` undone by `cc.h` | **Read** |
@@ -371,6 +371,10 @@ is entered from the `cli` thread (parsing a line) *and* from `cli_register_comma
 `ptp` thread (flexPTP registers ~19 commands during `reg_task_ptp()` and re-registers on
 `ptp reset`) and the `init` thread (`cmd_init()`). `modifyMtx` protects the command *table*, not
 this buffer.
+
+> ✅ **Fixed** in P6.7 with N12. Verified on hardware: a 191-character line, a 250-character
+> line and a 40-character token are all rejected normally with no fault, and the CLI is
+> otherwise unchanged. Recorded as [F74](port_review.md).
 
 **Fix.** Size it `CLI_LINEBUF_LENGTH + 1` and make it a local (192 B on a 2048 B stack);
 `strtok_r` removes the third hazard.
