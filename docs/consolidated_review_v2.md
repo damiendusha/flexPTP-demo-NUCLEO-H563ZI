@@ -53,7 +53,7 @@ three of the four High items are unlikely-but-terminal rather than routine.
 | [N11](#n10--n16--low-and-latent) | Low | `ethernet` | Wire-sized VLA in the EtherLib UDP callback | **Read** |
 | [N12](#n10--n16--low-and-latent) | Low | `cliutils` | `strncpy` without termination in two places | ✅ **fixed** (F74) |
 | [N13](#n10--n16--low-and-latent) | Low | `EthDrv` | FCS not stripped; every RX frame is 4 bytes long | **Read** |
-| [N14](#n10--n16--low-and-latent) | Low | `EthDrv` | Dropped TX frame reported to lwIP as sent | **Read** |
+| [N14](#n10--n16--low-and-latent) | Low | `EthDrv` | Dropped TX frame reported to lwIP as sent | ✅ **fixed** (F75) |
 | [N15](#n10--n16--low-and-latent) | Low | `lwipopts` | `#undef LWIP_PROVIDE_ERRNO` undone by `cc.h` | **Read** |
 | [N16](#n10--n16--low-and-latent) | Low | CI | No `pipefail`: a failing build can pass green | **Read** |
 | [N17](#n17--the-flash-figure-depends-on-the-build-directory-path-new-in-this-consolidation) | Low | Build | Flash size varies with the build-directory path | **Measured**, new here |

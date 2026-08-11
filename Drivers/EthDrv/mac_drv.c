@@ -700,7 +700,7 @@ void ETHHW_ISR(ETH_TypeDef *eth) {
     WRITE_REG(eth->DMACSR, ETH_DMACSR_NIS);
 }
 
-void ETHHW_Transmit(ETH_TypeDef *eth, const uint8_t *buf, uint16_t len, uint8_t txOpts, void *txOptArgs) {
+bool ETHHW_Transmit(ETH_TypeDef *eth, const uint8_t *buf, uint16_t len, uint8_t txOpts, void *txOptArgs) {
     ETHHW_State *state = ETHHW_GetState(eth);                                // fetch state
     uint16_t nextTxDescIdx = state->nextTxDescIdx;                           // fetch index of descriptor to fill
     ETHHW_DescFull *bd = ((ETHHW_DescFull *)eth->DMACTDLAR) + nextTxDescIdx; // get descriptor being filled
@@ -725,7 +725,7 @@ void ETHHW_Transmit(ETH_TypeDef *eth, const uint8_t *buf, uint16_t len, uint8_t 
 
     if (!descFree) {
         MSG("ETH: TX descriptor %u still owned by the DMA; frame dropped\n", nextTxDescIdx);
-        return;
+        return false;
     }
 
     // erase possible old descriptor data
@@ -768,6 +768,8 @@ void ETHHW_Transmit(ETH_TypeDef *eth, const uint8_t *buf, uint16_t len, uint8_t 
     __DSB();
 
     WRITE_REG(eth->DMACTDTPR, 0); // tail pointer WON'T STOP
+
+    return true;
 }
 
 // -----------------

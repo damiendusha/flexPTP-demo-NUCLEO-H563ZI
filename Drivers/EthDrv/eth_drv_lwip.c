@@ -294,8 +294,19 @@ static err_t low_level_output(struct netif *netif, struct pbuf *p) {
         optArg.tag = (uint32_t)p->tag;
     }
 
-    /* Pass the data to the MAC */
-    ETHHW_Transmit(ETH, concat_buf, concat_buf_level, opts, &optArg);
+    /* Pass the data to the MAC.
+     *
+     * A drop here used to be reported to lwIP as a successful transmit -- link.xmit bumped,
+     * ERR_OK returned -- so the stack could not see it and link.drop, which the over-length
+     * branch above is careful to bump, stayed at zero (finding N14). ERR_IF for the same
+     * reason spelled out there: this function's own doc comment carries lwIP's warning that
+     * ERR_MEM from linkoutput "can lead to strange results", because the stack does not retry
+     * a frame dropped for memory reasons. */
+    if (!ETHHW_Transmit(ETH, concat_buf, concat_buf_level, opts, &optArg)) {
+        LINK_STATS_INC(link.drop);
+        MIB2_STATS_NETIF_INC(netif, ifoutdiscards);
+        return ERR_IF;
+    }
 
     MIB2_STATS_NETIF_ADD(netif, ifoutoctets, p->tot_len);
     if (((u8_t *)p->payload)[0] & 1) {

@@ -179,8 +179,10 @@ int ethdrv_output(const RawPckt *pckt) {
         optArg.tag = pckt->ext.tx.arg;
     }
 
-    // transmit
-    ETHHW_Transmit(ETH, pckt->payload, pckt->size, opts, &optArg);
+    // transmit; non-zero tells ethdrv_send() the frame did not go out
+    if (!ETHHW_Transmit(ETH, pckt->payload, pckt->size, opts, &optArg)) {
+        return -1;
+    }
 
     return 0;
 }

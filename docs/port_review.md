@@ -2008,6 +2008,24 @@ rather than guarding it.
 40-character token are each rejected with the normal "Unknown command" response and no fault;
 `osinfo`, `flexptp`, `ptp addend` and `?` (21 registered commands listed) all behave.
 
+### F75 — a dropped transmit was reported to lwIP as sent *(RESOLVED)* [N14]
+
+`ETHHW_Transmit()` can drop a frame — the descriptor is still owned by the DMA when the bounded
+wait expires — but it returned `void`, and `low_level_output()` unconditionally did
+`LINK_STATS_INC(link.xmit); return ERR_OK;`. The stack could not see the loss, and `link.drop`,
+which the over-length branch immediately above is careful to bump, stayed at zero.
+
+`ETHHW_Transmit()` now returns `bool`; `low_level_output()` maps a drop onto `ERR_IF` plus
+`link.drop` and `ifoutdiscards`. `ERR_IF` rather than `ERR_MEM` for the reason already spelled
+out in that function: lwIP's own warning is that `ERR_MEM` from `linkoutput` "can lead to
+strange results", because the stack does not retry a frame dropped for memory reasons. The
+EtherLib path returns non-zero from `ethdrv_output()` for the same condition.
+
+**Verified on hardware** by scaffolding every 8th transmit to fail: ping loss came out at
+exactly 12.5%, the board stayed responsive, and the round-trip maximum rose to ~1 s — lwIP
+retrying, which is precisely the behaviour that was missing when the drop was invisible.
+Scaffold removed: 30 pings of 1400 B, 0% loss.
+
 ---
 
 ## Minor Findings

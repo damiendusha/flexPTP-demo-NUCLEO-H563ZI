@@ -103,7 +103,10 @@ typedef struct {
 
 void ETHHW_Init(ETH_TypeDef *eth, ETHHW_InitOpts *init);
 void ETHHW_Start(ETH_TypeDef *eth);
-void ETHHW_Transmit(ETH_TypeDef *eth, const uint8_t *buf, uint16_t len, uint8_t txOpts, void *txOptArgs);
+// Returns false if the frame was dropped because no TX descriptor came free. The caller is
+// expected to tell its stack: reporting a drop as a successful transmit hides the only
+// evidence that the ring is under pressure (finding N14).
+bool ETHHW_Transmit(ETH_TypeDef *eth, const uint8_t *buf, uint16_t len, uint8_t txOpts, void *txOptArgs);
 
 void ETHHW_ProcessRx(ETH_TypeDef *eth);
 void ETHHW_RestoreRXDesc(ETHHW_DescFull *bd);
