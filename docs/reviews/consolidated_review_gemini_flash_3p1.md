@@ -3,12 +3,12 @@
 **Project:** flexPTP IEEE 1588 Precision Time Protocol Port for STMicroelectronics NUCLEO-H563ZI (STM32H563ZI, ARM Cortex-M33)  
 **Author:** Antigravity (Gemini 3.6 Flash)  
 **Date:** 2026-08-11  
-**Target Document:** [docs/consolidated_review_gemini_flash_3p1.md](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/docs/consolidated_review_gemini_flash_3p1.md)  
+**Target Document:** [docs/reviews/consolidated_review_gemini_flash_3p1.md](consolidated_review_gemini_flash_3p1.md)  
 **Sources Consolidated:**
-- [docs/final_review_opus_5p0.md](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/docs/final_review_opus_5p0.md) (Claude Opus 5.0)
-- [docs/final_review_gemini_flash_3p6.md](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/docs/final_review_gemini_flash_3p6.md) (Gemini Flash 3.6)
-- [docs/final_review_gemini_pro_3p1.md](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/docs/final_review_gemini_pro_3p1.md) (Gemini Pro 3.1)
-- All peer cross-review documents ([docs/*_review_*.md](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/docs/))
+- [docs/reviews/final_review_opus_5p0.md](final_review_opus_5p0.md) (Claude Opus 5.0)
+- [docs/reviews/final_review_gemini_flash_3p6.md](final_review_gemini_flash_3p6.md) (Gemini Flash 3.6)
+- [docs/reviews/final_review_gemini_pro_3p1.md](final_review_gemini_pro_3p1.md) (Gemini Pro 3.1)
+- All peer cross-review documents ([docs/*_review_*.md](../../docs/))
 
 ---
 
@@ -35,13 +35,13 @@
 An exhaustive, multi-agent evaluation was conducted across three independent frontier models (Claude Opus 5.0, Gemini Flash 3.6, and Gemini Pro 3.1) to assess the port of the flexPTP IEEE 1588 demonstration project to the STMicroelectronics NUCLEO-H563ZI.
 
 ### Summary of Model Perspectives:
-1. **Claude Opus 5.0 ([docs/final_review_opus_5p0.md](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/docs/final_review_opus_5p0.md))**:
+1. **Claude Opus 5.0 ([docs/reviews/final_review_opus_5p0.md](final_review_opus_5p0.md))**:
    - Conducted an exhaustive cross-document and build-system audit (704 lines).
    - Discovered **critical structural and documentation defects**: silent patch loss on fresh clones in `build.sh`, inline struct pointer aliasing in `cli.c`, a register-level PPS frequency code shift in `mac_drv.h`, and FreeRTOS assert/panic blackout paths.
-2. **Gemini Flash 3.6 ([docs/final_review_gemini_flash_3p6.md](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/docs/final_review_gemini_flash_3p6.md))**:
+2. **Gemini Flash 3.6 ([docs/reviews/final_review_gemini_flash_3p6.md](final_review_gemini_flash_3p6.md))**:
    - Conducted an in-depth low-level code audit focusing on bare-metal C, RTOS synchronization, and hardware registers.
    - Discovered **5 novel, high-impact defects**: recursive mutex deadlock in `cli.c`, Write-1-to-Clear (w1c) interrupt status clobbering in `mac_drv.c`, 16-bit sequence counter underflow in `mac_drv.c`, an unbounded spinloop in `ETHHW_Transmit`, and a Newlib C-heap collision with FreeRTOS heap memory in the linker script.
-3. **Gemini Pro 3.1 ([docs/final_review_gemini_pro_3p1.md](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/docs/final_review_gemini_pro_3p1.md))**:
+3. **Gemini Pro 3.1 ([docs/reviews/final_review_gemini_pro_3p1.md](final_review_gemini_pro_3p1.md))**:
    - Provided an executive summary of the historical port review findings (F1–F66).
    - Validated the upstream flexPTP/embfmt patch requirements and ARMv8-M architectural considerations.
 
@@ -86,19 +86,19 @@ Where initial reviews differed in details, cross-reviews established a refined c
 ### 2.3 Areas Where Consensus Was NOT Reached (Disputes & Alternate Proposals)
 
 #### Dispute 1: Changing Default Startup Profile from `gPTP` to `default`
-- **Location:** [Src/main.c:27](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/Src/main.c#L27) (`FLEXPTP_INITIAL_PROFILE`)
+- **Location:** [Src/main.c:27](../../Src/main.c#L27) (`FLEXPTP_INITIAL_PROFILE`)
 - **Flash 3.6 Position (`ACT-49`):** Recommend changing default to `"default"` (UDP/IPv4) because standard enterprise switches drop 802.1AS link-local multicast packets (`01:80:C2:00:00:0E`), causing immediate silent communication failure for new users.
 - **Opus 5.0 Position:** **Disagrees.** Argues that `gPTP` is a deliberate demonstration choice for industrial IEEE 802.1AS networks, prominently documented in `README.md` and the boot banner. Recommends leaving default as `gPTP` and improving runtime discoverability.
 - **Consensus Status:** **NO CONSENSUS (Maintainer Product Decision).** Flagged for project maintainer decision.
 
 #### Dispute 2: Libc `printf` Redirection vs. Dedicated Polled Panic Writer
-- **Location:** [Src/syscall.c:35](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/Src/syscall.c#L35)
+- **Location:** [Src/syscall.c:35](../../Src/syscall.c#L35)
 - **Flash 3.6 Position (`ACT-51`):** Implement `__io_putchar` in `syscall.c` to route standard C library `printf`/`assert` output to `MSGchar()`.
 - **Opus 5.0 Position (`ACT-35`):** **Disagrees with `__io_putchar` redirection.** Points out that `__io_putchar` is unreferenced, `assert_param()` is compiled out, and FIFO-backed `MSGchar()` cannot function during FreeRTOS asserts, HardFaults, or stack overflows (where interrupts/scheduler are dead). Proposes instead implementing a **polled-UART panic writer (`panic_puts`)** directly writing `USART3->TDR`.
 - **Consensus Status:** **CONSENSUS REACHED ON REVISED PROPOSAL.** Dropped `__io_putchar` redirection in favor of the polled-UART panic handler (`ACT-35`).
 
 #### Dispute 3: Zero-Copy Transmit Optimization Priority
-- **Location:** [Drivers/EthDrv/eth_drv_lwip.c:208-240](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/Drivers/EthDrv/eth_drv_lwip.c#L208-L240)
+- **Location:** [Drivers/EthDrv/eth_drv_lwip.c:208-240](../../Drivers/EthDrv/eth_drv_lwip.c#L208-L240)
 - **Flash 3.6 Position (`ACT-50`):** Eliminate 1528-byte `concat_buf` by copying pbuf fragments directly into DMA buffers.
 - **Opus 5.0 Position:** Agrees with concept, but notes that descriptor ownership wait happens inside `ETHHW_Transmit()`, so copying before ownership wait causes memory corruption unless driver API is refactored into a two-phase `Acquire`/`Commit`. Given TX path is hardware-proven (698/698 timestamps), risk/reward is low.
 - **Consensus Status:** **PARTIAL CONSENSUS.** Retained as a low-priority, optional refactoring task (`ACT-50`).

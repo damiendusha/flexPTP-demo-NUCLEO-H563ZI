@@ -1,7 +1,7 @@
-# Critical Review of `docs/final_review_opus_5p0.md`
+# Critical Review of `docs/reviews/final_review_opus_5p0.md`
 
 **Reviewer:** Antigravity (Gemini 3.6 Flash)  
-**Target Document:** [docs/final_review_opus_5p0.md](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/docs/final_review_opus_5p0.md)  
+**Target Document:** [docs/reviews/final_review_opus_5p0.md](final_review_opus_5p0.md)  
 **Date:** 2026-08-10  
 **Scope:** Comprehensive technical evaluation of Claude Opus 5.0's review, verification of all 8 architectural analyses, 12 documentation discrepancies, 22 bug reports, 7 ambiguities, and 19 suggested improvements, along with identification of critical defects that Opus 5.0 missed.
 
@@ -11,7 +11,7 @@
 
 ### Overall Assessment: **Exceptional Technical Depth and Register-Level Accuracy with Minor Blind Spots**
 
-The review in [docs/final_review_opus_5p0.md](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/docs/final_review_opus_5p0.md) (authored by Claude Opus 5.0) represents a **world-class static, architectural, and logical code audit**. 
+The review in [docs/reviews/final_review_opus_5p0.md](final_review_opus_5p0.md) (authored by Claude Opus 5.0) represents a **world-class static, architectural, and logical code audit**. 
 
 Unlike the high-level summary produced by Gemini Pro 3.1, Opus 5.0 conducted a rigorous line-by-line inspection across the entire repository, discovering deep register-level discrepancies (e.g. PPS frequency enum offset), subtle memory corruption bugs in the CLI parser, silent patch loss risks in `build.sh`, and FreeRTOS assert/panic blackout paths.
 
@@ -134,7 +134,7 @@ While Claude Opus 5.0 performed an extraordinarily comprehensive review, the fol
 ---
 
 ### [Missed Finding 1] Write-1-to-Clear (w1c) Interrupt Register Corruption in `ETHHW_ISR`
-- **Location:** [Drivers/EthDrv/mac_drv.c:520-540](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/Drivers/EthDrv/mac_drv.c#L520-L540)
+- **Location:** [Drivers/EthDrv/mac_drv.c:520-540](../../Drivers/EthDrv/mac_drv.c#L520-L540)
 - **Mechanism:**
   ```c
   if (csr & ETH_DMACSR_NIS) {
@@ -159,7 +159,7 @@ While Claude Opus 5.0 performed an extraordinarily comprehensive review, the fol
 ---
 
 ### [Missed Finding 2] 16-Bit Sequence Counter Wrap-Around Arithmetic Underflow in `ETHHW_ProcessTx`
-- **Location:** [Drivers/EthDrv/mac_drv.c:473](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/Drivers/EthDrv/mac_drv.c#L473)
+- **Location:** [Drivers/EthDrv/mac_drv.c:473](../../Drivers/EthDrv/mac_drv.c#L473)
 - **Mechanism:**
   `txCntr` and `txCntAcked` are `uint16_t`. In `ETHHW_ProcessTx`:
   ```c
@@ -173,7 +173,7 @@ While Claude Opus 5.0 performed an extraordinarily comprehensive review, the fol
 ---
 
 ### [Missed Finding 3] Linker Script Memory Collision Risk Between Newlib Heap & FreeRTOS Heap
-- **Location:** [stm32h563zitx_FLASH.ld:153-169](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/stm32h563zitx_FLASH.ld#L153-L169), [Src/sysmem.c:53-79](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/Src/sysmem.c#L53-L79)
+- **Location:** [stm32h563zitx_FLASH.ld:153-169](../../stm32h563zitx_FLASH.ld#L153-L169), [Src/sysmem.c:53-79](../../Src/sysmem.c#L53-L79)
 - **Mechanism:**
   In `stm32h563zitx_FLASH.ld`:
   ```ld
@@ -201,7 +201,7 @@ While Claude Opus 5.0 performed an extraordinarily comprehensive review, the fol
 ---
 
 ### [Missed Finding 4] Unused Float Printf & C++ Standard Library Linker Flags
-- **Location:** [CMakeLists.txt:166, 171-172](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/CMakeLists.txt#L166)
+- **Location:** [CMakeLists.txt:166, 171-172](../../CMakeLists.txt#L166)
 - **Mechanism:**
   `CMakeLists.txt` passes `-u _printf_float` and links `-lstdc++ -lsupc++`. The project is written in pure C and uses `embfmt` / `MSG()` exclusively, making Newlib float formatting and C++ runtime support dead code.
 - **Remediation:** Remove `-u _printf_float`, `-lstdc++`, and `-lsupc++` from `target_link_options`.
@@ -219,4 +219,4 @@ While Claude Opus 5.0 performed an extraordinarily comprehensive review, the fol
 | **Action Items & Improvements** | 19 | 19 / 19 (100%) | +1 (Linker flag clean-up) | Rigorous & actionable |
 
 ### Final Recommendation
-The [docs/final_review_opus_5p0.md](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/docs/final_review_opus_5p0.md) report is an **outstanding, highly rigorous review**. Incorporating the 4 complementary findings discovered by Gemini Flash 3.6 (cataloged in [docs/final_review_gemini_flash_3p6.md](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/docs/final_review_gemini_flash_3p6.md)) provides complete, 100% defect coverage for this port.
+The [docs/reviews/final_review_opus_5p0.md](final_review_opus_5p0.md) report is an **outstanding, highly rigorous review**. Incorporating the 4 complementary findings discovered by Gemini Flash 3.6 (cataloged in [docs/reviews/final_review_gemini_flash_3p6.md](final_review_gemini_flash_3p6.md)) provides complete, 100% defect coverage for this port.

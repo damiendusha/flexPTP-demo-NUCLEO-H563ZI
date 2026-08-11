@@ -111,7 +111,7 @@ figures, the boot sequence, and the descriptor/register audit.
 
 **A1 — The console has no mutual exclusion, and it is the system's only diagnostic.**
 `MSG()` formats into a single 2049-byte `static char lineBuf`
-([standard_output.c:12](../Src/standard_output/standard_output.c#L12)) with no lock. It is
+([standard_output.c:12](../../Src/standard_output/standard_output.c#L12)) with no lock. It is
 called from at least six threads: `cli`, `ptp`, `init`, `rx`, `tcpip_thread`
 (`link_chg_cb`) and `Tmr Svc` (`check_dhcp_state`). The FIFO underneath *is* serialised —
 but only inside `bfifo_push()`, long after the shared buffer has been written. Two
@@ -120,11 +120,11 @@ normally would, because every diagnostic this project relies on goes through it.
 
 **A2 — The three most likely runtime failures all end in a silent hang.**
 `configASSERT` is `taskDISABLE_INTERRUPTS(); for(;;);`
-([FreeRTOSConfig.h:142](../Inc/FreeRTOSConfig.h#L142)) — no output, interrupts off, console
+([FreeRTOSConfig.h:142](../../Inc/FreeRTOSConfig.h#L142)) — no output, interrupts off, console
 dead. The project defines `configCHECK_FOR_STACK_OVERFLOW 2` and
 `configUSE_MALLOC_FAILED_HOOK 1` but supplies **neither hook**, so both resolve to the
 CMSIS-RTOS2 shim's weak stubs, which call `configASSERT(0)`
-([cmsis_os2.c:2891,2908](../Drivers/CMSIS/CMSIS_RTOS_V2/cmsis_os2.c#L2891)). A stack
+([cmsis_os2.c:2891,2908](../../Drivers/CMSIS/CMSIS_RTOS_V2/cmsis_os2.c#L2891)). A stack
 overflow, a heap exhaustion or any HAL assert therefore presents exactly as F53 did: dead
 board, no explanation. This directly contradicts the policy stated in `mac_drv.c`'s own
 header comment — *"A silent timeout would have been worse than the hang, so it is
@@ -138,22 +138,22 @@ hole, but the descriptors still stay in flight longer. `rx` should sit above the
 threads (and below `tcpip_thread`).
 
 **A4 — RX queue depths are mismatched three ways.** `ETH_RX_DESC_CNT` = 24,
-`RX_MSG_Q_LEN` = 32 ([eth_drv_lwip.c:111](../Drivers/EthDrv/eth_drv_lwip.c#L111)),
-`PBUF_POOL_SIZE` = 8 ([lwipopts.h:111](../Inc/lwipopts.h#L111)). The queue can hold more
+`RX_MSG_Q_LEN` = 32 ([eth_drv_lwip.c:111](../../Drivers/EthDrv/eth_drv_lwip.c#L111)),
+`PBUF_POOL_SIZE` = 8 ([lwipopts.h:111](../../Inc/lwipopts.h#L111)). The queue can hold more
 events than there are descriptors to fill it, and four times more than there are pbufs to
 service them. When `pbuf_alloc()` fails in `rx_thread` the frame is dropped *after* the
 descriptor has already been committed. Nothing is broken, but the sizing is not a
 considered set.
 
 **A5 — `ETHHW_GetState()` is enforced by a comment.**
-`((ETHHW_State *)eth->DMACRDLAR) - 1` ([mac_drv.c:198-200](../Drivers/EthDrv/mac_drv.c#L198))
+`((ETHHW_State *)eth->DMACRDLAR) - 1` ([mac_drv.c:198-200](../../Drivers/EthDrv/mac_drv.c#L198))
 requires `ETHHW_State` to immediately precede the RX ring in memory. That is guaranteed
 today only by struct field order in `eth_drv_lwip.c:46-50` and a comment in `mac_drv.h:26`.
 A `_Static_assert` on `offsetof` would make it structural.
 
 **A6 — One unbounded wait survived the F54 sweep.** `ETHHW_Transmit()` spins on
 `while (!ETHHW_DESC_OWNED_BY_APPLICATION(bd)) {}`
-([mac_drv.c:552](../Drivers/EthDrv/mac_drv.c#L552)). F54 enumerated six waits and bounded
+([mac_drv.c:552](../../Drivers/EthDrv/mac_drv.c#L552)). F54 enumerated six waits and bounded
 all six; this is a seventh, of the same shape, in the same file, directly under a header
 comment asserting that none may spin forever.
 
@@ -165,8 +165,8 @@ builds), `Inc/etherlib_options.h`, `Drivers/EthDrv/eth_drv_etherlib.c` and
 
 **A8 — Clock configuration is fire-and-forget.** `HAL_RCC_OscConfig()` and
 `HAL_RCC_ClockConfig()` return values are discarded
-([main.c:70,97](../Src/main.c#L70)), and `Error_Handler()` is declared at
-[main.c:31](../Src/main.c#L31) but **defined nowhere in the project** and never called. A
+([main.c:70,97](../../Src/main.c#L70)), and `Error_Handler()` is declared at
+[main.c:31](../../Src/main.c#L31) but **defined nowhere in the project** and never called. A
 PLL that fails to lock produces a board running at an unexpected frequency with a detuned
 PTP clock — the F45/F6 failure mode, unreported.
 
@@ -184,15 +184,15 @@ not, and each still asserts the belief that caused F53:
 
 | Location | Text |
 |---|---|
-| [`Src/main.c:83-90`](../Src/main.c#L83) | *"HCLK is also the Ethernet PTP timestamp clock on the STM32H563 … dividing here would silently detune the PTP clock"* — 20 lines below the correct comment at `main.c:61` |
-| [`docs/design_doc.md:172`](design_doc.md) | *"The timestamp unit is clocked from **HCLK at 250 MHz**"* — contradicting lines 35, 122 and 186 of the same document |
-| [`docs/design_doc.md:196`](design_doc.md) | *"which exceeds the device's 250 MHz HCLK ceiling"* |
-| [`docs/implementation_plan.md:53`](implementation_plan.md) | Resolved Design Decisions: *"**PTP Clock** — **HCLK 250 MHz, 5 ns increment.** The H563 has no ETH PTP clock mux, so HCLK is the only source"* |
-| [`docs/port_review.md:1548`](port_review.md) | F45 rationale: *"Given that HCLK is also the PTP clock on this part, that would have detuned the PTP clock…"* |
+| [`Src/main.c:83-90`](../../Src/main.c#L83) | *"HCLK is also the Ethernet PTP timestamp clock on the STM32H563 … dividing here would silently detune the PTP clock"* — 20 lines below the correct comment at `main.c:61` |
+| [`docs/design_doc.md:172`](../design_doc.md) | *"The timestamp unit is clocked from **HCLK at 250 MHz**"* — contradicting lines 35, 122 and 186 of the same document |
+| [`docs/design_doc.md:196`](../design_doc.md) | *"which exceeds the device's 250 MHz HCLK ceiling"* |
+| [`docs/implementation_plan.md:53`](../implementation_plan.md) | Resolved Design Decisions: *"**PTP Clock** — **HCLK 250 MHz, 5 ns increment.** The H563 has no ETH PTP clock mux, so HCLK is the only source"* |
+| [`docs/port_review.md:1548`](../port_review.md) | F45 rationale: *"Given that HCLK is also the PTP clock on this part, that would have detuned the PTP clock…"* |
 
 ### D2 — `design_doc.md`'s clock tree documents the H7 spellings that F45 warns are traps
 
-The clock-tree diagram at [`design_doc.md:131-132`](design_doc.md) reads:
+The clock-tree diagram at [`design_doc.md:131-132`](../design_doc.md) reads:
 
 ```
 AHBCLKDivider  = RCC_HCLK_DIV1     →  HCLK   = 250 MHz  ← also ptp_ker_ck
@@ -200,14 +200,14 @@ APB1/2/3 Div   = RCC_APBx_DIV2     →  PCLK   = 125 MHz
 ```
 
 The code uses `RCC_SYSCLK_DIV1` and `RCC_HCLK_DIV2`
-([main.c:91-95](../Src/main.c#L91)). `RCC_APBx_DIV2` does not exist on the H5 at all, and
+([main.c:91-95](../../Src/main.c#L91)). `RCC_APBx_DIV2` does not exist on the H5 at all, and
 `RCC_HCLK_DIV1` in the AHB slot is **exactly finding F45** — the spelling that compiles
 silently and writes a PPRE-encoded value into the HPRE field. The Stage 10 log in the same
 document (line 693) gets it right. Anyone copying from the diagram reintroduces F45.
 
 ### D3 — `architecture.md` states F42 is still broken
 
-[`architecture.md:375-378`](architecture.md): *"What remains broken (F42) is downstream of
+[`architecture.md:375-378`](../architecture.md): *"What remains broken (F42) is downstream of
 this diagram, inside flexPTP's message buffer: the timestamp is delivered but never matched
 back to the Delay_Req that requested it."* F42 was resolved — the site switch was
 discarding Delay_Resp and **nothing in the port was at fault**. The paragraph accuses
@@ -215,15 +215,15 @@ flexPTP of a defect it does not have.
 
 ### D4 — `architecture.md` states the addend wait is unbounded
 
-[`architecture.md:239-241`](architecture.md): *"`ETHHW_SetPTPAddend()` waits on
+[`architecture.md:239-241`](../architecture.md): *"`ETHHW_SetPTPAddend()` waits on
 `MACTSCR.TSADDREG` with no timeout; if the PTP timestamp unit is not running, that wait
 never returns."* F54 bounded it; it now returns `bool` and reports.
 
 ### D5 — `ptp_clock.md` says the MDIO shift bug still needs fixing
 
-[`ptp_clock.md:252-255`](ptp_clock.md): *"`mac_drv.c` currently contains a shift bug in
+[`ptp_clock.md:252-255`](../ptp_clock.md): *"`mac_drv.c` currently contains a shift bug in
 this register write … that must be fixed as part of the MAC driver port."* Fixed at Stage
-12 (F8); the code at [mac_drv.c:113-117](../Drivers/EthDrv/mac_drv.c#L113) carries the
+12 (F8); the code at [mac_drv.c:113-117](../../Drivers/EthDrv/mac_drv.c#L113) carries the
 explanation.
 
 ### D6 — "A 4 ns increment is unreachable" survives in three places after being retracted
@@ -232,26 +232,26 @@ explanation.
 *"a valid 4 ns configuration on paper"*, not adopted for engineering reasons. Still
 asserted as impossibility in:
 
-- [`README.md:268`](../README.md) — *"why a 4 ns increment is unreachable on this part"*
-- [`ptp_clock.md`](ptp_clock.md) — the section heading and TOC entry, *"Why a 4 ns increment is unreachable"*
-- [`port_review.md:95`](port_review.md) — F5 row: *"A 4 ns increment is unreachable on this device | Critical"*, with no correction note (unlike F3, which has one)
+- [`README.md:268`](../../README.md) — *"why a 4 ns increment is unreachable on this part"*
+- [`ptp_clock.md`](../ptp_clock.md) — the section heading and TOC entry, *"Why a 4 ns increment is unreachable"*
+- [`port_review.md:95`](../port_review.md) — F5 row: *"A 4 ns increment is unreachable on this device | Critical"*, with no correction note (unlike F3, which has one)
 
 ### D7 — `port_review.md` still opens by saying nothing has run on hardware
 
-[`port_review.md:58`](port_review.md): *"Still not done: **no hardware**. Nothing here has
+[`port_review.md:58`](../port_review.md): *"Still not done: **no hardware**. Nothing here has
 executed on a device. Every claim in this document is a static or build-time one."* The
 same document then contains F51–F66, all hardware findings, including oscilloscope-free but
 silicon-verified register dumps.
 
 ### D8 — `port_review.md`'s phase table stops at F50
 
-[`port_review.md:65-68`](port_review.md) lists *"Static review F1–F43 (43) / Implementation
+[`port_review.md:65-68`](../port_review.md) lists *"Static review F1–F43 (43) / Implementation
 F44–F50 (7)"*. There are 66 findings, and the hardware bring-up phase — which produced the
 most valuable ones — has no row.
 
 ### D9 — F42's body still declares itself open
 
-[`port_review.md:750-754`](port_review.md) has a `### Status` heading followed by *"F42 is
+[`port_review.md:750-754`](../port_review.md) has a `### Status` heading followed by *"F42 is
 **open**"*,
 retained beneath the resolution. The living-document style is defensible, but a bare
 "**open**" status heading below a "RESOLVED" summary is the one thing a skimmer will
@@ -259,14 +259,14 @@ misread.
 
 ### D10 — embfmt patch count disagrees between README and architecture.md
 
-[`README.md:209`](../README.md) says *"two formatting fixes in embfmt"*;
-[`architecture.md:52`](architecture.md) says *"three formatting fixes"*. There are **four**
+[`README.md:209`](../../README.md) says *"two formatting fixes in embfmt"*;
+[`architecture.md:52`](../architecture.md) says *"three formatting fixes"*. There are **four**
 distinct defects (`%ll` parsing, NaN rendering, `%e` pre-normalisation rounding, `%f`
 rounding-carry remainder) across **two** findings (F60, F66) in **one** patch file.
 
 ### D11 — `design_doc.md` lists F54 as open
 
-[`design_doc.md:851-852`](design_doc.md), in the *"Hardware bring-up (partial Stage 20)"*
+[`design_doc.md:851-852`](../design_doc.md), in the *"Hardware bring-up (partial Stage 20)"*
 section, carries an **Open:** heading for F54 with *"Deliberately not yet fixed"*. Resolved
 since. This is stage-log history, but "Open" is a status claim.
 
@@ -274,12 +274,12 @@ since. This is stage-log history, but "Open" is a status claim.
 
 | Where | Says | Actually |
 |---|---|---|
-| [`mac_drv.h:127`](../Drivers/EthDrv/mac_drv.h#L127) | *"currently every frame received gets timestamped"* | `TSENALL` is **not** set; only PTP messages selected by `SNAPTYPSEL = 0b01` are |
-| [`mac_drv.h:135`](../Drivers/EthDrv/mac_drv.h#L135) | *"Time quantum is 0.467 ns"* | `TSCTRLSSR` is set (digital rollover), so `SSINC` is in whole nanoseconds. 0.467 ns is the binary-rollover figure |
-| [`architecture.md:220`](architecture.md) | thread named `tcpip_thread` | `TCPIP_THREAD_NAME` is `"TCP/IP"` ([lwipopts.h:277](../Inc/lwipopts.h#L277)) |
-| [`architecture.md:390`](architecture.md) | FLASH 221 552 B | Stage 15 figure; current build is 223 032 B (correctly labelled, but two numbers circulate) |
-| [`FreeRTOSConfig.h:2`](../Inc/FreeRTOSConfig.h#L2) | *"FreeRTOS V202212.00"* | kernel pinned at `V11.3.0` |
-| [`implementation_plan.md:224`](implementation_plan.md) | Stage 7 removes the dead `Middlewares/Inc` include (F32) | The root one went; [`Middlewares/CMakeLists.txt:14`](../Middlewares/CMakeLists.txt#L14) still adds a non-existent relative `Inc` |
+| [`mac_drv.h:127`](../../Drivers/EthDrv/mac_drv.h#L127) | *"currently every frame received gets timestamped"* | `TSENALL` is **not** set; only PTP messages selected by `SNAPTYPSEL = 0b01` are |
+| [`mac_drv.h:135`](../../Drivers/EthDrv/mac_drv.h#L135) | *"Time quantum is 0.467 ns"* | `TSCTRLSSR` is set (digital rollover), so `SSINC` is in whole nanoseconds. 0.467 ns is the binary-rollover figure |
+| [`architecture.md:220`](../architecture.md) | thread named `tcpip_thread` | `TCPIP_THREAD_NAME` is `"TCP/IP"` ([lwipopts.h:277](../../Inc/lwipopts.h#L277)) |
+| [`architecture.md:390`](../architecture.md) | FLASH 221 552 B | Stage 15 figure; current build is 223 032 B (correctly labelled, but two numbers circulate) |
+| [`FreeRTOSConfig.h:2`](../../Inc/FreeRTOSConfig.h#L2) | *"FreeRTOS V202212.00"* | kernel pinned at `V11.3.0` |
+| [`implementation_plan.md:224`](../implementation_plan.md) | Stage 7 removes the dead `Middlewares/Inc` include (F32) | The root one went; [`Middlewares/CMakeLists.txt:14`](../../Middlewares/CMakeLists.txt#L14) still adds a non-existent relative `Inc` |
 
 ---
 
@@ -290,7 +290,7 @@ Ordered by severity. Line references are to the current tree.
 ### High
 
 **B1 — Unrecognised or absent PHY is a guaranteed HardFault.**
-[`phy_common.c:514-517`](../Drivers/EthDrv/phy_drv/phy_common.c#L514)
+[`phy_common.c:514-517`](../../Drivers/EthDrv/phy_drv/phy_common.c#L514)
 
 ```c
 const PHY_LinkStatus *phy_get_link_status() {
@@ -305,7 +305,7 @@ does not. `fetch_link_properties()` calls it from the `phy` thread every 500 ms,
 unknown PHY faults within half a second of boot.
 
 It is reachable through a second defect: `phy_sweep_addresses()`
-([phy_common.c:63-74](../Drivers/EthDrv/phy_drv/phy_common.c#L63)) treats *any* value other
+([phy_common.c:63-74](../../Drivers/EthDrv/phy_drv/phy_common.c#L63)) treats *any* value other
 than `0xFFFF` as a PHY. `ETHHW_ReadPHYRegister()` returns non-zero without writing
 `*pRegValue` when MDIO is busy or times out, and `regVal` is pre-initialised to 0 — so a
 completely dead MDIO bus "finds" a PHY at address 0, reads an ID of 0, fails to populate
@@ -313,7 +313,7 @@ handlers, and faults. Since F54 made MDIO waits time out rather than hang, this 
 *expected* path for a wiring or power fault.
 
 **B2 — `cli_remove_command()` returns while holding the mutex.**
-[`cli.c:517-534`](../Src/cliutils/cli.c#L517)
+[`cli.c:517-534`](../../Src/cliutils/cli.c#L517)
 
 ```c
 void cli_remove_command(int cmdIdx) {
@@ -330,7 +330,7 @@ thread with it. `cli_remove_command_array()` walks a caller-supplied list termin
 `-1`, so a stale handle is enough.
 
 **B3 — Removing a command leaves dangling pointers into the next command's help buffer.**
-[`cli.c:527`](../Src/cliutils/cli.c#L527) and [`cli.c:120,141,160-166`](../Src/cliutils/cli.c#L120)
+[`cli.c:527`](../../Src/cliutils/cli.c#L527) and [`cli.c:120,141,160-166`](../../Src/cliutils/cli.c#L120)
 
 `struct CliCommand` stores `pHelp[MAX_HELP_LEN]` **inline**, with `pHint` and `pPadding`
 pointing into it. `cli_remove_command()` shifts entries with
@@ -350,7 +350,7 @@ same command is registered twice, and `ptphw_register_cli_commands()` re-registe
 ### Medium
 
 **B5 — Arrow-key history acts on the previous keypress, and a long escape sequence
-overflows the stack.** [`cli.c:315,357-398`](../Src/cliutils/cli.c#L357)
+overflows the stack.** [`cli.c:315,357-398`](../../Src/cliutils/cli.c#L357)
 
 ```c
 char escParam[4];                      /* uninitialised */
@@ -375,8 +375,8 @@ Separately, `paramIdx = escPos - 2` is unbounded — the loop only leaves escape
 array. Reachable from anything sending escape sequences down the serial line.
 
 **B6 — RETRACTED: the PPS frequency codes are correct.** ~~The PPS frequency codes look off
-by one.~~ [`mac_drv.h:108-125`](../Drivers/EthDrv/mac_drv.h#L108),
-[`ptp_port_stm32h563.c:18-73`](../Src/flexptp_port/ptp_port_stm32h563.c#L18)
+by one.~~ [`mac_drv.h:108-125`](../../Drivers/EthDrv/mac_drv.h#L108),
+[`ptp_port_stm32h563.c:18-73`](../../Src/flexptp_port/ptp_port_stm32h563.c#L18)
 
 The original finding argued that because the driver writes `PPSCTRL` directly from an enum
 whose first entry is `ETHHW_PTP_PPS_OFF = 0`, and because `PPSCTRL = 0000` selects 1 Hz on
@@ -406,13 +406,13 @@ A stalled TX DMA hangs whichever thread is transmitting — under `LWIP_TCPIP_CO
 that is `tcpip_thread`, holding the core lock, which takes the whole network stack with it.
 
 **B8 — `insert_carriage_return()` can write one byte past its buffer.**
-[`standard_output.c:14-29`](../Src/standard_output/standard_output.c#L14)
+[`standard_output.c:14-29`](../../Src/standard_output/standard_output.c#L14)
 
 The guard `(i < len) && (len <= maxLen)` is evaluated at loop entry, but the body increments
 `len` and then writes `str[len]`. With `maxLen` = 2048 and a message that reaches that
 length through `\r` insertions, `str[2049]` is written into a `char[2049]`.
 
-**B9 — Register-count clamp uses the wrong constant.** [`cli.c:468-469`](../Src/cliutils/cli.c#L468)
+**B9 — Register-count clamp uses the wrong constant.** [`cli.c:468-469`](../../Src/cliutils/cli.c#L468)
 
 ```c
 tokenize_cli_line(pCmdParsHelp, pCmd->ppTok, MAX_TOK_LEN,
@@ -427,16 +427,16 @@ latent — but the clamp names the wrong limit.
 ### Low
 
 **B10 — RX event timestamps are uninitialised when no timestamp was captured.**
-[`mac_drv.c:397-424`](../Drivers/EthDrv/mac_drv.c#L397) declares `ETHHW_EventDesc evt;` on
+[`mac_drv.c:397-424`](../../Drivers/EthDrv/mac_drv.c#L397) declares `ETHHW_EventDesc evt;` on
 the stack and only assigns `data.rx.ts_s` / `ts_ns` inside `if (tsFound)`.
-[`eth_drv_lwip.c:300-301`](../Drivers/EthDrv/eth_drv_lwip.c#L300) copies them into
+[`eth_drv_lwip.c:300-301`](../../Drivers/EthDrv/eth_drv_lwip.c#L300) copies them into
 `p->time_s` / `p->time_ns` unconditionally. Harmless today — only PTP frames reach
 `nsd_lwip.c`, and those carry timestamps — but it is an uninitialised read, and it would
 turn "hardware failed to timestamp this frame" into a plausible-looking wrong value rather
 than an obvious zero. Same class of trap as F59's NaN-printing-as-`0.0000`.
 
 **B11 — `phy_setup_int_DP83848()` reads where it means to write.**
-[`phy_common.c:88-89`](../Drivers/EthDrv/phy_drv/phy_common.c#L88)
+[`phy_common.c:88-89`](../../Drivers/EthDrv/phy_drv/phy_common.c#L88)
 
 ```c
 regVal = EPHY_DP83848_MICR_INT_OE | EPHY_DP83848_MICR_INTEN;
@@ -447,7 +447,7 @@ The computed value is immediately overwritten by the read, so the DP83848's glob
 interrupt enable is never set. Not this board's PHY, but shipped code.
 
 **B12 — `check_dhcp_state()` touches lwIP without the core lock.**
-[`ethernet_lwip.c:26-36`](../Src/ethernet/ethernet_lwip.c#L26) runs on the `Tmr Svc` thread
+[`ethernet_lwip.c:26-36`](../../Src/ethernet/ethernet_lwip.c#L26) runs on the `Tmr Svc` thread
 and calls `dhcp_supplied_address(&intf)` and reads `netif_default->ip_addr` with
 `LWIP_TCPIP_CORE_LOCKING = 1` and no `LOCK_TCPIP_CORE()`. Low practical risk (word-sized
 reads), but it violates lwIP's threading contract, and it is the one place in the project
@@ -455,50 +455,50 @@ that does — `phy_thread` correctly goes through `tcpip_callback()`, and flexPT
 `nsd_lwip.c` correctly brackets its sends with `LOCK_TCPIP_CORE()`.
 
 **B13 — `serial_io_thread()` can block forever on a DMA error.**
-[`serial_io.c:134-135`](../Src/standard_output/serial_io.c#L134) ignores
+[`serial_io.c:134-135`](../../Src/standard_output/serial_io.c#L134) ignores
 `HAL_UART_Transmit_DMA()`'s return and then waits `osWaitForever` on a completion flag that
 only the success path sets. This is precisely the console-death signature described in F51.
 
 **B14 — Console output is silently truncated when the FIFO fills.**
-`serial_io_write()` ([serial_io.c:120-122](../Src/standard_output/serial_io.c#L120)) drops
+`serial_io_write()` ([serial_io.c:120-122](../../Src/standard_output/serial_io.c#L120)) drops
 `bfifo_push()`'s return value, which is the *actually pushed* size. `bfifo_push_all()`
 exists for exactly this.
 
 **B15 — `ETHHW_AuxTimestampCh()` assigns instead of OR-ing.**
-[`mac_drv.c:797-806`](../Drivers/EthDrv/mac_drv.c#L797) — `tmpreg = (en) << (ch + 4);`
+[`mac_drv.c:797-806`](../../Drivers/EthDrv/mac_drv.c#L797) — `tmpreg = (en) << (ch + 4);`
 clears every other auxiliary channel. Unused in this project.
 
 **B16 — `rx_thread` references an out-of-scope `netif`.**
-[`eth_drv_lwip.c:303-314`](../Drivers/EthDrv/eth_drv_lwip.c#L303) passes `netif` to
+[`eth_drv_lwip.c:303-314`](../../Drivers/EthDrv/eth_drv_lwip.c#L303) passes `netif` to
 `MIB2_STATS_NETIF_*`, and no such identifier exists in that function. It compiles only
 because MIB2 statistics are disabled and the macros expand to nothing; enabling them breaks
 the build.
 
 **B17 — `phy_read_reg()` / `phy_write_reg()` invert their result.**
-[`phy_common.c:537-539`](../Drivers/EthDrv/phy_drv/phy_common.c#L537) return `bool` from
+[`phy_common.c:537-539`](../../Drivers/EthDrv/phy_drv/phy_common.c#L537) return `bool` from
 `READ`/`WRITE`, which return `uint32_t` with **0 meaning success**. Currently unused.
 
 **B18 — `phy_read_range()` steps by 2 through MDIO register addresses**
-([phy_common.c:525-533](../Drivers/EthDrv/phy_drv/phy_common.c#L525)), skipping every odd
+([phy_common.c:525-533](../../Drivers/EthDrv/phy_drv/phy_common.c#L525)), skipping every odd
 register, and `phy_read_all_regs()` passes `EPHY_MDIO_MAX_ADDR` (a PHY *address* limit) as
 a register count. Diagnostic only.
 
 **B19 — `DEBUG` is defined in Release builds.**
-[`CMakeLists.txt:93`](../CMakeLists.txt#L93) puts `DEBUG` in the unconditional
+[`CMakeLists.txt:93`](../../CMakeLists.txt#L93) puts `DEBUG` in the unconditional
 `compile_DEFS`, alongside the correct `$<$<CONFIG:Debug>:DEBUG>` at line 132.
 
 **B20 — Only two of the five presets are configured.** `Release` maps to `-Og -g0`
-([CMakeLists.txt:157](../CMakeLists.txt#L157)) — a debug-oriented level for a preset named
+([CMakeLists.txt:157](../../CMakeLists.txt#L157)) — a debug-oriented level for a preset named
 Release. `relWithDebInfo` and `minSizeRel` receive no project optimisation flags at all,
 falling back to CMake defaults; neither has been built or tested.
 
 **B21 — `get_line()`'s left-trim never reaches the caller.**
-[`cli.c:411-413`](../Src/cliutils/cli.c#L411) advances a local `pStr` pointer. `task_cli()`
+[`cli.c:411-413`](../../Src/cliutils/cli.c#L411) advances a local `pStr` pointer. `task_cli()`
 then passes the *original* `sLineBuf` to `process_cli_line()`, so a command typed with
 leading whitespace fails to match. Right-trim works (it writes in place).
 
 **B22 — `MSGchar(int c)` takes the address of an `int` and sends one byte.**
-[`standard_output.c:45-47`](../Src/standard_output/standard_output.c#L45) — correct only on
+[`standard_output.c:45-47`](../../Src/standard_output/standard_output.c#L45) — correct only on
 little-endian. Also `last_char` (line 31) is written and never read.
 
 ---
@@ -535,11 +535,11 @@ claims something different (D12).
 **U5 — MPU-related `FreeRTOSConfig.h` settings with `configENABLE_MPU 0`.**
 `configSYSTEM_CALL_STACK_SIZE`, `configENFORCE_SYSTEM_CALLS_FROM_KERNEL_ONLY`,
 `configPROTECTED_KERNEL_OBJECT_POOL_SIZE` and `configALLOW_UNPRIVILEGED_CRITICAL_SECTIONS`
-([FreeRTOSConfig.h:81-84](../Inc/FreeRTOSConfig.h#L81)) are MPU-wrapper-v2 settings that do
+([FreeRTOSConfig.h:81-84](../../Inc/FreeRTOSConfig.h#L81)) are MPU-wrapper-v2 settings that do
 nothing with the MPU disabled. Harmless, but they read as intent.
 
 **U6 — Why `serial_io_init()` creates a thread before `osKernelInitialize()`.**
-[main.c:206,211](../Src/main.c#L206). It works — the shim's `osThreadNew()` does not check
+[main.c:206,211](../../Src/main.c#L206). It works — the shim's `osThreadNew()` does not check
 kernel state — but it is outside the CMSIS-RTOS2 contract, and `architecture.md` records
 the order without remarking on it.
 

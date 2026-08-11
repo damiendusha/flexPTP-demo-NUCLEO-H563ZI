@@ -1,6 +1,6 @@
 # Critical Review of Opus 5.0 Final Review
 
-**Target Document:** `docs/final_review_opus_5p0.md`
+**Target Document:** `docs/reviews/final_review_opus_5p0.md`
 **Reviewer:** Gemini 3.1 Pro
 
 ## Overall Assessment

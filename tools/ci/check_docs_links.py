@@ -13,6 +13,7 @@ import pathlib, re, sys
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 SKIP_PREFIX = ("http://", "https://", "mailto:", "file://")
+LINE_FRAG = re.compile(r"L\d+(?:-L\d+)?")
 
 
 def anchors(path):
@@ -52,6 +53,10 @@ def main():
             rel = f.relative_to(ROOT)
             if not dest.exists():
                 bad.append(f"{rel}: missing file -> {target}")
+                continue
+            # "#L12" / "#L12-L34" are GitHub *line* references, not heading anchors. They
+            # resolve on the blob view and cannot be validated against headings.
+            if LINE_FRAG.fullmatch(frag):
                 continue
             if frag and dest.suffix == ".md":
                 if dest not in cache:

@@ -1622,8 +1622,8 @@ state. Stage 20 previously said only "converging offset"; it now names the thres
 
 ## Second-Review Findings
 
-Raised by the second review pass ([`final_review_v2_opus_5p0.md`](final_review_v2_opus_5p0.md),
-[`consolidated_review_v2.md`](consolidated_review_v2.md)) and numbered F67 onward. The N-numbers
+Raised by the second review pass ([`final_review_v2_opus_5p0.md`](reviews/final_review_v2_opus_5p0.md),
+[`consolidated_review_v2.md`](reviews/consolidated_review_v2.md)) and numbered F67 onward. The N-numbers
 in brackets are the identifiers those documents use.
 
 ### F67 — the console FIFO could not tell full from empty *(RESOLVED)* [N1, N7]

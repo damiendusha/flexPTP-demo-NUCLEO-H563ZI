@@ -1,9 +1,9 @@
 # Consolidated Review & Action Plan
 
 This document consolidates findings and action items from three independent reviews of the `flexPTP-demo-NUCLEO-H563ZI` project:
-1. Gemini Pro 3.1 (`docs/final_review_gemini_pro_3p1.md`)
-2. Gemini Flash 3.6 (`docs/final_review_gemini_flash_3p6.md`)
-3. Opus 5.0 (`docs/final_review_opus_5p0.md`)
+1. Gemini Pro 3.1 (`docs/reviews/final_review_gemini_pro_3p1.md`)
+2. Gemini Flash 3.6 (`docs/reviews/final_review_gemini_flash_3p6.md`)
+3. Opus 5.0 (`docs/reviews/final_review_opus_5p0.md`)
 
 ## Consensus Analysis
 

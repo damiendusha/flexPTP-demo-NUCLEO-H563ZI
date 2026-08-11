@@ -1,7 +1,7 @@
 # Critical Review of `final_review_gemini_pro_3p1.md`
 
 **Reviewer:** Claude Opus 5.0
-**Subject:** [`docs/final_review_gemini_pro_3p1.md`](final_review_gemini_pro_3p1.md) (56 lines, 11 findings, 6 action items)
+**Subject:** [`docs/reviews/final_review_gemini_pro_3p1.md`](final_review_gemini_pro_3p1.md) (56 lines, 11 findings, 6 action items)
 **Date:** 2026-08-10
 
 Every claim below was checked against the tree at `df3ee3d`, not against the reviewed
@@ -13,7 +13,7 @@ document's own reasoning. Where I disagree I say what I checked.
 
 **Accurate but almost entirely derivative.** Nothing in the report is *wrong* about the
 architecture, and its summary of the port's known issues is faithful. But **all 11 findings
-map onto F-numbers that already exist in [`port_review.md`](port_review.md)** — F37, F38,
+map onto F-numbers that already exist in [`port_review.md`](../port_review.md)** — F37, F38,
 F40, F41, F63, F47, F59, F60/F66, F39, F27, plus the documented equipment limitation. The
 report discovered **zero new defects**.
 
@@ -75,7 +75,7 @@ unchecked clock configuration, and the uncompiled EtherLib path). A verdict of
 
 **Finding 3 describes the pre-fix state as current.** It says *"Leaving it undefined falls
 back to `FLEXPTP_FREERTOS`"*. The project **does** define it —
-[`Inc/flexptp_options.h:14`](../Inc/flexptp_options.h#L14) has `#define FLEXPTP_FREERTOS (1)`
+[`Inc/flexptp_options.h:14`](../../Inc/flexptp_options.h#L14) has `#define FLEXPTP_FREERTOS (1)`
 with a comment explaining that the fallback happens to be right but the choice is
 load-bearing. That was Stage 13's response to F40. The finding's *substance* (flexPTP uses
 raw FreeRTOS while the app uses CMSIS-OS2) is correct and remains true; its framing implies
@@ -121,7 +121,7 @@ Inc/flexptp_options.h:68:// PTP_UPDATE_CLOCK is deliberately not defined: the fl
 Two comments, no code. `mac_drv.c:746-751` carries an explicit note that the relative
 update helper *"was removed as dead code with a wrong subtract path"* and that a
 replacement should be written against RM0481 rather than resurrected.
-[`port_review.md:1418`](port_review.md) records F41 as **RESOLVED** with the reasoning:
+[`port_review.md:1418`](../port_review.md) records F41 as **RESOLVED** with the reasoning:
 repairing arithmetic in a function that has never executed *"produces something that looks
 verified and is not"*.
 
@@ -155,7 +155,7 @@ around or patched locally, and all three are correctly flagged as owing an upstr
 
 **Finding 10** quotes *"jitter ~83 µs"*. That figure is from an early F42-era capture. The
 Stage 20 sign-off measurement is **28.5 µs magnitude, 77.8 µs peak, signed mean −716 ns**
-over 137 samples ([`design_doc.md`](design_doc.md#stage-20--hardware-verification-results)).
+over 137 samples ([`design_doc.md`](../design_doc.md#stage-20--hardware-verification-results)).
 The conclusion — that the board's own accuracy is unmeasured because the floor is the
 host's — is right either way.
 
@@ -171,7 +171,7 @@ host's — is right either way.
 | Report upstream: F47, F59, and the **documentation** discrepancies (F37, F38) | **Agree, and partly novel.** Reporting the *doc* bugs upstream is a good idea that neither my review nor Flash 3.6 proposed |
 | Upstream embfmt fixes | **Agree** |
 | Remove `ETHHW_UpdatePTPTime()` / `PTP_UPDATE_CLOCK` | **Already done.** No action exists to take |
-| Test against a hardware-timestamping grandmaster | **Agree.** Matches the project's own [blocked-on-equipment](implementation_plan.md#blocked-on-equipment) item |
+| Test against a hardware-timestamping grandmaster | **Agree.** Matches the project's own [blocked-on-equipment](../implementation_plan.md#blocked-on-equipment) item |
 | Add DCACHE safeguards | **Partially redundant, with a good idea inside it** — see below |
 | **Upstream the H563 hardware port to flexPTP** | **Agree, and genuinely novel.** The best item in the report |
 
@@ -179,8 +179,8 @@ host's — is right either way.
 
 *"Add a comment block … warning against enabling DCACHE"* is already done, twice: the
 linker script carries exactly that warning at the `.EthDrv_sec` placement
-([`stm32h563zitx_FLASH.ld:170-179`](../stm32h563zitx_FLASH.ld#L170)), and `design_doc.md`
-devotes a [whole section](design_doc.md#caches-and-dma-coherency) to it.
+([`stm32h563zitx_FLASH.ld:170-179`](../../stm32h563zitx_FLASH.ld#L170)), and `design_doc.md`
+devotes a [whole section](../design_doc.md#caches-and-dma-coherency) to it.
 
 The *other* half of the suggestion — an `#error` directive — is new and worth doing,
 because a comment is exactly what a future maintainer enabling DCACHE will not read. It is

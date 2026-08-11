@@ -1,7 +1,7 @@
-# Critical Review of `docs/final_review_gemini_pro_3p1.md`
+# Critical Review of `docs/reviews/final_review_gemini_pro_3p1.md`
 
 **Reviewer:** Antigravity (Gemini 3.6 Flash)  
-**Target Document:** [docs/final_review_gemini_pro_3p1.md](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/docs/final_review_gemini_pro_3p1.md)  
+**Target Document:** [docs/reviews/final_review_gemini_pro_3p1.md](final_review_gemini_pro_3p1.md)  
 **Date:** 2026-08-10  
 **Scope:** Point-by-point technical evaluation of each finding, agreement/disagreement analysis, verification of reasoning against source code and hardware documentation, and identification of significant blind spots.
 
@@ -11,7 +11,7 @@
 
 ### Overall Assessment: **Historically Accurate Summary, but Lacks Deep Source-Level Audit**
 
-The report in [docs/final_review_gemini_pro_3p1.md](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/docs/final_review_gemini_pro_3p1.md) (authored by Gemini Pro 3.1) serves primarily as a **retrospective summary of the historical porting log** ([docs/port_review.md](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/docs/port_review.md), findings F1–F66). 
+The report in [docs/reviews/final_review_gemini_pro_3p1.md](final_review_gemini_pro_3p1.md) (authored by Gemini Pro 3.1) serves primarily as a **retrospective summary of the historical porting log** ([docs/port_review.md](../port_review.md), findings F1–F66). 
 
 While its high-level architectural observations and citations of upstream flexPTP/embfmt bugs are factually accurate, the review **did not perform a rigorous independent static or logical audit of the final code tree**. Consequently:
 - **10 of its 11 findings are simply restatements of known historical port findings** rather than newly identified defects.
@@ -23,7 +23,7 @@ While its high-level architectural observations and citations of upstream flexPT
 
 ## 2. Point-by-Point Evaluation of Findings
 
-Below is a detailed evaluation of all 11 findings presented in `docs/final_review_gemini_pro_3p1.md`.
+Below is a detailed evaluation of all 11 findings presented in `docs/reviews/final_review_gemini_pro_3p1.md`.
 
 ---
 
@@ -65,7 +65,7 @@ Below is a detailed evaluation of all 11 findings presented in `docs/final_revie
 - **Claim:** `ETHHW_UpdatePTPTime()` in `mac_drv.c` contains a broken subtract path `nsec = 1000000000 - (nsec >> 1)` and recommends deleting the function as dead code.
 - **Verdict:** **DISAGREE WITH THE CURRENT RELEVANCE (Outdated / Stale Finding).**
 - **Reasoning:**
-  In the current codebase at [Drivers/EthDrv/mac_drv.c:746-751](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/Drivers/EthDrv/mac_drv.c#L746-L751), `ETHHW_UpdatePTPTime()` **was already deleted** during Stage 14 / finding F41 resolution. The file explicitly contains this comment:
+  In the current codebase at [Drivers/EthDrv/mac_drv.c:746-751](../../Drivers/EthDrv/mac_drv.c#L746-L751), `ETHHW_UpdatePTPTime()` **was already deleted** during Stage 14 / finding F41 resolution. The file explicitly contains this comment:
   ```c
   // NOTE: there is no relative time-update helper here on purpose. TSUPDT-based adjustment
   // (MACSTSUR/MACSTNUR with the ADDSUB bit) is a documented feature of this MAC, but nothing in
@@ -123,16 +123,16 @@ The Gemini Pro 3.1 report failed to detect **all 10 active code defects and docu
 
 | Missed Finding | Defect / Vulnerability | Location | Severity | Impact |
 |---|---|---|---|---|
-| **[B1]** | **Recursive Mutex Deadlock** | [Src/cliutils/cli.c:461, 519](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/Src/cliutils/cli.c#L461) | **Critical** | `cli_register_command` acquires non-recursive `modifyMtx` and calls `cli_remove_command`, which blocks on the same mutex forever. |
-| **[B3]** | **Write-1-to-Clear Register Corruption** | [Drivers/EthDrv/mac_drv.c:522-540](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/Drivers/EthDrv/mac_drv.c#L522-L540) | **Critical** | `ETHHW_ISR` uses `SET_BIT` (`|=`) on `DMACSR`, clearing all active interrupt flags simultaneously and dropping concurrent TX/error interrupts. |
-| **[B2]** | **Unbounded Transmit Busy-Wait** | [Drivers/EthDrv/mac_drv.c:552](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/Drivers/EthDrv/mac_drv.c#L552) | **High** | `while (!OWNED)` spins 100% CPU in `tcpip_thread` if TX DMA hangs or ring is full. |
-| **[B4]** | **16-bit Counter Wrap Underflow** | [Drivers/EthDrv/mac_drv.c:473](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/Drivers/EthDrv/mac_drv.c#L473) | **High** | `(int32_t)txCntr - (int32_t)state->txCntAcked` yields $-65535$ on overflow, corrupting descriptor ordering. |
-| **[B5]** | **Escape Parser Stack Overflow** | [Src/cliutils/cli.c:314, 396](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/Src/cliutils/cli.c#L314) | **High** | `escParam[4]` on stack lacks array bounds check against `paramIdx`, corrupting stack frame on long sequences. |
-| **[B6]** | **String Out-of-Bounds Write** | [Src/standard_output/standard_output.c:16](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/Src/standard_output/standard_output.c#L16) | **High** | `insert_carriage_return` writes `str[2049]` into 2049-byte `lineBuf` when string is at full capacity. |
-| **[B7]** | **`MSG()` Thread-Safety Race** | [Src/standard_output/standard_output.c:12](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/Src/standard_output/standard_output.c#L12) | **High** | 6 threads format concurrently into a single un-locked `static char lineBuf`. |
-| **[B8] / [B9]** | **PHY Reset Loop & Null Pointer Dereference** | [Drivers/EthDrv/phy_drv/phy_common.c:441, 515](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/Drivers/EthDrv/phy_drv/phy_common.c#L441) | **High** | Unbounded `phy_soft_reset()` loop and unguarded `phyFetchLinkStatusCb()` call causing HardFault on unknown PHY. |
-| **[B10]** | **Newlib Heap vs FreeRTOS Heap Collision** | [stm32h563zitx_FLASH.ld:153-169](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/stm32h563zitx_FLASH.ld#L153-L169) | **High** | `._user_heap_stack` defines `_end` before `.FreeRTOS_sec`, causing `_sbrk()` to overlap `ucHeap`. |
-| **[D1]** | **Stale HCLK Clock Comment** | [Src/main.c:83-85](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/Src/main.c#L83-L85) | **Medium** | Comment claims PTP clock is HCLK, contradicting lines 61–64 of `main.c` and `ptp_clock.md`. |
+| **[B1]** | **Recursive Mutex Deadlock** | [Src/cliutils/cli.c:461, 519](../../Src/cliutils/cli.c#L461) | **Critical** | `cli_register_command` acquires non-recursive `modifyMtx` and calls `cli_remove_command`, which blocks on the same mutex forever. |
+| **[B3]** | **Write-1-to-Clear Register Corruption** | [Drivers/EthDrv/mac_drv.c:522-540](../../Drivers/EthDrv/mac_drv.c#L522-L540) | **Critical** | `ETHHW_ISR` uses `SET_BIT` (`|=`) on `DMACSR`, clearing all active interrupt flags simultaneously and dropping concurrent TX/error interrupts. |
+| **[B2]** | **Unbounded Transmit Busy-Wait** | [Drivers/EthDrv/mac_drv.c:552](../../Drivers/EthDrv/mac_drv.c#L552) | **High** | `while (!OWNED)` spins 100% CPU in `tcpip_thread` if TX DMA hangs or ring is full. |
+| **[B4]** | **16-bit Counter Wrap Underflow** | [Drivers/EthDrv/mac_drv.c:473](../../Drivers/EthDrv/mac_drv.c#L473) | **High** | `(int32_t)txCntr - (int32_t)state->txCntAcked` yields $-65535$ on overflow, corrupting descriptor ordering. |
+| **[B5]** | **Escape Parser Stack Overflow** | [Src/cliutils/cli.c:314, 396](../../Src/cliutils/cli.c#L314) | **High** | `escParam[4]` on stack lacks array bounds check against `paramIdx`, corrupting stack frame on long sequences. |
+| **[B6]** | **String Out-of-Bounds Write** | [Src/standard_output/standard_output.c:16](../../Src/standard_output/standard_output.c#L16) | **High** | `insert_carriage_return` writes `str[2049]` into 2049-byte `lineBuf` when string is at full capacity. |
+| **[B7]** | **`MSG()` Thread-Safety Race** | [Src/standard_output/standard_output.c:12](../../Src/standard_output/standard_output.c#L12) | **High** | 6 threads format concurrently into a single un-locked `static char lineBuf`. |
+| **[B8] / [B9]** | **PHY Reset Loop & Null Pointer Dereference** | [Drivers/EthDrv/phy_drv/phy_common.c:441, 515](../../Drivers/EthDrv/phy_drv/phy_common.c#L441) | **High** | Unbounded `phy_soft_reset()` loop and unguarded `phyFetchLinkStatusCb()` call causing HardFault on unknown PHY. |
+| **[B10]** | **Newlib Heap vs FreeRTOS Heap Collision** | [stm32h563zitx_FLASH.ld:153-169](../../stm32h563zitx_FLASH.ld#L153-L169) | **High** | `._user_heap_stack` defines `_end` before `.FreeRTOS_sec`, causing `_sbrk()` to overlap `ucHeap`. |
+| **[D1]** | **Stale HCLK Clock Comment** | [Src/main.c:83-85](../../Src/main.c#L83-L85) | **Medium** | Comment claims PTP clock is HCLK, contradicting lines 61–64 of `main.c` and `ptp_clock.md`. |
 | **[U1]** | **Silent Patch Loss on Clone** | `build.sh` / `patches/` | **High** | `build.sh` runs `git submodule update` which discards submodule working-tree patches without re-applying them. |
 
 ---
@@ -148,4 +148,4 @@ The Gemini Pro 3.1 report failed to detect **all 10 active code defects and docu
 | **Action Items** | 6 items | 5 | 1 (Action on deleted F41 code) | Weak |
 
 ### Final Recommendation
-The Gemini Pro 3.1 review should be treated as an executive overview of the *submodule porting challenges*, but must **not** be relied upon for code stability, security, or driver correctness audits. The actionable remediations defined in [docs/final_review_gemini_flash_3p6.md](file:///home/damien/git/flexPTP-demo-NUCLEO-H563ZI/docs/final_review_gemini_flash_3p6.md) should take precedence.
+The Gemini Pro 3.1 review should be treated as an executive overview of the *submodule porting challenges*, but must **not** be relied upon for code stability, security, or driver correctness audits. The actionable remediations defined in [docs/reviews/final_review_gemini_flash_3p6.md](final_review_gemini_flash_3p6.md) should take precedence.

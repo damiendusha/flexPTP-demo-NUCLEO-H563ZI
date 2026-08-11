@@ -71,8 +71,8 @@ port.
 
 ### N1 — `BFifo` reports empty when exactly full
 
-**Where:** [`blocking_fifo.c:26-40`](../Modules/blocking_io/blocking_fifo.c#L26),
-[`blocking_fifo.c:42-95`](../Modules/blocking_io/blocking_fifo.c#L42)
+**Where:** [`blocking_fifo.c:26-40`](../../Modules/blocking_io/blocking_fifo.c#L26),
+[`blocking_fifo.c:42-95`](../../Modules/blocking_io/blocking_fifo.c#L42)
 **Affects:** the 16 KB console FIFO and the 512-byte CLI input FIFO.
 
 Two indices, no count and no reserved slot, so `writeIdx == readIdx` encodes both *empty* and
@@ -101,7 +101,7 @@ that reads back as empty.
 > ✅ **Fixed** in P6.1, together with N7. Occupancy now comes from two free-running byte
 > counters whose modular difference is unambiguous at both ends. Measured on hardware: ten
 > back-to-back help dumps (~25 KB against a 16 KB FIFO) went from **3 of 10** arriving to
-> **10 of 10**, 8 605 → 24 962 bytes. Recorded as [F67](port_review.md).
+> **10 of 10**, 8 605 → 24 962 bytes. Recorded as [F67](../port_review.md).
 
 **Fix.** Explicit `count`, or a reserved slot (`free = size - used - 1`), or monotonic indices
 masked on access — see [§7.1](#71--n1--n7-the-monotonic-index-option-carries-a-precondition)
@@ -113,8 +113,8 @@ at every access site; all five functions change together.
 
 ### N2 — The TX ownership wait is compiled away above `-Og`
 
-**Where:** [`mac_drv.c:596-607`](../Drivers/EthDrv/mac_drv.c#L596),
-[`mac_drv.h:29-31`](../Drivers/EthDrv/mac_drv.h#L29)
+**Where:** [`mac_drv.c:596-607`](../../Drivers/EthDrv/mac_drv.c#L596),
+[`mac_drv.h:29-31`](../../Drivers/EthDrv/mac_drv.h#L29)
 
 `ETHHW_Desc` declares the four DMA-written words as plain `uint32_t`, and the P2.3 retry loop
 has no barrier, call or side effect — so the load is loop-invariant and gets hoisted. Measured
@@ -127,28 +127,28 @@ with the project's own flags, changing only `-O`:
 | `-O3` | same, with the failure path tail-called into `MSG` |
 
 Above `-Og` the bounded wait degenerates to a single test: a descriptor still owned by the DMA
-means an immediate drop. This matters because [`CMakeLists.txt:160-185`](../CMakeLists.txt#L160)
+means an immediate drop. This matters because [`CMakeLists.txt:160-185`](../../CMakeLists.txt#L160)
 advertises `-O2` and `-Os` as hardware-tested known-good, and wires `-O2` into
 `RelWithDebInfo`. Those runs were real; what they did not cover is that the retry loop is absent
 from those images.
 
-Same class as [F62](port_review.md) — a hardware-ordering workaround expressed without
+Same class as [F62](../port_review.md) — a hardware-ordering workaround expressed without
 `volatile` is not a constraint — applied to descriptor memory instead of the UID region.
 
 > ✅ **Fixed** in P6.4 with N9. The `-O2` object now shows the spin counter, a `DES3` re-read
 > inside the loop and a backward branch. Hardware-tested at all three levels — `Debug`,
 > `Release` (`-Og`) and `RelWithDebInfo` (`-O2`), the last of which had never been run on the
 > board: boot, DHCP, flexPTP → MASTER, addend 3435973836, ping 1400 B 0% loss, no TX-drop
-> reports. Recorded as [F70](port_review.md).
+> reports. Recorded as [F70](../port_review.md).
 
 **Fix.** `volatile uint32_t DES0, DES1, DES2, DES3;`. The `ext` half is CPU-only and stays.
 Re-check the three disassemblies afterwards and extend the F62 note in `CMakeLists.txt`.
 
 ### N3 — RX DMA suspension on RBU is never cleared
 
-**Where:** [`mac_drv.c:176`](../Drivers/EthDrv/mac_drv.c#L176),
-[`mac_drv.c:253-265`](../Drivers/EthDrv/mac_drv.c#L253),
-[`mac_drv.c:547-579`](../Drivers/EthDrv/mac_drv.c#L547)
+**Where:** [`mac_drv.c:176`](../../Drivers/EthDrv/mac_drv.c#L176),
+[`mac_drv.c:253-265`](../../Drivers/EthDrv/mac_drv.c#L253),
+[`mac_drv.c:547-579`](../../Drivers/EthDrv/mac_drv.c#L547)
 
 The RX tail pointer is written once at init (`DMACRDTPR = 0`, "tail pointer WON'T STOP"), which
 prevents suspension on *tail* but not on *ownership*. When every RX descriptor is outstanding
@@ -168,7 +168,7 @@ own merit.
 > any per-condition enable, so `DMACSR.AIS` could not assert and the error branch had been
 > unreachable since it was written. That is why the board had never once reported the fault.
 > The flags are now latched in the ISR and printed by `phy_thread`. Recorded as
-> [F71](port_review.md).
+> [F71](../port_review.md).
 >
 > **Provenance note, retained deliberately.** The Gemini review supported this with a verbatim
 > quotation attributed to "RM0481, Section 59.6.2". The *rule* has now been confirmed
@@ -208,8 +208,8 @@ void ETHHW_RestoreRXDesc(ETHHW_DescFull *bd) {
 
 ### N4 — Known vendor + unknown model dereferences NULL at boot
 
-**Where:** [`phy_common.c:21`](../Drivers/EthDrv/phy_drv/phy_common.c#L21),
-[`phy_common.c:382-451`](../Drivers/EthDrv/phy_drv/phy_common.c#L382)
+**Where:** [`phy_common.c:21`](../../Drivers/EthDrv/phy_drv/phy_common.c#L21),
+[`phy_common.c:382-451`](../../Drivers/EthDrv/phy_drv/phy_common.c#L382)
 
 `static const char *phyName = NULL;` is assigned only on a full match or on an unknown **OUI**.
 A PHY whose vendor is in the table but whose model is not falls through both inner
@@ -221,7 +221,7 @@ This is the sibling of the first review's **B1**, which guarded the *unknown-PHY
 in `phy_get_link_status()` and did not revisit this site. It is the more likely of the two:
 vendors change models far more often than they change OUIs.
 
-The affected vendor IDs, from [`phy_common.h:72-76`](../Drivers/EthDrv/phy_drv/phy_common.h#L72),
+The affected vendor IDs, from [`phy_common.h:72-76`](../../Drivers/EthDrv/phy_drv/phy_common.h#L72),
 are TI `0x080017` / `0x080028` / `0x080000`, SMSC `0x0001F0` and Realtek `0x000732`. (The Gemini
 review lists SMSC as `0x00800F`; that value does not appear in this project — see
 [§4](#4-claims-rejected-or-downgraded).)
@@ -233,9 +233,9 @@ outer default. Both reads then behave.
 
 ### N5 — Every lwIP assertion is a silent no-op
 
-**Where:** [`cc.h:83`](../Modules/lwip_port/arch/cc.h#L83),
-[`syscall.c:35`](../Src/syscall.c#L35), [`syscall.c:80-90`](../Src/syscall.c#L80),
-[`lwipopts.h:48-62`](../Inc/lwipopts.h#L48)
+**Where:** [`cc.h:83`](../../Modules/lwip_port/arch/cc.h#L83),
+[`syscall.c:35`](../../Src/syscall.c#L35), [`syscall.c:80-90`](../../Src/syscall.c#L80),
+[`lwipopts.h:48-62`](../../Inc/lwipopts.h#L48)
 
 The stock macro `printf("Assertion \"%s\" failed …")` fails twice over, both verified in the
 linked image:
@@ -269,7 +269,7 @@ float-capable `_vfprintf_r` (8 836 B) and its support in with it.
 > `netif_set_link_callback()` from the `init` thread without the lock, and `netif_add()`
 > asserts it. P3.6 had fixed the same class of bug in `check_dhcp_state()` and concluded it was
 > "the only place in the project that got this wrong"; it was only the only place anyone had
-> looked. Fixed as [F73](port_review.md).
+> looked. Fixed as [F73](../port_review.md).
 >
 > Verified by scaffolding a real violation — `netif_set_link_up()` from
 > `phy_thread`, which holds no core lock — which now prints `*** FATAL: lwIP assertion failed /
@@ -277,7 +277,7 @@ float-capable `_vfprintf_r` (8 836 B) and its support in with it.
 > 181 100 → 167 364 B), more than the ~9 KB estimated. And F63 resolved itself: a halting
 > assertion is `noreturn`, so GCC can use the `options_out_len` bound and the Release build
 > went from **4 warnings to 0** with lwIP still pinned and unpatched. Recorded as
-> [F72](port_review.md).
+> [F72](../port_review.md).
 
 **Fix.** Point `LWIP_PLATFORM_ASSERT` at `serial_io_panic_write()` (written for exactly this
 class of caller: polled, no FIFO, no RTOS object, safe at any priority) and halt. Both reviews
@@ -286,9 +286,9 @@ below to become moot.
 
 ### N6 — The ISR logging contract is self-contradictory
 
-**Where:** [`standard_output.c:33-46`](../Src/standard_output/standard_output.c#L33),
-[`serial_io.c:120-131`](../Src/standard_output/serial_io.c#L120),
-[`mac_drv.c:9-17`](../Drivers/EthDrv/mac_drv.c#L9)
+**Where:** [`standard_output.c:33-46`](../../Src/standard_output/standard_output.c#L33),
+[`serial_io.c:120-131`](../../Src/standard_output/serial_io.c#L120),
+[`mac_drv.c:9-17`](../../Drivers/EthDrv/mac_drv.c#L9)
 
 Three comments written in the same review cycle disagree: `mac_drv.c` says its timeout reports
 "must be callable from an ISR"; `standard_output.c` skips the mutex in interrupt context on that
@@ -297,7 +297,7 @@ basis, reasoning that "a garbled message beats a silently dropped one"; `serial_
 
 The last is right, and the consequence is worse than garbling. From interrupt context the
 CMSIS-RTOS2 shim rejects a blocking acquire outright
-([`cmsis_os2.c:1969-1972`](../Drivers/CMSIS/CMSIS_RTOS_V2/cmsis_os2.c#L1969)):
+([`cmsis_os2.c:1969-1972`](../../Drivers/CMSIS/CMSIS_RTOS_V2/cmsis_os2.c#L1969)):
 `osSemaphoreAcquire(sem, osWaitForever)` returns `osErrorParameter` without taking anything.
 `bfifo_push()` ignores the return and proceeds unserialised; with no free space it returns 0,
 and `bfifo_push_all()`'s `while (pushLeft > 0)` **never terminates** — a CPU hang inside the ISR.
@@ -325,7 +325,7 @@ its use, and N3's fix proposes another ISR-context `MSG()`.
 >   ISR*, so that FIFO has always had an unsynchronised interrupt producer. Writer exclusion
 >   is now a critical section — the only primitive both contexts can use.
 >
-> Recorded as [F68](port_review.md). `osinfo` now reports the discarded count.
+> Recorded as [F68](../port_review.md). `osinfo` now reports the discarded count.
 
 **Fix.** Choose one contract and make the code enforce it: in `serial_io_write()`, route to
 `serial_io_panic_write()` when `__get_IPSR() != 0`; give `bfifo_push_all()` a bail-out when
@@ -333,8 +333,8 @@ its use, and N3's fix proposes another ISR-context `MSG()`.
 
 ### N7 — `bfifo_pop()` hands the write token to a second writer
 
-**Where:** [`blocking_fifo.c:49`](../Modules/blocking_io/blocking_fifo.c#L49),
-[`blocking_fifo.c:142`](../Modules/blocking_io/blocking_fifo.c#L142)
+**Where:** [`blocking_fifo.c:49`](../../Modules/blocking_io/blocking_fifo.c#L49),
+[`blocking_fifo.c:142`](../../Modules/blocking_io/blocking_fifo.c#L142)
 
 `writeSem` does two jobs — "space exists" and "no other writer inside `bfifo_push()`" — and
 `bfifo_pop()` releases it unconditionally from the consumer thread, without regard for a
@@ -344,7 +344,7 @@ and writer B entering `bfifo_push()` is enough: both compute block sizes from th
 
 There is more than one producer, and the `MSG()` mutex does not cover them: `MSGraw()` and
 `MSGchar()` go straight to `serial_io_write()`
-([`standard_output.c:97-103`](../Src/standard_output/standard_output.c#L97)), and the CLI echoes
+([`standard_output.c:97-103`](../../Src/standard_output/standard_output.c#L97)), and the CLI echoes
 every keystroke that way from the `cli` thread while other threads log.
 
 *Scope note:* the damage is confined to FIFO contents and indices — interleaved and partly
@@ -360,7 +360,7 @@ the space signal. Same object as N1 — do both in one pass over a 161-line file
 
 ### N8 — CLI tokenizer: one-byte overflow and cross-thread reuse
 
-**Where:** [`cli.c:78-106`](../Src/cliutils/cli.c#L78), [`cli.c:453`](../Src/cliutils/cli.c#L453)
+**Where:** [`cli.c:78-106`](../../Src/cliutils/cli.c#L78), [`cli.c:453`](../../Src/cliutils/cli.c#L453)
 
 `sLineBuf` is `CLI_LINEBUF_LENGTH + 1` (192 B) and `get_line()` can fill all of it; `pLineCpy`
 inside `tokenize_cli_line()` is `CLI_LINEBUF_LENGTH` (191 B). A maximum-length line is therefore
@@ -375,15 +375,15 @@ this buffer.
 
 > ✅ **Fixed** in P6.7 with N12. Verified on hardware: a 191-character line, a 250-character
 > line and a 40-character token are all rejected normally with no fault, and the CLI is
-> otherwise unchanged. Recorded as [F74](port_review.md).
+> otherwise unchanged. Recorded as [F74](../port_review.md).
 
 **Fix.** Size it `CLI_LINEBUF_LENGTH + 1` and make it a local (192 B on a 2048 B stack);
 `strtok_r` removes the third hazard.
 
 ### N9 — No memory barriers at descriptor handoff
 
-**Where:** [`mac_drv.c:258-264`](../Drivers/EthDrv/mac_drv.c#L258),
-[`mac_drv.c:632-640`](../Drivers/EthDrv/mac_drv.c#L632)
+**Where:** [`mac_drv.c:258-264`](../../Drivers/EthDrv/mac_drv.c#L258),
+[`mac_drv.c:632-640`](../../Drivers/EthDrv/mac_drv.c#L632)
 
 Both handoffs write the descriptor body and then the `OWN` bit with nothing in between, then
 poke a tail register. The Cortex-M33 has a store buffer and the fabric gives no ordering
@@ -396,19 +396,19 @@ treated as ordinary variables. **Fix:** `__DMB()` before the `DES3` store, `__DS
 tail write, in both paths (see the N3 snippet).
 
 > ✅ **Fixed** in P6.4 with N2. `dmb sy` and `dsb sy` are present in the generated code at
-> `-Og`, `-O2` and `-O3`. See [F70](port_review.md).
+> `-Og`, `-O2` and `-O3`. See [F70](../port_review.md).
 
 ### N10 – N16 — low and latent
 
 | ID | Where | Summary and fix |
 |---|---|---|
-| **N10** | [`eth_drv_etherlib.c:139-142`](../Drivers/EthDrv/eth_drv_etherlib.c#L139) | On `dynmem_alloc()` failure the callback returns 0, which means "the receive thread owns it now" — but nobody took it, and `inFlight` stays set. Each failure retires one descriptor permanently; 24 of them is N3 by another route. The lwIP path gets this right ([`eth_drv_lwip.c:393-397`](../Drivers/EthDrv/eth_drv_lwip.c#L393)). **Fix:** return `ETHHW_RET_RX_PROCESSED`, and drop the `MSG()` — this runs in the ETH ISR (N6). Not compiled today; P5.21/P5.22 prepared this path precisely so its first build is not a debugging session. |
-| **N11** | [`ethernet_etherlib.c:7-13`](../Src/ethernet/ethernet_etherlib.c#L7) | `char str[packet->payloadSize + 1]` — a VLA sized off the wire, memcpy'd into, no bound and no zero-length guard. 1.5 KB of stack at MTU, attacker-chosen in any case. **Fix:** fixed buffer + `MIN()`. |
-| **N12** | [`cli.c:94`](../Src/cliutils/cli.c#L94), [`:102`](../Src/cliutils/cli.c#L102), [`:506`](../Src/cliutils/cli.c#L506) | `strncpy` leaves tokens ≥ `MAX_TOK_LEN` (32) and help lines ≥ `MAX_HELP_LEN` (192) unterminated; later `strcmp`s run into the next array element. Longest help today is ~75 chars, so latent — but nothing enforces that. **Fix:** copy `n-1`, terminate explicitly. |
-| **N13** | [`mac_drv.c:143`](../Drivers/EthDrv/mac_drv.c#L143) | `WRITE_REG(eth->MACCR, mode \| ETH_MACCR_IPC)` clears `ACS` and `CST`, so the reported packet length — and every RX pbuf — includes the 4-byte FCS. ST's HAL enables both by default (`stm32h5xx_hal_eth.c:3042,3048`). Harmless in the paths exercised (lwIP trims IPv4 by header length, flexPTP parses by field), but a max frame occupies 1518 of 1528 bytes and any future code trusting `size` is wrong by 4. **Fix (optional):** add `ETH_MACCR_CST \| ETH_MACCR_ACS`, or say at the register write that it is deliberate. |
-| **N14** | [`eth_drv_lwip.c:290-308`](../Drivers/EthDrv/eth_drv_lwip.c#L290) | `ETHHW_Transmit()` can drop the frame (and with N2, does so on the first try at `-O2`) but returns `void`; `low_level_output()` unconditionally does `LINK_STATS_INC(link.xmit); return ERR_OK;`. **Fix:** return `bool`, map onto `ERR_IF` + `link.drop`, following the reasoning already written for the over-length case (not `ERR_MEM`). |
-| **N15** | [`lwipopts.h:238-239`](../Inc/lwipopts.h#L238), [`cc.h:42`](../Modules/lwip_port/arch/cc.h#L42) | `lwip/opt.h` includes `lwipopts.h` first and `arch/cc.h` later, so the bare `#define LWIP_PROVIDE_ERRNO` in `cc.h` undoes the `#undef`. Benign here, but the comment claims a configuration the build does not have. **Fix:** delete the define from `cc.h` — that is the port file this project owns. |
-| **N16** | [`.github/workflows/ci.yml:35`](../.github/workflows/ci.yml#L35) | GitHub runs `run:` with `bash -e`, not `-eo pipefail`, so the pipeline exits with `tee`'s status and a compile or link failure does not fail the step. Nothing downstream catches it: the warning gate passes on a truncated log, the patch check is build-independent, and `upload-artifact` only *warns* on missing paths. **Fix:** `set -o pipefail`. One line, and it protects every other fix in this document. |
+| **N10** | [`eth_drv_etherlib.c:139-142`](../../Drivers/EthDrv/eth_drv_etherlib.c#L139) | On `dynmem_alloc()` failure the callback returns 0, which means "the receive thread owns it now" — but nobody took it, and `inFlight` stays set. Each failure retires one descriptor permanently; 24 of them is N3 by another route. The lwIP path gets this right ([`eth_drv_lwip.c:393-397`](../../Drivers/EthDrv/eth_drv_lwip.c#L393)). **Fix:** return `ETHHW_RET_RX_PROCESSED`, and drop the `MSG()` — this runs in the ETH ISR (N6). Not compiled today; P5.21/P5.22 prepared this path precisely so its first build is not a debugging session. |
+| **N11** | [`ethernet_etherlib.c:7-13`](../../Src/ethernet/ethernet_etherlib.c#L7) | `char str[packet->payloadSize + 1]` — a VLA sized off the wire, memcpy'd into, no bound and no zero-length guard. 1.5 KB of stack at MTU, attacker-chosen in any case. **Fix:** fixed buffer + `MIN()`. |
+| **N12** | [`cli.c:94`](../../Src/cliutils/cli.c#L94), [`:102`](../../Src/cliutils/cli.c#L102), [`:506`](../../Src/cliutils/cli.c#L506) | `strncpy` leaves tokens ≥ `MAX_TOK_LEN` (32) and help lines ≥ `MAX_HELP_LEN` (192) unterminated; later `strcmp`s run into the next array element. Longest help today is ~75 chars, so latent — but nothing enforces that. **Fix:** copy `n-1`, terminate explicitly. |
+| **N13** | [`mac_drv.c:143`](../../Drivers/EthDrv/mac_drv.c#L143) | `WRITE_REG(eth->MACCR, mode \| ETH_MACCR_IPC)` clears `ACS` and `CST`, so the reported packet length — and every RX pbuf — includes the 4-byte FCS. ST's HAL enables both by default (`stm32h5xx_hal_eth.c:3042,3048`). Harmless in the paths exercised (lwIP trims IPv4 by header length, flexPTP parses by field), but a max frame occupies 1518 of 1528 bytes and any future code trusting `size` is wrong by 4. **Fix (optional):** add `ETH_MACCR_CST \| ETH_MACCR_ACS`, or say at the register write that it is deliberate. |
+| **N14** | [`eth_drv_lwip.c:290-308`](../../Drivers/EthDrv/eth_drv_lwip.c#L290) | `ETHHW_Transmit()` can drop the frame (and with N2, does so on the first try at `-O2`) but returns `void`; `low_level_output()` unconditionally does `LINK_STATS_INC(link.xmit); return ERR_OK;`. **Fix:** return `bool`, map onto `ERR_IF` + `link.drop`, following the reasoning already written for the over-length case (not `ERR_MEM`). |
+| **N15** | [`lwipopts.h:238-239`](../../Inc/lwipopts.h#L238), [`cc.h:42`](../../Modules/lwip_port/arch/cc.h#L42) | `lwip/opt.h` includes `lwipopts.h` first and `arch/cc.h` later, so the bare `#define LWIP_PROVIDE_ERRNO` in `cc.h` undoes the `#undef`. Benign here, but the comment claims a configuration the build does not have. **Fix:** delete the define from `cc.h` — that is the port file this project owns. |
+| **N16** | [`.github/workflows/ci.yml:35`](../../.github/workflows/ci.yml#L35) | GitHub runs `run:` with `bash -e`, not `-eo pipefail`, so the pipeline exits with `tee`'s status and a compile or link failure does not fail the step. Nothing downstream catches it: the warning gate passes on a truncated log, the patch check is build-independent, and `upload-artifact` only *warns* on missing paths. **Fix:** `set -o pipefail`. One line, and it protects every other fix in this document. |
 
 ### N17 — The flash figure depends on the build-directory path *(new in this consolidation)*
 
@@ -417,7 +417,7 @@ Not in either source review; it emerged from reconciling their numbers. The two 
 
 | Source | Release flash | Build directory |
 |---|---|---|
-| [`CMakeLists.txt:166`](../CMakeLists.txt#L166) | 180 496 B | unrecorded |
+| [`CMakeLists.txt:166`](../../CMakeLists.txt#L166) | 180 496 B | unrecorded |
 | Opus v2 review | 180 504 B | long scratchpad path |
 | Gemini v2 review | 180 120 B | unrecorded |
 | **This consolidation** | **180 168 B** | `build/Release` |
@@ -464,10 +464,10 @@ image slightly and make builds path-reproducible, but that is a change of scope,
   submodule paths. (Both v2 reviews and this one deliberately reference submodule files in prose
   rather than as links for this reason.)
 - **H-3** `-Wl,--gc-sections` sits in `CMAKE_C_FLAGS`
-  ([`cmake/gcc-arm-none-eabi.cmake:6`](../cmake/gcc-arm-none-eabi.cmake#L6)) and is passed to
+  ([`cmake/gcc-arm-none-eabi.cmake:6`](../../cmake/gcc-arm-none-eabi.cmake#L6)) and is passed to
   every compile as well as the link. Ignored by the compiler; inherited from the ST template.
 - **H-4** `lwipopts.h` carries a full `LWIP_HTTPD_*` block
-  ([`lwipopts.h:165-175`](../Inc/lwipopts.h#L165)) for an httpd that is not compiled.
+  ([`lwipopts.h:165-175`](../../Inc/lwipopts.h#L165)) for an httpd that is not compiled.
 - **H-5** `_Min_Heap_Size` in the linker script constrains nothing — `_sbrk()` bounds the newlib
   heap against `_estack - _Min_Stack_Size` only. A clause saying the symbol is unused would
   close it.
@@ -510,7 +510,7 @@ sequence; the differences are noted.
 
 **Phase 1 — one file, two findings, highest certainty**
 1. **N1 + N7** — rewrite the index arithmetic in
-   [`blocking_fifo.c`](../Modules/blocking_io/blocking_fifo.c) so full and empty are
+   [`blocking_fifo.c`](../../Modules/blocking_io/blocking_fifo.c) so full and empty are
    distinguishable, and split writer exclusion from the space signal. All five functions change
    together.
 2. **N4** — one-line initialiser; it is a boot-time HardFault on a plausible board revision.
@@ -546,8 +546,8 @@ Free-running indices masked on access (`mem[idx & (size - 1)]`, `used = writeIdx
 require a **power-of-two** buffer size, twice over: the mask is only equivalent to a modulo for
 powers of two, and the unsigned subtraction only survives the 2³² counter wrap if the size
 divides 2³². Both current buffers qualify — `SERIAL_IO_FIFO_LEN` = 16384 = 2¹⁴
-([`serial_io.c:13`](../Src/standard_output/serial_io.c#L13)) and `CLI_INPUT_FIFO_BUFSIZE` = 512
-= 2⁹ ([`cli.c:39`](../Src/cliutils/cli.c#L39)) — and these are the only two `BFifo` instances in
+([`serial_io.c:13`](../../Src/standard_output/serial_io.c#L13)) and `CLI_INPUT_FIFO_BUFSIZE` = 512
+= 2⁹ ([`cli.c:39`](../../Src/cliutils/cli.c#L39)) — and these are the only two `BFifo` instances in
 the project.
 
 Two things follow that the observation itself does not cover:
@@ -558,8 +558,8 @@ Two things follow that the observation itself does not cover:
    would get silent corruption rather than a diagnostic, which is the same shape of trap as N1
    itself.
 2. **The existing guard is already being thrown away.** `bfifo_create()` returns `bool`, and
-   **both call sites discard it** ([`serial_io.c:27`](../Src/standard_output/serial_io.c#L27),
-   [`cli.c:58`](../Src/cliutils/cli.c#L58)) — today that means a failed `osSemaphoreNew()` goes
+   **both call sites discard it** ([`serial_io.c:27`](../../Src/standard_output/serial_io.c#L27),
+   [`cli.c:58`](../../Src/cliutils/cli.c#L58)) — today that means a failed `osSemaphoreNew()` goes
    unnoticed too. Any masking rewrite must add `size && ((size & (size - 1)) == 0)` to that
    return value *and* make both callers check it.
 
@@ -574,15 +574,15 @@ If masking is chosen anyway, land the size check and the caller checks in the sa
 > this section's advice on N7: the writer exclusion is a **critical section, not a mutex**. A
 > mutex cannot be taken by `serial_io_rx_callback()`, which pushes keystrokes into the CLI
 > input FIFO from the USART3 ISR, and making that failure fatal killed the CLI outright on
-> hardware. See [F68](port_review.md).
+> hardware. See [F68](../port_review.md).
 
 ### 7.2 — N3: the poll demand is context-safe; the open question is elsewhere
 
 **Accepted as far as it goes, but it answers the easier of the two questions.**
 
 The call-context claim is correct and verified: `ETHHW_RestoreRXDesc()` runs in the ETH ISR via
-`ETHHW_ProcessRx()` ([`mac_drv.c:434-435`](../Drivers/EthDrv/mac_drv.c#L434)) *and* in thread
-context via `rx_thread` ([`eth_drv_lwip.c:382-383`](../Drivers/EthDrv/eth_drv_lwip.c#L382)). A
+`ETHHW_ProcessRx()` ([`mac_drv.c:434-435`](../../Drivers/EthDrv/mac_drv.c#L434)) *and* in thread
+context via `rx_thread` ([`eth_drv_lwip.c:382-383`](../../Drivers/EthDrv/eth_drv_lwip.c#L382)). A
 single aligned 32-bit store to a peripheral register is atomic on this core, needs no critical
 section, and both contexts write the identical value, so no interleaving is possible — the
 `__DSB()` from N9 is the only ordering requirement. Adding the write to this function is safe.
@@ -594,7 +594,7 @@ What that does **not** settle is whether the write achieves anything, which is t
   this MAC — the rule the rejected Gemini quotation asserted without a checkable source?
 - Does writing the tail pointer *the same value it already holds* (0) constitute a poll demand,
   or does this DMA trigger on a change? The driver deliberately parks the tail outside the ring
-  ([`mac_drv.c:176`](../Drivers/EthDrv/mac_drv.c#L176), "tail pointer WON'T STOP"), so the fix
+  ([`mac_drv.c:176`](../../Drivers/EthDrv/mac_drv.c#L176), "tail pointer WON'T STOP"), so the fix
   necessarily rewrites 0 over 0. If the trigger is edge-on-write this is fine; if it is
   value-sensitive, the fix is inert and the finding needs a different remedy.
 

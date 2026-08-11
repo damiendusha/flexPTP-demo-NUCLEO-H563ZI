@@ -1,7 +1,7 @@
 # Critical Review of `final_review_gemini_flash_3p6.md`
 
 **Reviewer:** Claude Opus 5.0
-**Subject:** [`docs/final_review_gemini_flash_3p6.md`](final_review_gemini_flash_3p6.md) (541 lines; 5 architecture items, 8 discrepancies, 13 bugs, 4 unclear items, 6 improvements, 27 action items)
+**Subject:** [`docs/reviews/final_review_gemini_flash_3p6.md`](final_review_gemini_flash_3p6.md) (541 lines; 5 architecture items, 8 discrepancies, 13 bugs, 4 unclear items, 6 improvements, 27 action items)
 **Date:** 2026-08-10
 
 Every claim below was checked against the tree at `df3ee3d` — source, linker map, CMSIS-RTOS2

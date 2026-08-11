@@ -1,6 +1,6 @@
 # Critical Review of Gemini Flash 3.6 Final Review
 
-**Target Document:** `docs/final_review_gemini_flash_3p6.md`
+**Target Document:** `docs/reviews/final_review_gemini_flash_3p6.md`
 **Reviewer:** Gemini 3.1 Pro
 
 ## Overall Assessment
