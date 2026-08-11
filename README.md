@@ -313,4 +313,6 @@ PID servo expose `ptp servo params` instead.
 
 ## License
 
-The project was created by András Wiesner (Epagris) in 2025 and published under the MIT license. Contributions are welcome! :)
+The project was created by András Wiesner (Epagris) in 2025 and published under the MIT license. This specific port was created by Damien Dusha (also under the MIT license) with lots of help from Claude Opus 5.0 and Gemini Flash 3.6.
+
+Contributions are welcome! :)
