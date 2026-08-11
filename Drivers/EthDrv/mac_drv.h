@@ -26,8 +26,20 @@ typedef struct {
     ETHHW_State *statePtr;          // area where ETHHW state is stored, MUST immediately precede rxRingPtr!
 } ETHHW_InitOpts;
 
+/* volatile, because the Ethernet DMA writes these behind the compiler's back.
+ *
+ * Without it the ownership retry loop in ETHHW_Transmit() is loop-invariant: the body has no
+ * barrier, no call and no side effect, so above -Og the compiler hoists the DES3 load and the
+ * 100 000-iteration wait collapses to a single test. Measured in the disassembly -- at -O2 and
+ * -O3 the retry is simply absent, and a descriptor still held by the DMA means the frame is
+ * dropped on the spot. That matters because CMakeLists.txt offers -O2 and -Os as tested
+ * alternatives and wires -O2 into RelWithDebInfo (finding N2).
+ *
+ * Same lesson as F62, which is why that one says a workaround for a hardware access
+ * constraint must be expressed with `volatile` or it is not a constraint at all. The
+ * extension below is CPU-only and stays plain. */
 typedef struct {
-    uint32_t DES0, DES1, DES2, DES3; // descriptor DWORDS
+    volatile uint32_t DES0, DES1, DES2, DES3; // descriptor DWORDS
 } ETHHW_Desc;
 
 // descriptor extension

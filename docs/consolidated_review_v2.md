@@ -41,14 +41,14 @@ three of the four High items are unlikely-but-terminal rather than routine.
 | ID | Severity | Subsystem | Finding | Status |
 |---|---|---|---|---|
 | [N1](#n1--bfifo-reports-empty-when-exactly-full) | High | `blocking_io` | Ring buffer cannot distinguish full from empty | ✅ **fixed** (F67) |
-| [N2](#n2--the-tx-ownership-wait-is-compiled-away-above--og) | High | `EthDrv` | TX ownership retry loop optimised away at `-O2`/`-O3` | **Measured** |
+| [N2](#n2--the-tx-ownership-wait-is-compiled-away-above--og) | High | `EthDrv` | TX ownership retry loop optimised away at `-O2`/`-O3` | ✅ **fixed** (F70) |
 | [N3](#n3--rx-dma-suspension-on-rbu-is-never-cleared) | High | `EthDrv` | RBU suspend is never cleared; AIS flags discarded silently | **Read** + **Unverified** (see below) |
 | [N4](#n4--known-vendor--unknown-model-dereferences-null-at-boot) | High | `phy_drv` | Known OUI + unknown model dereferences NULL `phyName` | ✅ **fixed** (F69) |
 | [N5](#n5--every-lwip-assertion-is-a-silent-no-op) | Medium | `lwip_port` | lwIP assertions print nothing and do not halt; ~9 KB wasted | **Measured** |
 | [N6](#n6--the-isr-logging-contract-is-self-contradictory) | Medium | `standard_output` | ISR-logging contract contradicts itself; ISR path can hang | ✅ **fixed** (F68) |
 | [N7](#n7--bfifo_pop-hands-the-write-token-to-a-second-writer) | Medium | `blocking_io` | `bfifo_pop()` releases the writer token mid-push | ✅ **fixed** (F67) |
 | [N8](#n8--cli-tokenizer-one-byte-overflow-and-cross-thread-reuse) | Medium | `cliutils` | 1-byte `.bss` overflow + static buffer/`strtok` shared across threads | **Read** |
-| [N9](#n9--no-memory-barriers-at-descriptor-handoff) | Medium | `EthDrv` | No `__DMB()`/`__DSB()` around descriptor ownership handoff | **Read** |
+| [N9](#n9--no-memory-barriers-at-descriptor-handoff) | Medium | `EthDrv` | No `__DMB()`/`__DSB()` around descriptor ownership handoff | ✅ **fixed** (F70) |
 | [N10](#n10--n16--low-and-latent) | Low | `EthDrv` | EtherLib RX path strands a descriptor per allocation failure | **Read** |
 | [N11](#n10--n16--low-and-latent) | Low | `ethernet` | Wire-sized VLA in the EtherLib UDP callback | **Read** |
 | [N12](#n10--n16--low-and-latent) | Low | `cliutils` | `strncpy` without termination in two places | **Read** |
@@ -133,6 +133,12 @@ from those images.
 
 Same class as [F62](port_review.md) — a hardware-ordering workaround expressed without
 `volatile` is not a constraint — applied to descriptor memory instead of the UID region.
+
+> ✅ **Fixed** in P6.4 with N9. The `-O2` object now shows the spin counter, a `DES3` re-read
+> inside the loop and a backward branch. Hardware-tested at all three levels — `Debug`,
+> `Release` (`-Og`) and `RelWithDebInfo` (`-O2`), the last of which had never been run on the
+> board: boot, DHCP, flexPTP → MASTER, addend 3435973836, ping 1400 B 0% loss, no TX-drop
+> reports. Recorded as [F70](port_review.md).
 
 **Fix.** `volatile uint32_t DES0, DES1, DES2, DES3;`. The `ext` half is CPU-only and stays.
 Re-check the three disassemblies afterwards and extend the F62 note in `CMakeLists.txt`.
@@ -355,6 +361,9 @@ Not an observed failure — the H5 fabric is simple, DCACHE is off (a build erro
 handled, per P4.14) and traffic is light. It belongs with N2: same root cause, descriptor memory
 treated as ordinary variables. **Fix:** `__DMB()` before the `DES3` store, `__DSB()` before the
 tail write, in both paths (see the N3 snippet).
+
+> ✅ **Fixed** in P6.4 with N2. `dmb sy` and `dsb sy` are present in the generated code at
+> `-Og`, `-O2` and `-O3`. See [F70](port_review.md).
 
 ### N10 – N16 — low and latent
 

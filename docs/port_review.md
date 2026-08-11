@@ -1777,6 +1777,62 @@ the board says what it found and keeps its console, instead of dying before the 
 `phyName` is initialised to `""` rather than `NULL`, and the outer `default` no longer needs to
 assign anything. Both reads then behave for every combination of matched and unmatched IDs.
 
+### F70 — the bounded transmit wait was compiled away above `-Og` *(RESOLVED)* [N2, N9]
+
+P2.3 bounded the descriptor-ownership wait in `ETHHW_Transmit()` with the driver's spin-count
+idiom. `ETHHW_Desc` declared its four DMA-written words as plain `uint32_t`, so the load was
+loop-invariant — no barrier, no call, no side effect in the body — and above `-Og` the compiler
+hoisted it and deleted the loop.
+
+| Level | Before | After |
+|---|---|---|
+| `-Og` | `ldr` inside the loop — 100 000 real retries | unchanged |
+| `-O2` | one `ldr`, then `blt` **forward** to the drop path | loop restored |
+| `-O3` | same, failure path tail-called into `MSG` | loop restored |
+
+At `-O2` the "bounded wait" was a single test: a descriptor still held by the DMA meant the
+frame was dropped on the spot. That mattered because `CMakeLists.txt` offers `-O2` and `-Os` as
+measured, hardware-tested alternatives and wires `-O2` into `RelWithDebInfo`. Those runs were
+real; what they did not cover is that the retry loop was not in those images.
+
+The `-O2` object after the fix, with the retry visible:
+
+```
+ 62a:  subs.w ip, ip, #1        <- spin counter
+ 62e:  beq.n  6ac               <- exhausted: report and drop
+ 630:  ldr    r0, [r3, #12]     <- DES3 re-read every iteration
+ 632:  cmp    r0, #0
+ 634:  blt.n  62a               <- still owned by the DMA: retry
+```
+
+Same lesson as F62, which is why that finding says a workaround for a hardware access
+constraint must be expressed with `volatile` or it is not a constraint at all. The lesson had
+been drawn for the UID region and not extended to the descriptor rings.
+
+#### Barriers, in the same edit [N9]
+
+`volatile` orders the descriptor stores as far as the *compiler* is concerned and says nothing
+about the store buffer or the fabric. Both handoffs now place `__DMB()` between the descriptor
+body and the `OWN` store, and `ETHHW_Transmit()` places `__DSB()` before the tail-pointer write
+— which is what ST's HAL does in `HAL_ETH_Transmit()`. `dmb sy` and `dsb sy` are present in the
+generated code at all three levels.
+
+#### Verified on hardware, at all three optimisation levels
+
+| Build | Flash | Result |
+|---|---|---|
+| `Debug` (`-O0`) | 228 152 B | boot, PHY, link, DHCP, flexPTP → MASTER, addend 3435973836, ping 1400 B 0% loss |
+| `Release` (`-Og`) | 181 100 B | as above, 0% loss |
+| `RelWithDebInfo` (`-O2`) | 171 412 B | as above, 0% loss |
+
+No `ETH: TX descriptor … frame dropped` report appeared in any run. `RelWithDebInfo` had never
+been run on hardware before — `CMakeLists.txt` says so — and now has been.
+
+> Note for whoever revisits the size table in `CMakeLists.txt`: `-O2` measured here as **9.7 KB
+> smaller** than `-Og`, while that table records `-O2` as 456 B *larger*. The two disagree and
+> the table's absolute numbers are in any case build-path dependent (N17). Neither figure is
+> load-bearing for anything, but the table should not be trusted until it is re-measured.
+
 ---
 
 ## Minor Findings

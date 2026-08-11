@@ -261,7 +261,13 @@ void ETHHW_RestoreRXDesc(ETHHW_DescFull *bd) {
         return;
     }
 
-    bd->desc.DES0 = bd->ext.bufAddr;                                                          // store Buffer 1 address
+    bd->desc.DES0 = bd->ext.bufAddr; // store Buffer 1 address
+
+    // The buffer address must be visible to the DMA before the descriptor is handed over.
+    // `volatile` orders these two stores as far as the compiler is concerned; it says nothing
+    // about the store buffer or the fabric, which is what the barrier is for (finding N9).
+    __DMB();
+
     bd->desc.DES3 = 0 | ETH_DMARXNDESCRF_OWN | ETH_DMARXNDESCRF_IOC | ETH_DMARXNDESCRF_BUF1V; // set flags: OWN, IOC, BUF1V
 
     // Clear the in-flight marker only AFTER ownership has gone back to the DMA. The reverse
@@ -636,12 +642,20 @@ void ETHHW_Transmit(ETH_TypeDef *eth, const uint8_t *buf, uint16_t len, uint8_t 
 
     // fill in-descriptor fields
     bd->desc.DES0 = bd->ext.bufAddr;
-    bd->desc.DES2 = opts | (len & 0x3FFF);                                                                                                  // {IOC|TTSE} and buffer length truncated to 14-bits
+    bd->desc.DES2 = opts | (len & 0x3FFF); // {IOC|TTSE} and buffer length truncated to 14-bits
+
+    // payload and descriptor body visible before ownership changes hands (N9)
+    __DMB();
+
     bd->desc.DES3 = ETH_DMATXNDESCRF_OWN | ETH_DMATXNDESCRF_FD | ETH_DMATXNDESCRF_LD | ETH_DMATXNDESCRF_CIC_IPHDR_PAYLOAD_INSERT_PHDR_CALC; // pass desciptor to the DMA, set First Desc. and Last Desc. flags
 
     //ETHHW_PrintRingBufStatus(eth, ETHHW_RINGBUF_TX);
 
     state->nextTxDescIdx = (state->nextTxDescIdx + 1) % (eth->DMACTDRLR + 1); // advance index to next descriptor
+
+    // and the descriptor complete before the DMA is told to go and look at it. ST's HAL does
+    // the same before its tail-pointer write in HAL_ETH_Transmit().
+    __DSB();
 
     WRITE_REG(eth->DMACTDTPR, 0); // tail pointer WON'T STOP
 }
