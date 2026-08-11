@@ -1833,6 +1833,56 @@ been run on hardware before — `CMakeLists.txt` says so — and now has been.
 > the table's absolute numbers are in any case build-path dependent (N17). Neither figure is
 > load-bearing for anything, but the table should not be trusted until it is re-measured.
 
+### F71 — a momentary RX ring exhaustion killed reception permanently *(RESOLVED)* [N3]
+
+Three defects in one path, each of which hid the next.
+
+**1. The DMA could not report the condition.** `ETHHW_Start()` enabled `NIE`, `RIE` and `TIE`
+and nothing else. `DMACSR.AIS` is the OR of the *unmasked* abnormal conditions, so without
+`AIE` and the per-condition enables it never asserts — and the error branch in `ETHHW_ISR()`
+was therefore unreachable from the day it was written. Confirmed by instrumenting the report
+path first: a scaffold that latched a flag by hand printed correctly, while a real ring
+exhaustion printed nothing at all.
+
+**2. Nothing restarted a suspended receive engine.** `DMACRDTPR` was written once at init and
+never again. When the DMA reaches a descriptor the application still owns it raises `RBU` and
+suspends; returning ownership afterwards is not enough, the tail pointer has to be written
+again to issue a receive poll demand.
+
+**3. The report was a comment, not code.** The abnormal branch acknowledged the flags with a
+note claiming it reported them, and printed nothing.
+
+#### Measured, with a scaffold stalling `rx_thread` for 1.5 s under a 500 pps flood
+
+Everything identical except the poll demand:
+
+| | during the stall | after it | board said |
+|---|---|---|---|
+| **without** poll demand | 85.1% loss, run stretched 4 s → 18 s | **100% loss, permanently** | one RBU |
+| **with** poll demand | 6.25% loss | **0% loss, fully recovered** | RBU, then 5 more while draining |
+
+`ETH: 1 DMA error interrupt(s), DMACSR flags 0x00000484: RBU(rx ring exhausted) TBU(tx ring
+exhausted)`
+
+This settles what the second review could only mark as unverified: on this MAC an `RBU`
+suspend really is terminal without a poll demand. It is no longer a hypothesis about what
+RM0481 says — the board demonstrates it, in both directions, on demand.
+
+#### The fix
+
+| Change | |
+|---|---|
+| `ETHHW_Start()` | enables `AIE` plus `RBUE`, `FBEE`, `RSE`, `TXSE`, `CDEE` and `RWTE`. `TBUE` is deliberately left off: transmit-buffer-unavailable is the normal idle transition and would report a fault several times a second |
+| `ETHHW_RestoreRXDesc()` | `__DSB()` then `WRITE_REG(ETH->DMACRDTPR, 0)` — one store per restored descriptor, unconditional, which is cheaper than testing whether it is needed and correct even for an `RBU` that arrived while flags were being cleared |
+| `ETHHW_ISR()` | latches the abnormal flags and a count instead of discarding them. It cannot print: this is interrupt context, where console output is refused (F68) |
+| `ETHHW_ReportDmaError()` | drains the latch and prints, decoding each flag. Called from `phy_thread`, which already runs every 500 ms in thread context |
+
+#### Verified after removing the scaffolds
+
+Boot, PHY, link, DHCP, `osinfo` heap 13 840 B, flexPTP → MASTER, addend 3435973836, ping
+1400 B 0% loss, 2000-packet 500 pps flood 0% loss, console back-pressure 10/10 dumps. No DMA
+error reported in normal operation.
+
 ---
 
 ## Minor Findings

@@ -2,6 +2,8 @@
 #include "standard_output/standard_output.h"
 #include "stm32h5xx.h"
 
+#include <cmsis_compiler.h> // __get_PRIMASK, __disable_irq, __enable_irq
+
 #include <memory.h>
 
 #include <stm32h5xx_hal.h>
@@ -223,6 +225,24 @@ void ETHHW_Start(ETH_TypeDef *eth) {
     SET_BIT(eth->DMACIER, ETH_DMACIER_RIE); // receive interrupt enable
     SET_BIT(eth->DMACIER, ETH_DMACIER_TIE); // transmit interrupt enable
 
+    /* Abnormal interrupts. Without AIE and these per-condition enables, DMACSR.AIS never
+     * asserts -- the summary bit is the OR of the *unmasked* conditions only -- so the error
+     * branch in ETHHW_ISR() was unreachable from the day it was written. That is why a ring
+     * exhaustion could stop reception permanently and nothing ever said a word: the driver
+     * could not observe the condition, let alone recover from it (finding N3).
+     *
+     * TBUE is deliberately NOT enabled. Transmit-buffer-unavailable is raised every time the
+     * TX DMA runs out of work, which is the normal idle transition on a lightly loaded link;
+     * enabling it would report a fault several times a second. The genuinely abnormal
+     * conditions are here. */
+    SET_BIT(eth->DMACIER, ETH_DMACIER_AIE |   // abnormal interrupt summary
+                              ETH_DMACIER_RBUE | // receive buffer unavailable
+                              ETH_DMACIER_FBEE | // fatal bus error
+                              ETH_DMACIER_RSE |  // receive process stopped
+                              ETH_DMACIER_TXSE | // transmit process stopped
+                              ETH_DMACIER_CDEE | // context descriptor error
+                              ETH_DMACIER_RWTE); // receive watchdog timeout
+
     // start DMA reception and transmission
     SET_BIT(eth->DMACRCR, ETH_DMACRCR_SR);
     SET_BIT(eth->DMACTCR, ETH_DMACTCR_ST);
@@ -274,6 +294,24 @@ void ETHHW_RestoreRXDesc(ETHHW_DescFull *bd) {
     // order leaves a window in which an RX interrupt sees the descriptor as free and fresh
     // and re-delivers a stale frame; this order makes it see OWN set, and skip it.
     bd->ext.inFlight = 0;
+
+    /* Receive poll demand.
+     *
+     * Returning ownership is not enough to restart a receive engine that has already given up.
+     * When the DMA reaches a descriptor the application still owns it raises RBU and suspends,
+     * and it does not re-examine the ring on its own -- the tail pointer has to be written
+     * again. Nothing did that: DMACRDTPR was written once at init and never touched, so a
+     * single momentary exhaustion of the ring killed reception permanently. Measured: with
+     * rx_thread stalled for 500 ms under load the link stayed up, the console stayed alive,
+     * and not one further frame was ever received (finding N3).
+     *
+     * ETH rather than a parameter: this is called from the receive thread as well as from
+     * ETHHW_ProcessRx(), the part has exactly one Ethernet peripheral, and threading the
+     * handle through the callback boundary buys nothing. One 32-bit store per restored
+     * descriptor, unconditional -- cheaper than testing whether it is needed, and correct
+     * even for an RBU that arrived while flags were being cleared. */
+    __DSB(); // ownership visible before the DMA is asked to look again
+    WRITE_REG(ETH->DMACRDTPR, 0);
 }
 
 typedef enum { ETHHW_RINGBUF_RX,
@@ -556,6 +594,66 @@ void ETHHW_ProcessTx(ETH_TypeDef *eth) {
  *
  * ST's own __HAL_ETH_DMA_CLEAR_IT (stm32h5xx_hal_eth.h:1623) is a direct assignment for
  * exactly this reason. */
+/* DMA error state, latched in the ISR and drained by a thread. See ETHHW_ISR()'s abnormal
+ * branch for why it is not printed where it happens. */
+static volatile uint32_t sDmaErrFlags = 0;
+static volatile uint32_t sDmaErrCount = 0;
+
+bool ETHHW_TakeDmaError(uint32_t *pFlags, uint32_t *pCount) {
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+
+    const uint32_t flags = sDmaErrFlags;
+    const uint32_t count = sDmaErrCount;
+    sDmaErrFlags = 0;
+    sDmaErrCount = 0;
+
+    if (primask == 0U) {
+        __enable_irq();
+    }
+
+    if (count == 0U) {
+        return false;
+    }
+
+    *pFlags = flags;
+    *pCount = count;
+    return true;
+}
+
+void ETHHW_ReportDmaError(void) {
+    uint32_t flags = 0;
+    uint32_t count = 0;
+
+    if (!ETHHW_TakeDmaError(&flags, &count)) {
+        return;
+    }
+
+    MSG("ETH: %u DMA error interrupt(s), DMACSR flags 0x%08X:", count, flags);
+    if (flags & ETH_DMACSR_RBU) {
+        MSG(" RBU(rx ring exhausted)");
+    }
+    if (flags & ETH_DMACSR_TBU) {
+        MSG(" TBU(tx ring exhausted)");
+    }
+    if (flags & ETH_DMACSR_FBE) {
+        MSG(" FBE(fatal bus error)");
+    }
+    if (flags & ETH_DMACSR_RPS) {
+        MSG(" RPS(rx process stopped)");
+    }
+    if (flags & ETH_DMACSR_TPS) {
+        MSG(" TPS(tx process stopped)");
+    }
+    if (flags & ETH_DMACSR_CDE) {
+        MSG(" CDE(context descriptor error)");
+    }
+    if (flags & ETH_DMACSR_RWT) {
+        MSG(" RWT(receive watchdog timeout)");
+    }
+    MSG("\n");
+}
+
 void ETHHW_ISR(ETH_TypeDef *eth) {
     uint32_t csr = READ_REG(eth->DMACSR);
 
@@ -578,10 +676,22 @@ void ETHHW_ISR(ETH_TypeDef *eth) {
         }
     }
 
-    // Abnormal Interrupt Summary: previously wiped by the read-modify-writes above without
-    // anyone looking at it. Report it instead -- a DMA bus error or a stopped process is
-    // exactly the kind of fault this driver used to absorb in silence.
+    /* Abnormal Interrupt Summary: previously wiped by the read-modify-writes above without
+     * anyone looking at it. The comment here used to promise a report and the code only
+     * acknowledged the flags, so a DMA bus error or a stopped process was still absorbed in
+     * silence -- the one event that explains a dead receive path.
+     *
+     * Latched rather than printed. This runs in interrupt context, where console output is
+     * refused (F68): MSG() cannot format there and the FIFO cannot be waited on. A thread
+     * picks these up and prints them; see ETHHW_TakeDmaError(). */
     if (csr & ETH_DMACSR_AIS) {
+        const uint32_t errBits = csr & (ETH_DMACSR_FBE | ETH_DMACSR_RBU | ETH_DMACSR_TBU |
+                                        ETH_DMACSR_RPS | ETH_DMACSR_TPS | ETH_DMACSR_CDE |
+                                        ETH_DMACSR_ETI | ETH_DMACSR_RWT);
+
+        sDmaErrFlags |= errBits;
+        sDmaErrCount++;
+
         WRITE_REG(eth->DMACSR, (csr & (ETH_DMACSR_AIS | ETH_DMACSR_FBE | ETH_DMACSR_RBU |
                                        ETH_DMACSR_TBU | ETH_DMACSR_RPS | ETH_DMACSR_TPS |
                                        ETH_DMACSR_CDE | ETH_DMACSR_ETI | ETH_DMACSR_RWT)));

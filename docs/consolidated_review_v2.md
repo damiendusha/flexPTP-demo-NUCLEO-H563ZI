@@ -42,7 +42,7 @@ three of the four High items are unlikely-but-terminal rather than routine.
 |---|---|---|---|---|
 | [N1](#n1--bfifo-reports-empty-when-exactly-full) | High | `blocking_io` | Ring buffer cannot distinguish full from empty | ✅ **fixed** (F67) |
 | [N2](#n2--the-tx-ownership-wait-is-compiled-away-above--og) | High | `EthDrv` | TX ownership retry loop optimised away at `-O2`/`-O3` | ✅ **fixed** (F70) |
-| [N3](#n3--rx-dma-suspension-on-rbu-is-never-cleared) | High | `EthDrv` | RBU suspend is never cleared; AIS flags discarded silently | **Read** + **Unverified** (see below) |
+| [N3](#n3--rx-dma-suspension-on-rbu-is-never-cleared) | High | `EthDrv` | RBU suspend is never cleared; AIS flags discarded silently | ✅ **fixed** (F71), mechanism now **confirmed on hardware** |
 | [N4](#n4--known-vendor--unknown-model-dereferences-null-at-boot) | High | `phy_drv` | Known OUI + unknown model dereferences NULL `phyName` | ✅ **fixed** (F69) |
 | [N5](#n5--every-lwip-assertion-is-a-silent-no-op) | Medium | `lwip_port` | lwIP assertions print nothing and do not halt; ~9 KB wasted | **Measured** |
 | [N6](#n6--the-isr-logging-contract-is-self-contradictory) | Medium | `standard_output` | ISR-logging contract contradicts itself; ISR path can hang | ✅ **fixed** (F68) |
@@ -160,8 +160,20 @@ then only acknowledges them, so `RBU`, `FBE`, `RPS` and `TPS` are still consumed
 That comment/code divergence is the more certain half of this finding and is worth fixing on its
 own merit.
 
-> **Provenance warning.** The Gemini review supports this with a verbatim quotation attributed
-> to "RM0481, Section 59.6.2". **That quotation could not be verified.** This repository holds
+> ✅ **Fixed in P6.5, and the mechanism is no longer a hypothesis.** Measured with `rx_thread`
+> stalled 1.5 s under a 500 pps flood, everything else identical: **without** the poll demand
+> 85.1% loss during and **100% loss permanently** afterwards; **with** it, 6.25% during and
+> **0% after**. A third defect turned up on the way — `ETHHW_Start()` never enabled `AIE` or
+> any per-condition enable, so `DMACSR.AIS` could not assert and the error branch had been
+> unreachable since it was written. That is why the board had never once reported the fault.
+> The flags are now latched in the ISR and printed by `phy_thread`. Recorded as
+> [F71](port_review.md).
+>
+> **Provenance note, retained deliberately.** The Gemini review supported this with a verbatim
+> quotation attributed to "RM0481, Section 59.6.2". The *rule* has now been confirmed
+> experimentally — but the quotation still could not be verified, and rejecting it was still
+> correct: a citation nobody can check is not evidence, even when the claim behind it turns
+> out to be true. The board settled this, not the quote. This repository holds
 > no copy of RM0481 — `port_review.md` says so explicitly when declining to cite it for
 > `SNAPTYPSEL` — and the wording appears in no document here. Treat the resume-requires-poll-demand
 > rule as **Unverified** until someone reads the register description, and do not propagate the
@@ -565,9 +577,10 @@ What that does **not** settle is whether the write achieves anything, which is t
   necessarily rewrites 0 over 0. If the trigger is edge-on-write this is fine; if it is
   value-sensitive, the fix is inert and the finding needs a different remedy.
 
-Both are answered by one paragraph of the `ETH_DMACRDTPR` register description. Until then the
-change is worth making — it is one instruction on a path that already touches the peripheral,
-and it cannot make matters worse — but it should not be recorded as *closing* N3.
+Both were answered instead by experiment, in P6.5: reception recovers with the poll demand and
+never recovers without it, so returning ownership is indeed insufficient and writing the tail
+pointer the value it already holds does constitute a poll demand on this MAC. N3 is closed on
+measurement rather than on documentation.
 
 ### 7.3 — N9: barrier placement, and why `volatile` does not replace it
 

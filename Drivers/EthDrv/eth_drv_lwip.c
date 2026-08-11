@@ -107,6 +107,14 @@ static void fetch_link_properties() {
 static void phy_thread(void *arg) {
     while (true) {
         tcpip_callback(fetch_link_properties, NULL);
+
+        // Drain whatever the ETH ISR latched. The abnormal DMA flags -- RBU, FBE, RPS, TPS --
+        // cannot be printed where they are detected (F68), so they are reported from here:
+        // this thread already exists, already runs at a sensible period, and is in thread
+        // context. Without this the flags were acknowledged and thrown away, which is why a
+        // dead receive path had never once explained itself.
+        ETHHW_ReportDmaError();
+
         osDelay(500);
     }
     return;
@@ -317,6 +325,7 @@ static void rx_thread(void *arg) {
         if (osMessageQueueGet(rx_msg_q, &evt, NULL, osWaitForever) != osOK) {
             continue;
         }
+
 
         /* move received packet into a new pbuf */
         struct pbuf *p, *q;

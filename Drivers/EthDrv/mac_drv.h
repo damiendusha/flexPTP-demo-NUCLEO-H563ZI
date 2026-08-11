@@ -112,6 +112,13 @@ void ETHHW_SetLinkProperties(ETH_TypeDef *eth, bool fastEthernet, bool fullDuple
 
 void ETHHW_ISR(ETH_TypeDef *eth);
 
+/* DMA error reporting. The ISR latches DMACSR's abnormal flags rather than printing them --
+ * console output from interrupt context is refused (F68) -- and a thread drains the latch.
+ * ETHHW_ReportDmaError() prints and clears if anything is pending, and must be called from a
+ * thread; ETHHW_TakeDmaError() is the raw accessor behind it. */
+bool ETHHW_TakeDmaError(uint32_t *pFlags, uint32_t *pCount);
+void ETHHW_ReportDmaError(void);
+
 uint32_t ETHHW_ReadPHYRegister(ETH_TypeDef *eth, uint32_t PHYAddr, uint32_t PHYReg, uint32_t *pRegValue);
 uint32_t ETHHW_WritePHYRegister(ETH_TypeDef *eth, uint32_t PHYAddr, uint32_t PHYReg, uint32_t RegValue);
 
