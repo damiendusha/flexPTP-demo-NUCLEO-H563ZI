@@ -1610,6 +1610,72 @@ state. Stage 20 previously said only "converging offset"; it now names the thres
 
 ---
 
+## Second-Review Findings
+
+Raised by the second review pass ([`final_review_v2_opus_5p0.md`](final_review_v2_opus_5p0.md),
+[`consolidated_review_v2.md`](consolidated_review_v2.md)) and numbered F67 onward. The N-numbers
+in brackets are the identifiers those documents use.
+
+### F67 — the console FIFO could not tell full from empty *(RESOLVED)* [N1, N7]
+
+`BFifo` derived occupancy from its two indices alone:
+
+```c
+uint32_t bfifo_monotonic_write_index(const BFifo *fifo) {
+    return (fifo->readIdx > fifo->writeIdx) ? (fifo->writeIdx + fifo->size) : fifo->writeIdx;
+}
+uint32_t bfifo_get_used(const BFifo *fifo) {
+    return (bfifo_monotonic_write_index(fifo) - fifo->readIdx);
+}
+```
+
+With no count and no reserved slot, `writeIdx == readIdx` has to mean both *empty* and *full*,
+and `bfifo_push()` reaches that state by design: it clamps the push to `bfifo_get_free()` and
+then wraps the index. Simulated on the real parameters — `size` 16384, both indices at 0, one
+16384-byte push — `used` reads back as **0** and `free` as the whole buffer.
+
+#### What that costs
+
+`serial_io_thread()` wakes on the read semaphore, `bfifo_read()` returns 0, `bfifo_pop()`
+short-circuits without advancing `readIdx`, and `HAL_UART_Transmit_DMA(…, 0)` returns
+`HAL_ERROR` — so the drain thread spins through its `osDelay(1)` branch at 1 kHz while
+producers, told the buffer is entirely free, overwrite the backlog nobody emitted.
+
+P5.4 made this *easier* to hit, not harder. `bfifo_push_all()` loops until everything is in, so
+a message larger than the remaining space fills the buffer **exactly** — which is precisely the
+state that reads back as empty. The truncation P5.4 removed was the lesser of the two failures.
+
+A second defect sat in the same file. `writeSem` was doing two jobs — "space exists" and "no
+other writer inside `bfifo_push()`" — and `bfifo_pop()` released it unconditionally from the
+consumer thread, including while a producer was mid-push. That hands the token to a second
+writer, and both then compute their block sizes from the same `writeIdx` [N7].
+
+#### Measured on hardware
+
+Ten `?` help dumps requested back to back with flexPTP running (~2.5 KB each, ~25 KB total
+against a 16 KB FIFO and an 11.2 KB/s line rate), counting complete dumps at the receiver:
+
+| Firmware | Bytes received | Dumps started | Dumps completed | |
+|---|---|---|---|---|
+| `d359782` (pre-fix) | 8 605 | 3 / 10 | 4 / 10 | output lost |
+| with F67 fixed | 24 962 | 10 / 10 | 10 / 10 | nothing lost |
+
+The pre-fix throughput — 0.3 KB/s against a line rate of 11.2 — is the stalled drain thread
+showing up in the measurement.
+
+#### The fix
+
+| Change | |
+|---|---|
+| `pushedTotal` / `poppedTotal` | free-running byte counters; `used` is their modular difference, so full (`== size`) and empty (`== 0`) are different states by construction |
+| single-writer discipline | each counter has exactly one writer — producer and consumer respectively — so no critical section is needed, and a concurrently-updated read is stale only in the safe direction for both sides |
+| no size constraint | deliberately not the mask-on-access scheme: `bfifo_create()` takes an arbitrary runtime size, so a power-of-two requirement would be an unenforced precondition on every future caller |
+| `writeMtx` | writer exclusion, separated from the space signal, which closes N7 |
+| level-triggered semaphores | both waits re-check the real occupancy after waking, so a stale or spurious signal costs an iteration instead of corrupting state |
+| `bfifo_create()` return | now checked by both callers; it was discarded at each, so a heap exhaustion at boot would have produced a dead console with no message |
+
+---
+
 ## Minor Findings
 
 **F28 — SRAM2 unallocated.** 64 KB with no section assigned. Deliberate spare capacity;

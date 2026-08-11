@@ -23,8 +23,10 @@ static char c;
 #define SERIAL_IO_TX_CPLT_FLAG (0x01)
 
 void serial_io_init() {
-    // initialize FIFO
-    bfifo_create(&fifo, buf, SERIAL_IO_FIFO_LEN);
+    // initialize FIFO. The result is checked at the end of this function rather than here:
+    // the failure is a heap exhaustion at boot, and reporting it needs USART3 configured
+    // first. Discarding it entirely left the console silently dead if it ever happened.
+    bool fifoOK = bfifo_create(&fifo, buf, SERIAL_IO_FIFO_LEN);
 
     // initialize flags and thread
     flags = osEventFlagsNew(NULL);
@@ -107,6 +109,14 @@ void serial_io_init() {
 
     HAL_NVIC_SetPriority(GPDMA1_Channel0_IRQn, 12, 0);
     HAL_NVIC_EnableIRQ(GPDMA1_Channel0_IRQn);
+
+    // USART3 is up now, so the polled writer works and the FIFO failure can be reported.
+    if (!fifoOK) {
+        serial_io_panic_write("\n\n*** FATAL: console FIFO could not be created (out of heap)\n"
+                              "Halted. Raise configTOTAL_HEAP_SIZE.\n");
+        for (;;) {
+        }
+    }
 }
 
 void GPDMA1_Channel0_IRQHandler() {

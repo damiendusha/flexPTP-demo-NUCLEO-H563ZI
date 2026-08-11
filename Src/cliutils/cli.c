@@ -54,8 +54,12 @@ void cli_init() {
     // in the beginning there are no registered commands
     sCliCmdCnt = 0;
 
-    // initialize FIFO
-    bfifo_create(&sInputFifo, sFifoMem, CLI_INPUT_FIFO_BUFSIZE);
+    // initialize FIFO. The console is already up here, so a failure can simply be reported --
+    // the CLI is unusable without its input FIFO, and silence would look like dead hardware.
+    if (!bfifo_create(&sInputFifo, sFifoMem, CLI_INPUT_FIFO_BUFSIZE)) {
+        MSG("Failed to create the CLI input FIFO!\n");
+        return;
+    }
 
     // initialize modification mutex
     modifyMtx = osMutexNew(NULL);
