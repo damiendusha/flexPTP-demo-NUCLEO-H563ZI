@@ -34,7 +34,7 @@ needs access to the DMA descriptors that the HAL driver abstracts away.
 | MCU | STM32H563ZI, Cortex-M33, 250 MHz, TrustZone disabled (TZEN=0) |
 | RTOS | FreeRTOS V11.3.0, `ARM_CM33_NTZ` non-secure port, heap_4 |
 | RTOS API | CMSIS-RTOS2 shim for application threads; flexPTP calls FreeRTOS directly |
-| Network stack | lwIP 2.2.1 |
+| Network stack | lwIP, a development snapshot 34 commits past `STABLE-2_2_1_RELEASE` — its own `init.h` reports **2.2.2-dev**, not 2.2.1 |
 | PTP | flexPTP, Kalman servo, ADDEND clock interface; timestamp clock is `pll1_q_ck` at 250 MHz |
 | Console | USART3 → ST-Link VCP, 115200 8N1, TX via GPDMA |
 | PHY | LAN8742A over RMII |
@@ -78,7 +78,7 @@ source. Two submodules are the exception, and both changes are **permanent bug f
 | **CMSIS Device STM32H5xx** | 1.7.0 | in-tree, `Drivers/CMSIS/Device` | **As-is.** From `STMicroelectronics/cmsis_device_h5` |
 | **CMSIS-RTOS2 shim** | ST distribution | in-tree, `Drivers/CMSIS/CMSIS_RTOS_V2` | **Patched — one `#include` directive.** In `cmsis_os2.c`, `#include "stm32h7xx.h"` became `#include "stm32h5xx.h"`. No header file was copied or rewritten; see the note below. Vendored copy, not a submodule, so the edit is in-repo and visible in git history |
 | **FreeRTOS-Kernel** | `V11.3.0` | CMake `FetchContent`, pinned tag | **As-is.** Configured by `Inc/FreeRTOSConfig.h` |
-| **lwIP** | `3d896ba` (`STABLE-2_2_1_RELEASE-34`) | git submodule | **As-is, but extended.** `Inc/lwipopts.h` injects four fields into `struct pbuf` via lwIP's `LWIP_PBUF_CUSTOM_DATA` hook — a supported extension point, not a patch. See [The PTP Timestamp Path](#the-ptp-timestamp-path) |
+| **lwIP** | `3d896ba` (`STABLE-2_2_1_RELEASE-34`) — i.e. **2.2.2-dev**, not the 2.2.1 release: `LWIP_VERSION_REVISION` is 2 and `LWIP_VERSION_RC` is `LWIP_RC_DEVELOPMENT` | git submodule | **As-is, but extended.** `Inc/lwipopts.h` injects four fields into `struct pbuf` via lwIP's `LWIP_PBUF_CUSTOM_DATA` hook — a supported extension point, not a patch. See [The PTP Timestamp Path](#the-ptp-timestamp-path) |
 | **flexPTP** | `76aaf67` (`RC1.0-11`) | git submodule | **Patched.** One permanent servo fix (F59, `patches/flexptp/0002-…`), and two external workarounds. (1) `__PRI64_PREFIX=__INT64` compile definition, because flexPTP uses a glibc-internal macro newlib lacks (F47). (2) The STM32H5 hardware port is supplied by this project, since flexPTP ships none |
 | **embfmt** | `670a349` | git submodule | **Patched.** Formatted-print backend for `MSG()`. `%ll` conversions were dropped entirely and NaN printed as `0.0000`; see [F60](port_review.md#f60--embfmt-drops-ll-conversions-and-renders-nan-as-00000-resolved) and `patches/embfmt/` |
 | **EtherLib** | `ec35be5` | git submodule | **Present but not compiled.** Alternative to lwIP, selectable via the `ETH_STACK` CMake variable |
@@ -213,10 +213,18 @@ task_startup ("init")
   └─ loop { osDelay(1000) }         stays resident, idle
 
 "flexptp" CLI command → reg_task_ptp() → creates the "ptp" thread on demand
+  └─ flexptp_user_event_cb(PTP_UEV_INIT_DONE)      Src/main.c
+       ├─ ptp_load_profile(FLEXPTP_INITIAL_PROFILE)  "default" — see ptp_profiles.md
+       └─ ptp_log_enable(PTP_LOG_DEF | PTP_LOG_BMCA)
 ```
 
 PTP is **not** started at boot. The stack comes up only when the operator types `flexptp`
 at the CLI, which is why `is_flexPTP_operating()` gates that command.
+
+The profile is loaded from the `PTP_UEV_INIT_DONE` user-event callback, not from `main()`.
+There is no settings store, so a profile changed at runtime with `ptp profile preset …` is
+lost on the next reset and the compile-time preset is reinstated — see
+[ptp_profiles.md](ptp_profiles.md).
 
 ---
 

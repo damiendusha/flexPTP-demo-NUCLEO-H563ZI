@@ -26,7 +26,7 @@ The board loads the `default` profile at startup (`FLEXPTP_INITIAL_PROFILE` in
 | Delay mechanism | E2E | P2P |
 | Host command | plain `ptp4l`, no config file | `ptp4l -f /etc/linuxptp/gPTP.cfg` |
 | Board command | loaded at boot, nothing to do | **`ptp profile preset gPTP`** |
-| Through ordinary switches | **yes** | **no** — reserved destination MAC |
+| Through ordinary switches | **possible** — ordinary UDP multicast, but one switch here silently dropped `Delay_Resp` (F42) | **no, by design** — the 802.1AS destination MAC is in the reserved range bridges must not forward |
 | Status | **proven on this port** | not yet exercised end to end |
 
 The `default` route is the one below in [Command](#command); the gPTP route is
@@ -127,10 +127,11 @@ sudo install -D -m644 /usr/share/doc/linuxptp/configs/gPTP.cfg /etc/linuxptp/gPT
 ```
 
 ```bash
-sudo ptp4l -f /etc/linuxptp/gPTP.cfg -i enp7s0 -S -m --serverOnly=1 --priority1=100
+sudo ptp4l -f /etc/linuxptp/gPTP.cfg -i enp5s0 -S -m --serverOnly=1 --priority1=100
 ```
 
-Replace `enp7s0` with your interface. The four flags, and why each is there:
+Replace `enp5s0` with your interface — it is the one facing the board throughout this
+document. The four flags, and why each is there:
 
 | Flag | Why |
 |---|---|
@@ -150,7 +151,7 @@ forgotten:
 
 ```bash
 sudo install -D -m644 tools/linuxptp/flexptp-gm.cfg /etc/linuxptp/flexptp-gm.cfg
-sudo ptp4l -f /etc/linuxptp/flexptp-gm.cfg -i enp7s0 -S -m
+sudo ptp4l -f /etc/linuxptp/flexptp-gm.cfg -i enp5s0 -S -m
 ```
 
 Being a copy, it will not pick up upstream changes to `gPTP.cfg`. The stock-file route
@@ -195,8 +196,8 @@ Two further limits are inherent to this board and unrelated to the host:
   describes as noisy. The X3 crystal is the better reference — but note it is **already
   fitted on MB1404 and is 25 MHz**, selected with SB3/SB4 ON and SB49 OFF, and using it
   requires `HSE_VALUE` = 25000000 with a re-derived `PLLM`. The firmware's welcome message
-  still repeats the H743 project's "solder an 8 MHz oscillator" advice, which is wrong for
-  this board (finding F55).
+  carries this recipe in full; it previously repeated the H743 project's "solder an 8 MHz
+  oscillator" advice, which was wrong for this board and was corrected under F55.
 - Timestamp granularity is 5 ns, set by the PTP subsecond increment and not improvable on
   this part — see [ptp_clock.md](ptp_clock.md).
 

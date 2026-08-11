@@ -911,9 +911,12 @@ Tested against `linuxptp` 4.4 on a Linux host.
   and ptp4l never progresses past Pdelay_Req because a gPTP port will not emit Sync or
   Announce until the peer-delay exchange proves the link `asCapable`. gPTP needs either a
   direct cable or 802.1AS-capable bridges throughout.
-- **Plain IEEE 1588 over UDP/IPv4 traverses the switch.** Switching the board to the
-  `default` preset (`ptp profile preset default`) and running ptp4l with its defaults gets
-  Announce, Sync, Follow_Up, Delay_Req and Delay_Resp all flowing correctly.
+- **Plain IEEE 1588 over UDP/IPv4 reaches the board through the switch — except for
+  `Delay_Resp`.** With the `default` preset and ptp4l at its defaults, Announce, Sync,
+  Follow_Up and Delay_Req all flow. `Delay_Resp` did **not**: see the F42 entry below, which
+  supersedes the earlier form of this bullet. That earlier wording claimed all five messages
+  flowed correctly, and it was written before anyone counted `Delay_Resp` arrivals — it is
+  the unverified assumption that F42 cost days to falsify.
 - **BMCA works**: the board goes `MASTER → UNCALIBRATED → SLAVE` once the host advertises
   a better `priority1`.
 - **Receive-side hardware timestamping works** — T1/T2 carry real values.

@@ -613,7 +613,8 @@ a valid manual option for developers who have it.
   rather than transcribed.
 
 The README now also carries a documentation index, the two failure modes that cost the most
-time here (the `gPTP` startup profile, and switches discarding `Delay_Resp`), the ST-Link
+time here (the `gPTP` startup profile — since changed to `default`, see
+[ptp_profiles.md](ptp_profiles.md) — and switches discarding `Delay_Resp`), the ST-Link
 mass-storage flashing route that is by far the simplest, and a note that two submodules carry
 patches. The `NUCLEO-H743ZI.gif` reference was dropped rather than replaced — it was a broken
 link to an image that was never copied.

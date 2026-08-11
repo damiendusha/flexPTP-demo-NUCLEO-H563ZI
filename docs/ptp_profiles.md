@@ -176,9 +176,11 @@ direct cable settled it.
 | Through the site switch | 0 | 1 per second, indefinitely |
 | Direct cable | 65 (≈1/s) | 0 |
 
-A different switch on this project passed all five message types correctly, so this is a
-property of the individual switch, not of IPv4 PTP. The lesson is to **verify rather than
-assume**: with the board running, check that `Delay_Resp` actually arrives.
+This is a property of an individual switch, not of IPv4 PTP — the protocol is ordinary UDP
+multicast and nothing about it is unforwardable, unlike gPTP's reserved MAC. But it is the
+only switch this project has data for, and it failed. The lesson is to **verify rather than
+assume**: the days F42 cost were spent theorising about firmware downstream of an unchecked
+assumption that `Delay_Resp` was arriving at all. With the board running, count them.
 
 ```bash
 sudo tcpdump -i <iface> -n udp port 319 or udp port 320

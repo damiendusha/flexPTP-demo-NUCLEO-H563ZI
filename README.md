@@ -243,18 +243,14 @@ In this project the memory-heavy `printf()` is replaced by the more embedded-opt
 The software offers you with the following multitude, most flexPTP-related of commands:
 
 ```
-?                                                  Print this help
+?                                                  Print this help (23/64)
 hist                                               Print command history
 osinfo                                             Print OS-related information
 flexptp                                            Start flexPTP daemon
-time [ns]                                          Print time
-ptp pps {freq}                                     Set or query PPS signal frequency [Hz]
-ptp servo st [var|default]                         Set or get sigma_theta^2 (s^2)
-ptp servo sg [var|default]                         Set or get sigma_gamma^2 (s^2)
-ptp servo stm [var|default]                        Set or get sigma_theta_m^2 (s^2)
-ptp servo offset [offset_ns]                       Set or query clock offset
 ptp reset                                          Reset PTP subsystem
+ptp servo offset [offset_ns]                       Set or query clock offset
 ptp log {def|corr|ts|info|locked|bmca} {on|off}    Turn on or off logging
+time [ns]                                          Print time
 ptp master [[un]prefer] [clockid]                  Master clock settings
 ptp info                                           Print PTP info
 ptp domain [domain]                                Print or set PTP domain
@@ -268,7 +264,14 @@ ptp pflags [<flags>]                               Print or set profile flags
 ptp period <delreq|sync|ann> [<lp>|matched]        Print or set log. periods
 ptp coarse [threshold]                             Print or set coarse correction threshold
 ptp priority [<p1> <p2>]                           Print or set clock priority fields
+ptp pps {freq}                                     Set or query PPS signal frequency [Hz]
+ptp servo st [var|default]                         Set or get sigma_theta^2 (s^2)
+ptp servo sg [var|default]                         Set or get sigma_gamma^2 (s^2)
+ptp servo stm [var|default]                        Set or get sigma_theta_m^2 (s^2)
 ```
+
+Listed in the order the firmware emits them, captured from the running board. The `(23/64)`
+on the first line is the CLI's own registered/available slot count.
 
 > [!TIP]
 > The above hint can be listed by typing '?'.
@@ -294,6 +297,7 @@ PID servo expose `ptp servo params` instead.
 | [`docs/host_ptp_setup.md`](docs/host_ptp_setup.md) | Running a PTP master on a Linux host, and what to check when nothing happens |
 | [`docs/port_review.md`](docs/port_review.md) | Every finding of the port review, with evidence — including the ones that cost days |
 | [`docs/implementation_plan.md`](docs/implementation_plan.md) | The staged work plan and what remains |
+| [`docs/reviews/`](docs/reviews/README.md) | Archive of the independent reviews that fed `port_review.md` — historical, superseded by it where they disagree |
 
 ## Related papers and references
 

@@ -5,13 +5,14 @@ Summarised in [design_doc.md](design_doc.md#ptp-clock); this document holds the 
 
 **Conclusion up front:** the timestamp unit is clocked from **`pll1_q_ck` at 250 MHz** with
 a **5 ns** subsecond increment. The source is fixed in silicon; the frequency is ours to
-choose.
+choose. Timestamp granularity is therefore 5 ns, identical to the H743 source project, and
+cannot be improved on this part.
 
 > **Corrected 2026-08-09 after hardware bring-up.** This document previously stated the
-> PTP clock was HCLK. That was wrong — see [Why the source is `pll1_q_ck`](#why-the-source-is-pll1_q_ck).
-> Every derived quantity below is unchanged, because `pll1_q_ck` is also configured to
-> 250 MHz, but the *sourcing* and the required PLL setup are different. Timestamp granularity is therefore 5 ns, identical to the H743 source
-project, and cannot be improved on this part.
+> PTP clock was HCLK. That was wrong — see
+> [Why the source is `pll1_q_ck`](#why-the-source-is-pll1_q_ck). Every derived quantity
+> below is unchanged, because `pll1_q_ck` is also configured to 250 MHz, but the *sourcing*
+> and the required PLL setup are different.
 
 ## Table of Contents
 
