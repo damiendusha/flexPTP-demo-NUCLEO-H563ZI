@@ -33,11 +33,10 @@ void MSG_init(void) {
 /* Take the lock, reporting whether it was actually taken.
  *
  * Deliberately skips locking rather than blocking or failing when it cannot be held:
- *   - from an ISR osMutexAcquire() returns osErrorISR. Nothing prints from an ISR today, but
- *     mac_drv.c documents its timeout reports as ISR-callable, and a garbled message beats a
- *     silently dropped one.
  *   - before the scheduler runs there is only one context, so there is nothing to serialise.
- *   - if creation failed, printing unserialised beats not printing at all. */
+ *   - if creation failed, printing unserialised beats not printing at all.
+ *
+ * Interrupt context is no longer one of these cases: MSG() refuses it outright, above. */
 static bool msg_lock(void) {
     if ((sMsgMtx == NULL) || (__get_IPSR() != 0U) || (osKernelGetState() != osKernelRunning)) {
         return false;
@@ -75,6 +74,20 @@ static uint32_t insert_carriage_return(char *str, uint32_t maxLen) {
 }
 
 void MSG(const char *format, ...) {
+    /* Refused from interrupt context, and refused HERE rather than one layer down, because
+     * the write path is not the only thing that cannot work: lineBuf below is a single shared
+     * buffer whose lock an ISR cannot take. Formatting into it from an interrupt corrupts
+     * whatever a preempted thread was building -- and a mangled buffer can lose its
+     * terminator, at which point the strlen() in insert_carriage_return() runs off the end.
+     * That is a memory-safety bug reached from a diagnostic, which is a poor trade.
+     *
+     * Interrupt-context diagnostics latch state and let a thread print it; the count of
+     * anything that tried anyway is reported by `osinfo`. See finding N6. */
+    if (__get_IPSR() != 0U) {
+        serial_io_note_isr_drop();
+        return;
+    }
+
     // held across format, carriage-return insertion and the push, so a whole line reaches
     // the FIFO before another thread may reuse lineBuf
     bool locked = msg_lock();

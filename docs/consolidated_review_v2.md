@@ -45,7 +45,7 @@ three of the four High items are unlikely-but-terminal rather than routine.
 | [N3](#n3--rx-dma-suspension-on-rbu-is-never-cleared) | High | `EthDrv` | RBU suspend is never cleared; AIS flags discarded silently | **Read** + **Unverified** (see below) |
 | [N4](#n4--known-vendor--unknown-model-dereferences-null-at-boot) | High | `phy_drv` | Known OUI + unknown model dereferences NULL `phyName` | **Read** |
 | [N5](#n5--every-lwip-assertion-is-a-silent-no-op) | Medium | `lwip_port` | lwIP assertions print nothing and do not halt; ~9 KB wasted | **Measured** |
-| [N6](#n6--the-isr-logging-contract-is-self-contradictory) | Medium | `standard_output` | ISR-logging contract contradicts itself; ISR path can hang | **Read** |
+| [N6](#n6--the-isr-logging-contract-is-self-contradictory) | Medium | `standard_output` | ISR-logging contract contradicts itself; ISR path can hang | ✅ **fixed** (F68) |
 | [N7](#n7--bfifo_pop-hands-the-write-token-to-a-second-writer) | Medium | `blocking_io` | `bfifo_pop()` releases the writer token mid-push | ✅ **fixed** (F67) |
 | [N8](#n8--cli-tokenizer-one-byte-overflow-and-cross-thread-reuse) | Medium | `cliutils` | 1-byte `.bss` overflow + static buffer/`strtok` shared across threads | **Read** |
 | [N9](#n9--no-memory-barriers-at-descriptor-handoff) | Medium | `EthDrv` | No `__DMB()`/`__DSB()` around descriptor ownership handoff | **Read** |
@@ -273,6 +273,24 @@ run at init, and flexPTP's TX timestamp callback correctly branches on
 armed and advertised: `ETHHW_PrintRingBufStatus()` is a `MSG()`-based dumper whose call sites sit
 inside `ETHHW_ProcessRx()` — which runs in the ETH ISR — commented out with a note recommending
 its use, and N3's fix proposes another ISR-context `MSG()`.
+
+> ✅ **Fixed** in P6.2, and the reachability judgement above was wrong in the board's favour
+> only by luck. Reproduced on hardware with a scaffold printing from the ETH ISR: the board
+> **hung hard** — 100% ping loss, dead console. Two corrections to the suggested fix, both
+> forced by measurement:
+>
+> - **Routing to the polled writer does not work.** It steals the `TC` event HAL's DMA
+>   completion path waits on, stranding the drain thread; neither `DMAT` nor `gState` closes
+>   the window. Both attempts left the board pinging at 0% loss and never printing again.
+>   Interrupt context is now **refused and counted**, and diagnostics latch for a thread to
+>   report.
+> - **`bfifo_push_all()`'s bail-out is not sufficient**, because the spin is inside
+>   `bfifo_push()`'s wait loop. And making the failed acquire fatal there broke the CLI
+>   outright: `serial_io_rx_callback()` pushes keystrokes into the input FIFO *from the USART3
+>   ISR*, so that FIFO has always had an unsynchronised interrupt producer. Writer exclusion
+>   is now a critical section — the only primitive both contexts can use.
+>
+> Recorded as [F68](port_review.md). `osinfo` now reports the discarded count.
 
 **Fix.** Choose one contract and make the code enforce it: in `serial_io_write()`, route to
 `serial_io_panic_write()` when `__get_IPSR() != 0`; give `bfifo_push_all()` a bail-out when
@@ -508,6 +526,13 @@ precondition, no caller changes and no new failure mode, and it fixes N1 by cons
 `count` distinguishes full from empty because it is not derived from the indices. The masking
 variant is faster in a way that cannot matter here: this FIFO is drained by a 115200-baud UART.
 If masking is chosen anyway, land the size check and the caller checks in the same commit.
+
+> ✅ **Implemented in P6.1 as recommended**, using two free-running totals whose modular
+> difference is the count — so no power-of-two precondition was introduced. One correction to
+> this section's advice on N7: the writer exclusion is a **critical section, not a mutex**. A
+> mutex cannot be taken by `serial_io_rx_callback()`, which pushes keystrokes into the CLI
+> input FIFO from the USART3 ISR, and making that failure fatal killed the CLI outright on
+> hardware. See [F68](port_review.md).
 
 ### 7.2 — N3: the poll demand is context-safe; the open question is elsewhere
 

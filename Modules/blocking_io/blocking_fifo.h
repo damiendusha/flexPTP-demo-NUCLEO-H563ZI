@@ -18,9 +18,9 @@
  *
  * The totals free-run and are allowed to wrap at 2^32; only their difference is ever used,
  * and modular subtraction gives the right answer as long as the FIFO holds less than 4 GB.
- * Each has exactly ONE writer -- pushedTotal the producer (serialised by writeMtx),
- * poppedTotal the consumer -- so a 32-bit aligned load/store is all the atomicity needed,
- * and no critical section is required. A concurrent update can only make an observer's view
+ * Each has exactly ONE writer -- pushedTotal the producers (serialised against each other
+ * by the critical section in bfifo_push()), poppedTotal the single consumer -- so a 32-bit
+ * aligned load/store is all the atomicity an observer needs. A concurrent update can only make an observer's view
  * stale, and it is stale in the safe direction for both sides: the producer can under-read
  * the free space, the consumer can under-read the used space, and neither can over-read.
  *
@@ -36,7 +36,6 @@ typedef struct {
     uint32_t size;   ///< Size of the circular buffer
     osSemaphoreId_t readSem; ///< Signals "data became available"
     osSemaphoreId_t writeSem; ///< Signals "space became available"
-    osMutexId_t writeMtx;    ///< Writer exclusion, held only inside bfifo_push()
     uint8_t *mem;      ///< FIFO memory
 } BFifo;
 

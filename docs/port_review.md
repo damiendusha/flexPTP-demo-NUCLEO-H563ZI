@@ -1674,6 +1674,64 @@ showing up in the measurement.
 | level-triggered semaphores | both waits re-check the real occupancy after waking, so a stale or spurious signal costs an iteration instead of corrupting state |
 | `bfifo_create()` return | now checked by both callers; it was discarded at each, so a heap exhaustion at boot would have produced a dead console with no message |
 
+### F68 — console output from an interrupt hung the board *(RESOLVED)* [N6]
+
+Three comments in three files disagreed about whether `MSG()` may be called from an ISR.
+`mac_drv.c` said its timeout reports "must be callable from an ISR"; `standard_output.c`
+skipped the `MSG()` mutex in interrupt context on that basis, reasoning that "a garbled message
+beats a silently dropped one"; `serial_io.c` said `serial_io_write()` "must NOT be called from
+an ISR". Nothing in the code decided the question.
+
+#### What actually happened
+
+The CMSIS-RTOS2 shim refuses a blocking acquire in interrupt context and returns immediately
+([`cmsis_os2.c:1969`](../Drivers/CMSIS/CMSIS_RTOS_V2/cmsis_os2.c#L1969)), so `bfifo_push()` ran
+unserialised and, with the FIFO full, its wait loop did not wait — it spun with interrupts
+disabled. Reproduced on hardware with a scaffold that called `MSG()` from every 64th receive
+interrupt, under a saturated console and a 500 pps ping flood:
+
+| | Result |
+|---|---|
+| ISR reaching `MSG()` → FIFO | **board hung hard** — 100% ping loss, console dead, no fault report |
+| ISR output refused and counted | 12/12 help dumps, 0% ping loss, CLI responsive |
+
+#### Two things the review did not anticipate
+
+**Serving the ISR from the polled writer cannot be made safe.** It was implemented, measured
+and withdrawn. Poking `TDR` by hand consumes the `TC` event HAL's DMA completion path is
+waiting for, so `serial_io_tx_cplt()` never runs and the drain thread is stranded. Gating on
+`DMAT` is not enough — `UART_DMATransmitCplt()` clears `DMAT` and *then* waits on `TC`, leaving
+a window where the bit reads clear while HAL still needs the event. Gating on `gState` is not
+enough either: the ISR can land inside `HAL_UART_Transmit_DMA()` between the state change and
+the `DMAT` arming, and clear the DMA request the thread just enabled. Both variants left the
+board answering pings at 0% loss while never printing another character — a loud failure traded
+for a quiet one, which is the wrong direction for this project.
+
+**The FIFO already had an unsynchronised interrupt producer.** `serial_io_rx_callback()` runs
+in the USART3 receive ISR and pushes every keystroke into the CLI's input FIFO
+([`cli.c:475`](../Src/cliutils/cli.c#L475)). Its `osSemaphoreAcquire()` had always been failing
+silently there, so that push proceeded with no exclusion at all against a concurrent thread
+push. Making the acquire failure fatal — the obvious hardening — therefore *dropped every
+keystroke* and left a board that booted, printed and pinged normally with a completely dead
+CLI. Caught on hardware; it is why writer exclusion is now a critical section rather than a
+mutex, that being the only primitive both contexts can use.
+
+#### The contract, now enforced in code rather than described in comments
+
+| Layer | Behaviour |
+|---|---|
+| `MSG()` | refuses interrupt context outright. Not only the write path is unusable there: `lineBuf` is shared and its lock cannot be taken, and a corrupted buffer can lose its terminator, at which point `insert_carriage_return()`'s `strlen()` runs off the end |
+| `serial_io_write()` | thread-only; an ISR call is counted and discarded |
+| `bfifo_push()` | never waits in interrupt context — pushes what fits and returns. Writer exclusion is a short critical section, which is what the ISR producer needs |
+| `serial_io_panic_write()` | unchanged, and still the right tool for a path that is about to halt |
+| interrupt diagnostics | latch state, let a thread report it |
+| visibility | `osinfo` prints the discarded count, so the loss is measured rather than assumed. Verified: 56 drops reported after a scaffolded run |
+
+Two robustness fixes came out of the same work. The drain thread's completion wait is now
+bounded at 500 ms with an abort on expiry — it was `osWaitForever` on a flag only one callback
+ever sets, so any lost completion parked the console for the session, the same shape as F51.
+And `bfifo_create()`'s return value is now checked at both call sites.
+
 ---
 
 ## Minor Findings

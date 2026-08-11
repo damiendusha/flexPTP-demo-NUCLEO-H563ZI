@@ -127,16 +127,74 @@ void USART3_IRQHandler() {
     HAL_UART_IRQHandler(&uart);
 }
 
+/* Polled, length-counted writer, used by the panic paths.
+ *
+ * Every caller halts immediately afterwards, which is what makes it safe to stop the UART
+ * pulling bytes from the GPDMA and then poke TDR by hand: nothing is left waiting on the
+ * completion this steals, and nothing needs the DMA path afterwards.
+ *
+ * That property does NOT extend to a caller that intends to carry on -- see the contract note
+ * on serial_io_write() for why interrupt context is refused rather than served here. */
+static void serial_io_polled_write(const char *str, uint32_t len) {
+    if ((str == NULL) || ((USART3->CR1 & USART_CR1_UE) == 0U)) {
+        return; // never initialised -- polling TXE would hang instead of reporting
+    }
+
+    CLEAR_BIT(USART3->CR3, USART_CR3_DMAT);
+
+    for (uint32_t i = 0U; i < len; i++) {
+        if (str[i] == '\n') { // the terminal needs CRLF; callers should not have to remember
+            while ((USART3->ISR & USART_ISR_TXE_TXFNF) == 0U) {
+            }
+            USART3->TDR = (uint8_t)'\r';
+        }
+
+        while ((USART3->ISR & USART_ISR_TXE_TXFNF) == 0U) {
+        }
+        USART3->TDR = (uint8_t)str[i];
+    }
+
+    while ((USART3->ISR & USART_ISR_TC) == 0U) { // drain before the caller halts
+    }
+}
+
+/* Messages discarded because they were issued from interrupt context. Reported by `osinfo`
+ * rather than printed when it happens -- printing is precisely what cannot be done there. */
+static volatile uint32_t sIsrDropCount = 0;
+
+uint32_t serial_io_isr_drop_count(void) {
+    return sIsrDropCount;
+}
+
+void serial_io_note_isr_drop(void) {
+    sIsrDropCount++;
+}
+
 void serial_io_write(const char *str, uint32_t len) {
-    /* bfifo_push() returns how much it actually took, and stops at the free space -- so with
-     * the return discarded, a full FIFO silently truncated the message mid-word and the
-     * caller never knew. bfifo_push_all() blocks on the write semaphore until everything is
-     * in, which is the right trade for a diagnostic channel: the producer waits, rather than
-     * the evidence being cut short exactly when there is a lot of it.
+    /* THE CONTRACT: this is thread-only. Interrupt context is refused, not served.
      *
-     * Safe for every current caller -- all of them are threads. It must NOT be called from an
-     * ISR, where the semaphore wait cannot complete; ISR-context output goes through
-     * serial_io_panic_write() instead. */
+     * Three comments in three files used to disagree about that (finding N6), and the code
+     * did the worst of the options: the CMSIS-RTOS2 shim refuses a blocking acquire in
+     * interrupt context and returns immediately, so bfifo_push() ran unserialised and, with
+     * the FIFO full, spun forever. Measured -- the board hung hard, 100% ping loss and a dead
+     * console, until this refusal existed.
+     *
+     * Serving the ISR from the polled writer was tried and rejected on measurement. It cannot
+     * be made safe against HAL's DMA transmit state machine: poking TDR by hand consumes the
+     * TC event HAL's completion path waits for, and gating on gState or DMAT still leaves a
+     * window inside HAL_UART_Transmit_DMA() where the ISR clears the DMA request the thread
+     * has just armed. Both variants left the console permanently silent after a burst while
+     * the board otherwise ran normally -- trading a loud failure for a quiet one.
+     *
+     * So interrupt-context diagnostics latch and report from a thread instead. See
+     * ETHHW_ISR()'s DMA error path for the pattern: record what happened in a volatile, let a
+     * thread notice and print it. The count of anything that ignored this is available to
+     * `osinfo` so the loss is visible rather than assumed to be zero. */
+    if (__get_IPSR() != 0U) {
+        sIsrDropCount++;
+        return;
+    }
+
     bfifo_push_all(&fifo, (const uint8_t *)str, len);
 }
 
@@ -146,30 +204,13 @@ void serial_io_write(const char *str, uint32_t len) {
  * the message and never emit it. That is why F53 and the stack-overflow path both presented
  * as a board that simply went quiet.
  *
- * This touches no FIFO, no DMA and no RTOS object: it disables the UART's DMA request so it
- * cannot race an in-flight transfer, then polls TXE and writes TDR directly. Safe from any
- * context, at any interrupt priority. */
+ * Safe from any context, at any interrupt priority. Leaves the UART's DMA request disabled,
+ * because every caller halts immediately afterwards. */
 void serial_io_panic_write(const char *str) {
-    if ((str == NULL) || ((USART3->CR1 & USART_CR1_UE) == 0U)) {
-        return; // never initialised -- polling TXE would hang instead of reporting
+    if (str == NULL) {
+        return;
     }
-
-    CLEAR_BIT(USART3->CR3, USART_CR3_DMAT);
-
-    while (*str != '\0') {
-        if (*str == '\n') { // the terminal needs CRLF; callers should not have to remember
-            while ((USART3->ISR & USART_ISR_TXE_TXFNF) == 0U) {
-            }
-            USART3->TDR = (uint8_t)'\r';
-        }
-
-        while ((USART3->ISR & USART_ISR_TXE_TXFNF) == 0U) {
-        }
-        USART3->TDR = (uint8_t)*str++;
-    }
-
-    while ((USART3->ISR & USART_ISR_TC) == 0U) { // drain before the caller halts
-    }
+    serial_io_polled_write(str, strlen(str));
 }
 
 //  ----------
@@ -192,7 +233,15 @@ static void serial_io_thread(void * arg) {
          * On failure the data is already popped and is lost; that is the right trade. The
          * alternative is to stop draining the FIFO, which loses everything after it too. */
         if (HAL_UART_Transmit_DMA(&uart, lineBuf, size) == HAL_OK) {
-            osEventFlagsWait(flags, SERIAL_IO_TX_CPLT_FLAG, 0, osWaitForever);
+            /* Bounded, not osWaitForever. The flag is set by exactly one callback, so any
+             * event that costs us that callback -- a UART error, or anything that consumes
+             * the TC the HAL completion path waits on -- used to park this thread for the
+             * rest of the session, which is the same silent-console failure F51 was about.
+             * 256 bytes at 115200 baud is ~22 ms; 500 ms is two decades of headroom, and on
+             * expiry the transfer is aborted so the peripheral is left in a known state. */
+            if (osEventFlagsWait(flags, SERIAL_IO_TX_CPLT_FLAG, 0, 500U) == (uint32_t)osFlagsErrorTimeout) {
+                HAL_UART_AbortTransmit(&uart);
+            }
         } else {
             osDelay(1); // let the peripheral settle rather than spinning on a failing DMA
         }

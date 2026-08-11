@@ -12,8 +12,14 @@
  * stopped, the PTP CLI went dead, and nothing said why. Bounded, and loud on timeout.
  *
  * The bound is a spin count rather than a time: these handshakes resolve in nanoseconds, this
- * runs before any timebase is guaranteed, and it must be callable from an ISR. At 250 MHz the
- * loop below is a few milliseconds -- six orders of magnitude of headroom. */
+ * runs before any timebase is guaranteed, and it must not depend on a timebase. At 250 MHz the
+ * loop below is a few milliseconds -- six orders of magnitude of headroom.
+ *
+ * NOTE on the report: every caller of this helper runs in thread context (initialisation and
+ * the MDIO accessors), which is what makes the MSG() legitimate. An earlier version of this
+ * comment claimed the reports were ISR-callable; they are not, and neither is MSG(). Console
+ * output from an interrupt is refused and counted -- see the contract note on
+ * serial_io_write() and finding N6. Interrupt paths latch and let a thread report. */
 #define ETHHW_HW_TIMEOUT_SPINS (100000UL)
 
 static bool ETHHW_WaitBitsClear(volatile uint32_t *reg, uint32_t mask, const char *what) {
