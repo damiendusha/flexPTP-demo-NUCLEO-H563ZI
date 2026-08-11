@@ -49,8 +49,8 @@ three of the four High items are unlikely-but-terminal rather than routine.
 | [N7](#n7--bfifo_pop-hands-the-write-token-to-a-second-writer) | Medium | `blocking_io` | `bfifo_pop()` releases the writer token mid-push | ✅ **fixed** (F67) |
 | [N8](#n8--cli-tokenizer-one-byte-overflow-and-cross-thread-reuse) | Medium | `cliutils` | 1-byte `.bss` overflow + static buffer/`strtok` shared across threads | ✅ **fixed** (F74) |
 | [N9](#n9--no-memory-barriers-at-descriptor-handoff) | Medium | `EthDrv` | No `__DMB()`/`__DSB()` around descriptor ownership handoff | ✅ **fixed** (F70) |
-| [N10](#n10--n16--low-and-latent) | Low | `EthDrv` | EtherLib RX path strands a descriptor per allocation failure | **Read** |
-| [N11](#n10--n16--low-and-latent) | Low | `ethernet` | Wire-sized VLA in the EtherLib UDP callback | **Read** |
+| [N10](#n10--n16--low-and-latent) | Low | `EthDrv` | EtherLib RX path strands a descriptor per allocation failure | ✅ **fixed** (F77) |
+| [N11](#n10--n16--low-and-latent) | Low | `ethernet` | Wire-sized VLA in the EtherLib UDP callback | ✅ **fixed** (F77) |
 | [N12](#n10--n16--low-and-latent) | Low | `cliutils` | `strncpy` without termination in two places | ✅ **fixed** (F74) |
 | [N13](#n10--n16--low-and-latent) | Low | `EthDrv` | FCS not stripped; every RX frame is 4 bytes long | ✅ **fixed** (F76) |
 | [N14](#n10--n16--low-and-latent) | Low | `EthDrv` | Dropped TX frame reported to lwIP as sent | ✅ **fixed** (F75) |

@@ -2062,6 +2062,37 @@ covers the length-field case.
 > been observed. Worth one run against a real master when the setup in
 > [host_ptp_setup.md](host_ptp_setup.md) is next up.
 
+### F77 — two traps on the EtherLib receive path *(RESOLVED)* [N10, N11]
+
+Neither is reachable today — `ETH_STACK` is `LWIP` — but P5.21/P5.22 prepared this path so its
+first build would not also be a debugging session, and these are exactly that kind of trap.
+
+**A descriptor retired for every allocation failure.** `ETHHW_ReadCallback()` returned 0 when
+`dynmem_alloc()` failed. 0 means "the receive thread has taken this descriptor and will restore
+it", and `ETHHW_ProcessRx()` has already marked it `inFlight` on that understanding — but
+nobody took it. Each failure removed one descriptor from the ring permanently; 24 of them and
+reception stops, which is F71 arrived at from the other direction. The lwIP path gets this
+right in its queue-full branch. Now returns `ETHHW_RET_RX_PROCESSED`, and the `MSG()` at that
+site is gone: it runs in the ETH ISR, where console output is refused (F68). The drop is
+counted and reported from `phy_thread()`, alongside the DMA errors.
+
+**A stack array sized by the wire.** `udp_recv_cb()` declared `char str[packet->payloadSize +
+1]` — a VLA whose length came from the received datagram, with no bound and no zero-length
+guard, `memcpy`'d into. At the 1500-byte MTU that is a 1.5 KB allocation inside the sieve
+callback's thread, chosen by whoever sent the packet. Now a fixed 256-byte buffer with the copy
+clamped.
+
+**Verified by building the configuration**, which is as far as it can be taken here: with
+`ETH_STACK` set to `ETHERLIB` the project compiles and links clean — 176 840 B flash, no
+first-party warnings. That is itself worth recording, since the docs describe this path as not
+compiled.
+
+> It does **not** run. Flashed as an experiment, it reaches `ethinf_print_info()` and then
+> HardFaults with `BFSR.BFARVALID - faulting address = 0x00000008`. Bringing EtherLib up on this
+> target remains out of scope and untouched by these two fixes; what has changed is that the
+> first person to try it will not also be chasing a stranded descriptor ring and a
+> wire-controlled VLA. `ETH_STACK` is back to `LWIP`.
+
 ---
 
 ## Minor Findings

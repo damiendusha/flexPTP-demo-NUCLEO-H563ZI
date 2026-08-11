@@ -77,9 +77,23 @@ static void fetch_link_properties() {
     linkState.init = true;
 }
 
+/* Frames dropped in the receive ISR because the pool was empty. Latched rather than printed,
+ * for the reason given at the drop site, and reported from phy_thread() below. */
+static volatile uint32_t sRxAllocFailures = 0;
+
 static void phy_thread(void *arg) {
+    uint32_t reportedAllocFailures = 0;
+
     while (true) {
         fetch_link_properties();
+
+        // report what the ISR could not
+        ETHHW_ReportDmaError();
+        if (sRxAllocFailures != reportedAllocFailures) {
+            reportedAllocFailures = sRxAllocFailures;
+            MSG("ETH: %u receive frame(s) dropped, dynmem pool empty\n", reportedAllocFailures);
+        }
+
         osDelay(500);
     }
     return;
@@ -137,8 +151,19 @@ int ETHHW_ReadCallback(ETHHW_EventDesc *evt) {
     uint16_t size = evt->data.rx.size;
     uint8_t *plBuf = dynmem_alloc(size);
     if (plBuf == NULL) {
-        MSG("malloc failed in ethdrv_input()!");
-        return 0; // processing failed
+        /* Return PROCESSED, not 0.
+         *
+         * 0 means "the receive thread has taken this descriptor and will restore it", and
+         * ETHHW_ProcessRx() has already marked it inFlight on that understanding. Nobody took
+         * it, so every allocation failure retired one descriptor from the ring for good; 24 of
+         * them and reception stops permanently -- F71 by another route (finding N10). The lwIP
+         * path gets this right in its queue-full branch.
+         *
+         * No MSG() either: this runs in the ETH ISR, where console output is refused (F68).
+         * The dropped frame is counted the same way the DMA errors are, and reported from a
+         * thread. */
+        sRxAllocFailures++;
+        return ETHHW_RET_RX_PROCESSED;
     }
 
     // fill-in packet data

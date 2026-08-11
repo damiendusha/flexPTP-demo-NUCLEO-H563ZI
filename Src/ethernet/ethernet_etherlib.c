@@ -4,10 +4,24 @@
 
 #include "etherlib/eth_interface.h"
 
+/* Bounded, and not a VLA.
+ *
+ * This was `char str[packet->payloadSize + 1]` -- a stack array whose length came straight off
+ * the wire, with no bound and no zero-length guard, memcpy'd into. At the 1500-byte MTU that is
+ * a 1.5 KB allocation inside whatever thread runs the sieve callback, and the number is chosen
+ * by whoever sent the datagram (finding N11). */
+#define UDP_ECHO_MAX (256)
+
 int udp_recv_cb(const Pckt *packet, PcktSieveLayerTag tag) {
-    char str[packet->payloadSize + 1];
-    memcpy(str, packet->payload, packet->payloadSize);
-    str[packet->payloadSize] = '\0';
+    char str[UDP_ECHO_MAX];
+
+    uint32_t len = packet->payloadSize;
+    if (len > (UDP_ECHO_MAX - 1U)) {
+        len = UDP_ECHO_MAX - 1U;
+    }
+
+    memcpy(str, packet->payload, len);
+    str[len] = '\0';
     MSG("%s\n", str);
     return 0;
 }
