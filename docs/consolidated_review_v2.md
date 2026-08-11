@@ -43,7 +43,7 @@ three of the four High items are unlikely-but-terminal rather than routine.
 | [N1](#n1--bfifo-reports-empty-when-exactly-full) | High | `blocking_io` | Ring buffer cannot distinguish full from empty | ✅ **fixed** (F67) |
 | [N2](#n2--the-tx-ownership-wait-is-compiled-away-above--og) | High | `EthDrv` | TX ownership retry loop optimised away at `-O2`/`-O3` | **Measured** |
 | [N3](#n3--rx-dma-suspension-on-rbu-is-never-cleared) | High | `EthDrv` | RBU suspend is never cleared; AIS flags discarded silently | **Read** + **Unverified** (see below) |
-| [N4](#n4--known-vendor--unknown-model-dereferences-null-at-boot) | High | `phy_drv` | Known OUI + unknown model dereferences NULL `phyName` | **Read** |
+| [N4](#n4--known-vendor--unknown-model-dereferences-null-at-boot) | High | `phy_drv` | Known OUI + unknown model dereferences NULL `phyName` | ✅ **fixed** (F69) |
 | [N5](#n5--every-lwip-assertion-is-a-silent-no-op) | Medium | `lwip_port` | lwIP assertions print nothing and do not halt; ~9 KB wasted | **Measured** |
 | [N6](#n6--the-isr-logging-contract-is-self-contradictory) | Medium | `standard_output` | ISR-logging contract contradicts itself; ISR path can hang | ✅ **fixed** (F68) |
 | [N7](#n7--bfifo_pop-hands-the-write-token-to-a-second-writer) | Medium | `blocking_io` | `bfifo_pop()` releases the writer token mid-push | ✅ **fixed** (F67) |

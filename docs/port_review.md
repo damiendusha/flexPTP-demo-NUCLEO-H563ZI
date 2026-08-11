@@ -1732,6 +1732,51 @@ bounded at 500 ms with an abort on expiry — it was `osWaitForever` on a flag o
 ever sets, so any lost completion parked the console for the session, the same shape as F51.
 And `bfifo_create()`'s return value is now checked at both call sites.
 
+### F69 — a known vendor with an unlisted model was a boot HardFault *(RESOLVED)* [N4]
+
+```c
+static const char *phyName = NULL;
+...
+    default:
+        phyName = "\0";
+        break;
+    }
+
+    return phyName[0] != '\0';   // NULL when the OUI matched but the model did not
+```
+
+`phy_populate_handlers()` assigns `phyName` on exactly two paths: a full match, or an
+unrecognised **OUI**. A PHY whose vendor is in the table but whose model is not — any SMSC part
+that is not LAN8720A/8742A/8670, any TI part that is not DP83848/TC813/TD510E, any Realtek that
+is not RTL8201F — leaves both inner `default: break;` arms with the pointer untouched, and the
+return statement reads address 0. `phy_print_full_name()` repeats it one line later.
+
+This is the sibling of **P1.3**, which fixed the *unknown-PHY* NULL callback in
+`phy_get_link_status()` and did not revisit this site. It is the likelier of the two on real
+hardware: vendors change model numbers far more often than they change OUIs.
+
+#### Measured
+
+Scaffolded by forcing `phyId.model = 0x3F` after the ID read, so the board's real LAN8742A
+(OUI `0x1F0`, an entry that *is* in the table) presents as an unlisted model:
+
+| | Boot result |
+|---|---|
+| before | `*** FATAL: HardFault` · `BFSR.BFARVALID - faulting address = 0x00000000`, halted inside `low_level_init()` |
+| after | `PHY: UNKOWN, OUI: 1F0, MODEL: 63 (rev. 1) @0`, board runs |
+
+The fault reporter added in P2 named the address directly, which is what made this a one-shot
+diagnosis rather than an SWD session — the point of that work.
+
+With the fix the link stays down and no address is acquired, because no handler matched and
+`phy_get_link_status()`'s P1.3 guard reports the link as down. That is the correct degradation:
+the board says what it found and keeps its console, instead of dying before the network is up.
+
+#### The fix
+
+`phyName` is initialised to `""` rather than `NULL`, and the outer `default` no longer needs to
+assign anything. Both reads then behave for every combination of matched and unmatched IDs.
+
 ---
 
 ## Minor Findings

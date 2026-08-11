@@ -18,7 +18,17 @@ static struct {
     uint8_t model;    // Vendor Model Number
     uint8_t revision; // Model Revision Number
 } phyId = {0};
-static const char *phyName = NULL; // printable PHY name
+/* Empty, not NULL. phy_populate_handlers() assigns this only on a full match or on an
+ * unrecognised *OUI*: a PHY whose vendor is in the table but whose model is not falls through
+ * both inner `default: break;` arms with the name untouched, and the function ends with
+ * `return phyName[0] != '\0';`. Left NULL that is a read of address 0 -- a HardFault inside
+ * low_level_init(), before the network is up. Measured with a scaffolded model number:
+ * "BFSR.BFARVALID - faulting address = 0x00000000" (finding N4).
+ *
+ * This is the sibling of P1.3's unknown-PHY crash, which added the NULL guard to
+ * phy_get_link_status() without revisiting this site. It is the likelier of the two: vendors
+ * change models far more often than they change OUIs. */
+static const char *phyName = ""; // printable PHY name
 
 typedef void (*phyIntSetupFn)();                        // typedef for PHY interrupt setup function
 typedef int (*phyIntHandlerFn)();                       // typedef for PHY interrupt handling
@@ -443,8 +453,7 @@ static bool phy_populate_handlers() {
         }
         break;
     default:
-        phyName = "\0";
-        break;
+        break; // unrecognised vendor: the initialiser already says "no name"
     }
 
     return phyName[0] != '\0';
