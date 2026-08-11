@@ -147,8 +147,19 @@ static void ETHHW_InitPeripheral(ETH_TypeDef *eth, ETHHW_InitOpts *init) {
         mode |= ETH_MACCR_FES;
     }
 
-    // set speed and duplex mode AND turn on checksum validation
-    WRITE_REG(eth->MACCR, mode | ETH_MACCR_IPC);
+    /* Speed, duplex, checksum offload -- and CRC stripping.
+     *
+     * CST and ACS were both clear, so the MAC handed the 4-byte FCS up with every frame and
+     * the packet length in DES3 counted it. Measured: a 1400-byte ping arrived as 1446 bytes
+     * where the wire frame is 1442. Nothing misbehaved, because lwIP trims IPv4 by header
+     * length and flexPTP parses PTP by field, but every RX pbuf carried four junk bytes, a
+     * maximum frame occupied 1518 of the 1528-byte buffer instead of 1514, and any future code
+     * trusting that length would have been wrong by four (finding N13).
+     *
+     * ST's HAL enables both by default (stm32h5xx_hal_eth.c:3042,3048). CST strips the CRC on
+     * Type frames -- everything here, since IPv4, ARP and PTP-over-802.3 all use an EtherType
+     * above 1500 -- and ACS covers the length-field case. */
+    WRITE_REG(eth->MACCR, mode | ETH_MACCR_IPC | ETH_MACCR_CST | ETH_MACCR_ACS);
 
     /* ---- MTL initialization ---- */
     WRITE_REG(eth->MTLTQOMR, (0b111 << 16) | ETH_MTLTQOMR_TSF | (0b10 << 2)); // transmit store and forward ON and enable transmit queue

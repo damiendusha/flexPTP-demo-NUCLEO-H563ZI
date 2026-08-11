@@ -2026,6 +2026,42 @@ exactly 12.5%, the board stayed responsive, and the round-trip maximum rose to ~
 retrying, which is precisely the behaviour that was missing when the drop was invisible.
 Scaffold removed: 30 pings of 1400 B, 0% loss.
 
+### F76 — the MAC handed the FCS up with every received frame *(RESOLVED)* [N13]
+
+`WRITE_REG(eth->MACCR, mode | ETH_MACCR_IPC)` left `CST` and `ACS` clear, so the MAC neither
+stripped the CRC nor the pad, and the packet length in `DES3` — which becomes
+`evt.data.rx.size` and then `pbuf->tot_len` — counted it.
+
+Measured directly, by printing the received length for a 1400-byte ping:
+
+| | reported length | wire frame |
+|---|---|---|
+| before | **1446** | 1442 |
+| after | **1442** | 1442 |
+
+Nothing misbehaved, which is why it went unnoticed: lwIP trims IPv4 by header length, ARP
+ignores trailing bytes, and flexPTP parses PTP by field. But every RX pbuf carried four junk
+bytes, a maximum frame occupied 1518 of the 1528-byte buffer rather than 1514, and any future
+code trusting that length would have been wrong by four. ST's HAL enables both bits by default
+(`stm32h5xx_hal_eth.c:3042,3048`).
+
+**Fix.** `mode | ETH_MACCR_IPC | ETH_MACCR_CST | ETH_MACCR_ACS`. `CST` covers Type frames —
+everything here, since IPv4, ARP and PTP-over-802.3 all use an EtherType above 1500 — and `ACS`
+covers the length-field case.
+
+**Verified.** Boot, PHY, link, DHCP, `osinfo` heap 13 840 B, flexPTP → MASTER, addend
+3435973836. Ping at payloads of 18, 64, 500, 1400 and 1472 bytes: 0% loss at every size. A
+2000-packet 500 pps flood: 0% loss.
+
+> **Not exercised: the gPTP L2 *receive* path.** The board has no PTP peer on this bench, and
+> `hook_unknown_ethertype()` — which computes `pbuf->len - 14` and is therefore the one consumer
+> that reads the length directly — only runs for received `0x88F7` frames. Driving it needs a
+> master on the wire, and `ptp4l` here is AppArmor-confined to configs under `/etc/linuxptp/`
+> and needs root, which is a change to the host rather than to this project. The change moves
+> that length from four-too-large to exact, so it can only improve that path, but it has not
+> been observed. Worth one run against a real master when the setup in
+> [host_ptp_setup.md](host_ptp_setup.md) is next up.
+
 ---
 
 ## Minor Findings
