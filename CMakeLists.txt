@@ -159,11 +159,17 @@ target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
 
     # Release stays at -Og. That is unusual -- "optimize for debugging" under a name that
     # normally means -O2 -- so it is a decision rather than an oversight, and these are the
-    # measurements behind it:
+    # measurements behind it (re-measured in P6.12; one build directory, one variable):
     #
-    #     -Og   FLASH 180 496 B   (current)
-    #     -O2   FLASH 180 952 B   LARGER by 456 B
-    #     -Os   FLASH 178 368 B   smaller by 2 128 B, i.e. 0.1% of the 2 MB part
+    #     -Og   FLASH 167 404 B   (current)
+    #     -O2   FLASH 167 708 B   LARGER by 304 B
+    #     -Os   FLASH 165 140 B   smaller by 2 264 B, i.e. 0.1% of the 2 MB part
+    #
+    # The absolute numbers moved down ~13 KB from the original set when P6.6 removed newlib's
+    # printf from the link; the relationships are unchanged. Compare deltas rather than
+    # absolutes if you re-run this: the figure also depends on the build directory's path
+    # length, because configASSERT() embeds __FILE__ and the FreeRTOS kernel is fetched into
+    # the build tree (finding N17). Measured spread: 336 bytes between two paths.
     #
     # All three were built AND run on hardware: boot, PHY, link, DHCP, flexPTP start,
     # "ptp addend" = 3435973836, ping 0% loss at 1400 bytes, no faults. So changing it is
@@ -192,6 +198,13 @@ target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
     ${linker_OPTS}
     -Wl,-Map=${CMAKE_PROJECT_NAME}.map
     --specs=nosys.specs
+
+    # Section garbage collection. This used to ride along in CMAKE_C_FLAGS in
+    # cmake/gcc-arm-none-eabi.cmake, which CMake passes to the link as well as to every
+    # compile -- so it was doing real work in an odd place. Moving it here and dropping it
+    # there is not cosmetic: removing it from CMAKE_C_FLAGS without adding it here grew the
+    # Release image from 167 424 B to 233 924 B, which is what caught the mistake (H-3).
+    -Wl,--gc-sections
     -Wl,--start-group
     -lc
     -lm

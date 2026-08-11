@@ -33,7 +33,14 @@ ENTRY(Reset_Handler)
 
 /* Highest address of the user mode stack */
 _estack = ORIGIN(SRAM1) + LENGTH(SRAM1);    /* end of SRAM1 */
-/* Generate a link error if heap and stack don't fit into RAM */
+/* Generate a link error if heap and stack don't fit into RAM.
+ *
+ * _Min_Stack_Size is load-bearing: _sbrk() in Src/sysmem.c bounds the newlib heap against
+ * _estack - _Min_Stack_Size, so it is what keeps malloc() out of the MSP stack.
+ *
+ * _Min_Heap_Size is NOT. It reserves space in ._user_heap_stack below, which moves `end`, but
+ * _sbrk() never consults it -- nothing enforces a minimum heap. It is documentation, and the
+ * reservation is the only reason it has any effect at all (finding H-5). */
 _Min_Heap_Size = 0x200;      /* required amount of heap  */
 _Min_Stack_Size = 0x800; /* required amount of stack */
 

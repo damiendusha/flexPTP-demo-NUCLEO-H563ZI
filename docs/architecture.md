@@ -275,7 +275,7 @@ Three numbers govern the receive path, and they are not interchangeable:
 
 | Constant | Value | Role |
 |---|---|---|
-| `ETH_RX_DESC_CNT` | 24 | descriptors the MAC's DMA can fill before it stalls |
+| `ETH_RX_DESC_CNT` | 24 | descriptors the MAC's DMA can fill before it stalls — a *latch*, not a pause: the engine raises `RBU`, suspends, and only a receive poll demand restarts it (F71) |
 | `RX_MSG_Q_LEN` | = `ETH_RX_DESC_CNT` | ISR → `rx_thread` queue depth |
 | `PBUF_POOL_SIZE` | 8 | frames lwIP can hold at once |
 

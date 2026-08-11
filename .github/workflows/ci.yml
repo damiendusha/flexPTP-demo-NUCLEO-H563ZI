@@ -72,5 +72,12 @@ jobs:
     name: Docs cross-references
     runs-on: ubuntu-latest
     steps:
+      # submodules: recursive is not cosmetic. check_docs_links.py verifies that every relative
+      # link target exists, and the submodule trees do not exist in a plain checkout -- so the
+      # first document that links into Modules/ or Drivers/stm32h5xx-hal-driver/ would fail this
+      # job while being perfectly valid locally. The reviews reference submodule files in prose
+      # rather than as links to avoid exactly that; this makes the trap impossible instead.
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - run: python3 tools/ci/check_docs_links.py

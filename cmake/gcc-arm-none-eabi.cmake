@@ -4,7 +4,13 @@ set(CMAKE_SYSTEM_PROCESSOR          arm)
 # Some default GCC settings
 # arm-none-eabi- must be part of path environment
 set(TOOLCHAIN_PREFIX                arm-none-eabi-)
-set(FLAGS                           "-fdata-sections -ffunction-sections -Wl,--gc-sections")
+# The two -f flags are what make section garbage collection possible, and they belong here.
+# -Wl,--gc-sections used to be in this string too: CMake passes CMAKE_C_FLAGS to the link as
+# well as to every compile, so it was doing its real work from an odd place and being ignored
+# by the compiler the rest of the time. It now lives in target_link_options() in the top-level
+# CMakeLists.txt -- see the note there, and do not remove it from one place without adding it
+# to the other (finding H-3).
+set(FLAGS                           "-fdata-sections -ffunction-sections")
 set(CPP_FLAGS                       "${FLAGS} -fno-rtti -fno-exceptions -fno-threadsafe-statics")
 
 set(CMAKE_C_FLAGS                   ${FLAGS})

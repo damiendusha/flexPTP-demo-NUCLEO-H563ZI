@@ -56,11 +56,12 @@ three of the four High items are unlikely-but-terminal rather than routine.
 | [N14](#n10--n16--low-and-latent) | Low | `EthDrv` | Dropped TX frame reported to lwIP as sent | ✅ **fixed** (F75) |
 | [N15](#n10--n16--low-and-latent) | Low | `lwipopts` | `#undef LWIP_PROVIDE_ERRNO` undone by `cc.h` | ✅ **fixed** (F78) |
 | [N16](#n10--n16--low-and-latent) | Low | CI | No `pipefail`: a failing build can pass green | ✅ **fixed** (F78) |
-| [N17](#n17--the-flash-figure-depends-on-the-build-directory-path-new-in-this-consolidation) | Low | Build | Flash size varies with the build-directory path | **Measured**, new here |
+| [N17](#n17--the-flash-figure-depends-on-the-build-directory-path-new-in-this-consolidation) | Low | Build | Flash size varies with the build-directory path | ✅ **documented** (F79) |
 | [D-a](#documentation) | Doc | `port_review.md` | F63 gives the wrong reason (`LWIP_DEBUG` vs `LWIP_NOASSERT`) | ✅ **corrected**, and F63 itself resolved |
-| [D-b](#documentation) | Doc | `architecture.md` | RX table calls a permanent stall a stall | **Read** |
+| [D-b](#documentation) | Doc | `architecture.md` | RX table calls a permanent stall a stall | ✅ **corrected** |
 | [D-c](#documentation) | Doc | `README.md` | embfmt URL disagrees with `.gitmodules` | **Read** |
-| [H-1…H-5](#housekeeping) | Hygiene | repo | Untracked scripts, docs-CI submodule constraint, dead config | **Read** |
+| [H-2…H-5](#housekeeping) | Hygiene | repo | docs-CI submodule constraint, gc-sections placement, dead config | ✅ **fixed** (F79) |
+| [H-1](#housekeeping), [D-c](#documentation) | Hygiene | repo | Untracked scripts in the root; embfmt URL | ⏸ **left for the owner** |
 
 Only the Opus review carried D-a…D-c and H-1…H-5; the Gemini review omits documentation and
 hygiene entirely. They are retained because D-a is the reason N5 went unnoticed for the whole

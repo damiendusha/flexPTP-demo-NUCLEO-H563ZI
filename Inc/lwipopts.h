@@ -163,6 +163,10 @@ extern int8_t hook_unknown_ethertype(struct pbuf *pbuf, struct netif *netif);
 
 
 /* ---------- HTTPD options -------- */
+/* Inert: no httpd is compiled into this project -- Modules/CMakeLists.txt pulls in lwIP's core
+ * Filelists only, not contrib, and nothing calls httpd_init(). These read as configuration and
+ * are not; they are inherited from the ST example this file came from. Kept rather than
+ * deleted so that adding an httpd does not also mean rediscovering the set (finding H-4). */
 #define LWIP_HTTPD_CGI			1
 //#define LWIP_HTTPD_CGI_SSI		1
 #define LWIP_HTTPD_SSI			1

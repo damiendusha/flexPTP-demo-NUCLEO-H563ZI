@@ -1838,10 +1838,10 @@ generated code at all three levels.
 No `ETH: TX descriptor … frame dropped` report appeared in any run. `RelWithDebInfo` had never
 been run on hardware before — `CMakeLists.txt` says so — and now has been.
 
-> Note for whoever revisits the size table in `CMakeLists.txt`: `-O2` measured here as **9.7 KB
-> smaller** than `-Og`, while that table records `-O2` as 456 B *larger*. The two disagree and
-> the table's absolute numbers are in any case build-path dependent (N17). Neither figure is
-> load-bearing for anything, but the table should not be trusted until it is re-measured.
+> An earlier draft of this finding claimed the size table in `CMakeLists.txt` was wrong,
+> because `RelWithDebInfo` came out 9.7 KB smaller than `Release`. That comparison was invalid
+> — those are two different configurations, not two `-O` levels. Re-measured properly in P6.12,
+> one build path, one variable: the table's *relationships* hold. See F79.
 
 ### F71 — a momentary RX ring exhaustion killed reception permanently *(RESOLVED)* [N3]
 
@@ -2119,6 +2119,45 @@ Verified locally: `bash -e -c 'false | tee /dev/null'` exits 0, and the same wit
 **Verified on hardware** after both changes: Debug and Release build clean (0 warnings,
 Release 167 420 B), boot, DHCP 192.168.2.141, heap 13 840 B, flexPTP → MASTER, addend
 3435973836, ping 1400 B 0% loss, and a 1500-packet 500 pps flood 0% loss.
+
+### F79 — the flash figure is not reproducible across build directories *(documented)* [N17]
+
+Three sources reported three different Release sizes for the same tree: `CMakeLists.txt` said
+180 496 B, one review measured 180 504 B, another 180 120 B.
+
+Cause, confirmed with `strings` on the ELF: `configASSERT()` embeds `__FILE__`, and the FreeRTOS
+kernel is fetched by `FetchContent` **into the build tree**, so six absolute paths of the form
+`<builddir>/_deps/freertos_kernel-src/*.c` end up in `.rodata`. Rebuilding the identical tree at
+`build/Release` instead of a long scratchpad path moved the figure by **336 bytes**.
+
+The `-Og` / `-O2` / `-Os` comparison in `CMakeLists.txt` was re-measured properly for this —
+one build directory, one variable — and its *relationships* hold:
+
+| level | flash | vs `-Og` | as documented |
+|---|---|---|---|
+| `-Og` | 167 404 B | — | — |
+| `-O2` | 167 708 B | +304 B | +456 B |
+| `-Os` | 165 140 B | −2 264 B | −2 128 B |
+
+The absolute numbers moved down ~13 KB when P6.6 removed newlib's `printf` from the link. The
+comment now carries the fresh figures and says to compare deltas rather than absolutes.
+
+> An earlier draft of F70 claimed the table was simply wrong, on the strength of
+> `RelWithDebInfo` measuring 9.7 KB smaller than `Release`. That was a bad comparison — two
+> different configurations, not two `-O` levels — and it is corrected there.
+
+#### Hygiene, closed in the same pass
+
+| | |
+|---|---|
+| **H-2** | The `docs` CI job checked out without submodules while `check_docs_links.py` requires every relative target to exist. No document links into `Modules/` today — the reviews reference submodule files in prose for exactly this reason — but the first one that did would have failed CI while being valid locally. `submodules: recursive` makes the trap impossible instead of merely avoided |
+| **H-3** | `-Wl,--gc-sections` sat in `CMAKE_C_FLAGS`, where the compiler ignores it — but CMake passes that variable to the **link** as well, so it was doing real work from an odd place, and `target_link_options()` never had it. Simply deleting it grew the Release image from 167 420 B to **233 924 B**; that is how the mistake was caught. It now lives in `target_link_options()`, the `-f` flags stay in the toolchain file, and both sides say not to move one without the other. Release is byte-identical to before at 167 420 B |
+| **H-4** | `lwipopts.h`'s `LWIP_HTTPD_*` block configures an httpd that is not compiled — lwIP's core Filelists only, and nothing calls `httpd_init()`. Kept, but now says so |
+| **H-5** | `_Min_Heap_Size` in the linker script constrains nothing: `_sbrk()` bounds the newlib heap against `_estack - _Min_Stack_Size` and never consults it. `_Min_Stack_Size` *is* load-bearing. Both now say which is which |
+
+Also corrected: `architecture.md`'s RX depth table called `ETH_RX_DESC_CNT` "descriptors the
+MAC's DMA can fill before it stalls", which understated it — the stall is a latch, not a pause
+(F71, finding D-b).
 
 ---
 
