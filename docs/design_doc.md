@@ -873,10 +873,15 @@ to static review.
   always completed. Deliberately not yet fixed: a silent timeout would trade one invisible
   failure for another, so the right form reports the error rather than swallowing it.
 
-**PTP transport:** the app loads the `gPTP` preset, which is `PTP_TP_802_3` (Layer 2,
-ethertype 0x88F7) with `PTP_DM_P2P` — not UDP/IPv4. A linuxptp master must therefore use
-the gPTP profile, e.g.
-`ptp4l -f /usr/share/doc/linuxptp/configs/gPTP.cfg -i <iface> -S -m --serverOnly=1 --priority1=100`.
+**PTP transport:** the app loads the `default` preset, which is `PTP_TP_IPv4` (UDP/IPv4,
+multicast 224.0.1.129) with `PTP_DM_E2E`. A linuxptp master needs no config file to match it:
+`ptp4l -i <iface> -S -m --serverOnly=1 --priority1=100`.
+
+> This was `gPTP` (`PTP_TP_802_3`, ethertype 0x88F7, `PTP_DM_P2P`) until the interoperability
+> results below settled it. gPTP cannot traverse ordinary bridges by design, so the boot
+> preset was changed to the one that works on a general-purpose network — see
+> [ptp_profiles.md](ptp_profiles.md). The gPTP route still works and is still documented; it
+> just is no longer the default.
 
 ### Verification limits
 

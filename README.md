@@ -149,9 +149,12 @@ host up, including a direct-cable configuration and the failure modes worth know
 
 Two things that cost days here and are worth reading before you start:
 
-- **The board loads the `gPTP` profile at startup**, so a plain `ptp4l` will not talk to it.
-  Either match the profile on the host or issue `ptp profile preset default` on the board —
-  which must be re-issued after every flash, because the profile is not persisted.
+- **The board loads the `default` profile at startup** — plain IEEE 1588 over UDP/IPv4 with
+  E2E delay measurement — which a stock `ptp4l` with no config file already matches. The
+  other presets (`gPTP`, `defp2p`) need the host matched to them, and `gPTP` additionally
+  needs a direct cable or 802.1AS-capable bridges throughout. Profiles are not persisted, so
+  any runtime `ptp profile preset …` is lost on reset. See
+  **[`docs/ptp_profiles.md`](docs/ptp_profiles.md)** for the trade-offs.
 - **A switch may silently discard PTP `Delay_Resp`** while forwarding `Sync` and `Announce`
   on the same multicast group. Verified on this setup. If sync never completes, try a direct
   cable before suspecting the firmware.
@@ -287,6 +290,7 @@ PID servo expose `ptp servo params` instead.
 | [`docs/architecture.md`](docs/architecture.md) | Module inventory and versions, layering, boot sequence, threads and priorities, interrupts, clocking, the PTP timestamp path, memory layout |
 | [`docs/design_doc.md`](docs/design_doc.md) | Porting decisions and their rationale, submodule pinning, clock tree, pin map, stage-by-stage log |
 | [`docs/ptp_clock.md`](docs/ptp_clock.md) | Full derivation of the PTP timestamp clock, and why a 4 ns increment is possible but not adopted |
+| [`docs/ptp_profiles.md`](docs/ptp_profiles.md) | The three profile presets, the transport and delay-mechanism trade-offs, and what a switched network costs |
 | [`docs/host_ptp_setup.md`](docs/host_ptp_setup.md) | Running a PTP master on a Linux host, and what to check when nothing happens |
 | [`docs/port_review.md`](docs/port_review.md) | Every finding of the port review, with evidence — including the ones that cost days |
 | [`docs/implementation_plan.md`](docs/implementation_plan.md) | The staged work plan and what remains |

@@ -9,10 +9,15 @@ How to set up a Linux host as a PTP grandmaster for this demo, using `linuxptp`.
 > signed mean shows the servo is locked, not that the clock is accurate to 40 ns — the
 > spread is the host's software-timestamping floor, not the board — see
 > [Accuracy expectations](#accuracy-expectations).
+>
+> Re-verified after `default` became the boot preset, with no profile command issued at all:
+> `INITIALIZING -> LISTENING -> UNCALIBRATED -> SLAVE`, then **167 of 167 samples applying a
+> correction**, signed mean **−638 ns**, typical magnitude **15 µs**, 86 µs peak, and the
+> addend ranging 3435585115 – 3436216126 around its 3435973836 nominal.
 
 ## Two routes
 
-The board ships with the `gPTP` profile loaded at startup (`FLEXPTP_INITIAL_PROFILE` in
+The board loads the `default` profile at startup (`FLEXPTP_INITIAL_PROFILE` in
 [`Src/main.c`](../Src/main.c)), but it will run either profile. Pick one and match both ends:
 
 | | **`default`** — plain IEEE 1588 | **`gPTP`** — 802.1AS |
@@ -20,17 +25,19 @@ The board ships with the `gPTP` profile loaded at startup (`FLEXPTP_INITIAL_PROF
 | Transport | UDP/IPv4, multicast 224.0.1.129 | Raw Layer 2, ethertype 0x88F7 |
 | Delay mechanism | E2E | P2P |
 | Host command | plain `ptp4l`, no config file | `ptp4l -f /etc/linuxptp/gPTP.cfg` |
-| Board command | **`ptp profile preset default`** | loaded at boot, nothing to do |
+| Board command | loaded at boot, nothing to do | **`ptp profile preset gPTP`** |
+| Through ordinary switches | **yes** | **no** — reserved destination MAC |
 | Status | **proven on this port** | not yet exercised end to end |
 
 The `default` route is the one below in [Command](#command); the gPTP route is
 [further down](#alternative-the-gptp-profile). They do not interoperate in any combination —
-a mismatch is silent on both sides.
+a mismatch is silent on both sides. Why `default` is the boot preset, and the full
+trade-offs, are in [ptp_profiles.md](ptp_profiles.md).
 
-> **A reflash resets the board to `gPTP`.** The profile is not persisted, so
-> `ptp profile preset default` must be re-issued after every flash. Symptom if you forget:
-> the board reports `LISTENING -> PRE_MASTER -> MASTER` because it never hears an Announce
-> it recognises, and the host sees nothing at all.
+> **A reflash resets the board to `default`.** The profile is not persisted, so if you are
+> running the gPTP route, `ptp profile preset gPTP` must be re-issued after every flash.
+> Symptom if you forget: both ends go quiet, and the board reports
+> `LISTENING -> PRE_MASTER -> MASTER` because it never hears an Announce it recognises.
 
 ## Prerequisites
 
@@ -67,11 +74,11 @@ setting that matters is already `ptp4l`'s default:
 sudo ptp4l -i enp5s0 -S -m --serverOnly=1 --priority1=100
 ```
 
-and on the target, over the ST-Link VCP:
+and on the target, over the ST-Link VCP — `default` is the boot preset, so there is no
+profile command to issue:
 
 ```
 flexptp
-ptp profile preset default
 ptp log def on
 ```
 
@@ -167,7 +174,7 @@ On the target, over the ST-Link VCP (`/dev/ttyACM0`, 115200 8N1):
 
 ```
 flexptp                          # start the stack if it is not already running
-ptp profile preset default       # re-issue after every flash
+ptp profile                      # confirm the loaded preset ('default' at boot)
 ptp log def on                   # watch the offset converge
 ptp info                         # show the current profile and master
 ```
@@ -200,7 +207,7 @@ identical to an absent peer.
 
 | Symptom | Check |
 |---|---|
-| Board reports `LISTENING -> PRE_MASTER -> MASTER` | **Profile mismatch** — it heard no Announce it recognised, so it elected itself. Almost always a `default`/`gPTP` mix-up, and the usual cause is a reflash reverting the board to `gPTP`. Re-issue `ptp profile preset default`. |
+| Board reports `LISTENING -> PRE_MASTER -> MASTER` | **Profile mismatch** — it heard no Announce it recognised, so it elected itself. Almost always a `default`/`gPTP` mix-up; check both ends with `ptp profile` on the board. If you are on the gPTP route, a reflash will have reverted the board to `default`. |
 | Nothing at all on the board | Are frames leaving the host? `sudo tcpdump -i <iface> -e ether proto 0x88f7` for gPTP, `sudo tcpdump -i <iface> udp port 319 or udp port 320` for `default` |
 | Sync arrives but Delay_Resp never does | **A switch may silently discard PTP Delay_Resp** while forwarding Sync/Announce on the same multicast group. Verified on this setup — it cost days. Test with a direct cable ([F42](port_review.md)). |
 | Offset drifts while `corr_ppb` stays `0.0000` | The servo is not running; the clock is free-running ([F59](port_review.md)). `ptp reset` restores it. |

@@ -27,7 +27,11 @@
 #include <cmsis_os2.h>
 
 
-#define FLEXPTP_INITIAL_PROFILE ("gPTP")
+// Plain IEEE 1588 over UDP/IPv4 with E2E delay measurement. Chosen over 'gPTP' because it is
+// the only preset that survives ordinary, non-802.1AS switches: gPTP's destination MAC
+// 01:80:C2:00:00:0E is in the IEEE 802.1D reserved range that conformant bridges must not
+// forward. See docs/ptp_profiles.md.
+#define FLEXPTP_INITIAL_PROFILE ("default")
 
 // ------------------------
 
@@ -148,8 +152,9 @@ void print_welcome_message() {
                           "The application is built on FreeRTOS, flexPTP is currently compiled against %s and uses the supplied example %s Network Stack Driver. "
                           "In this demo, the underlying Ethernet stack can be either lwip or EtherLib, the 'ETH_STACK' CMake variable (in the main CMakeLists.txt file) determines which one will be used. "
                           "The STM32H5xx PTP hardware module driver is supplied by this project. This flexPTP instance features a full CLI control interface, the help can be listed by typing '?' once the flexPTP has loaded. "
-                          "The initial PTP preset that loads upon flexPTP initialization is the 'gPTP' (802.1AS) profile. It's a nowadays common profile, but we encourage "
-                          "you to also try out the 'default' (plain IEEE 1588) profile and fiddle around with other options as well. The application will try to acquire an IP-address with DHCP. "
+                          "The initial PTP preset that loads upon flexPTP initialization is the 'default' (plain IEEE 1588) profile: UDP/IPv4 transport with E2E delay measurement. "
+                          "It is the preset that works across ordinary switches, and a stock 'ptp4l' with no config file matches it. The 'gPTP' (802.1AS) preset is also available "
+                          "('ptp profile preset gPTP'), but it needs a direct cable or 802.1AS-capable bridges end to end -- see docs/ptp_profiles.md. The application will try to acquire an IP-address with DHCP. "
                           "Once the IP-address is secured, you might start the flexPTP module by typing 'flexptp'. 'Have a great time! :)'\n\n" ANSI_COLOR_RESET,
         ETH_STACK, ETH_STACK);
 
