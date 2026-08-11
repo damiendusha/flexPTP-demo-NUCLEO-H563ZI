@@ -39,7 +39,19 @@
 
 typedef uint32_t sys_prot_t;
 
-#define LWIP_PROVIDE_ERRNO
+/* LWIP_PROVIDE_ERRNO is deliberately NOT defined here.
+ *
+ * Inc/lwipopts.h says "LIBC ships errno" and does `#undef LWIP_PROVIDE_ERRNO` to say so -- but
+ * lwip/opt.h includes lwipopts.h first and arch/cc.h only later, via lwip/arch.h, so a bare
+ * `#define LWIP_PROVIDE_ERRNO` in this file ran *after* that undef and quietly won. lwIP
+ * provided its own errno after all, which is the opposite of the stated configuration
+ * (finding N15). Newlib's errno is the one this project links against; leaving the macro
+ * undefined here is what actually expresses that.
+ *
+ * Undefining it is only half the job, though, and the half that does not compile on its own:
+ * lwIP requires cc.h to supply errno when it is not providing one itself, and api/err.c wants
+ * the E* constants at file scope. Hence the include. */
+#include <errno.h>
 
 #if defined (__GNUC__) & !defined (__CC_ARM)
 

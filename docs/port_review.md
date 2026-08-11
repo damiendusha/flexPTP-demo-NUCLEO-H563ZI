@@ -2093,6 +2093,33 @@ compiled.
 > first person to try it will not also be chasing a stranded descriptor ring and a
 > wire-controlled VLA. `ETH_STACK` is back to `LWIP`.
 
+### F78 — two configuration statements that did not hold *(RESOLVED)* [N15, N16]
+
+**`LWIP_PROVIDE_ERRNO` was defined despite the `#undef`.** `Inc/lwipopts.h` says "LIBC ships
+errno" and undefines the macro to say so, but `lwip/opt.h` includes `lwipopts.h` first and
+`arch/cc.h` only later via `lwip/arch.h` — so the bare `#define LWIP_PROVIDE_ERRNO` in `cc.h`
+ran after the undef and quietly won. lwIP provided its own `errno` after all, the opposite of
+the documented configuration.
+
+Removing the define is only half the job, and the half that does not compile alone: lwIP
+requires `cc.h` to supply `errno` when it is not providing one, and `api/err.c` needs the `E*`
+constants at file scope. Caught immediately by building — 20 `'ENOMEM' undeclared` errors —
+and fixed by including `<errno.h>`, which is what "LIBC ships errno" meant all along.
+
+**CI could not fail on a failed build.** GitHub runs `run:` steps with `bash -e`, not
+`bash -eo pipefail`, so `./build.sh … 2>&1 | tee build.log` exited with `tee`'s status — always
+0. A compile or link error would not have failed the step, and nothing downstream would have
+caught it: the warning gate passes trivially on a truncated log, the patch check is independent
+of the build, and `upload-artifact` only *warns* when its paths are missing. A broken build
+could produce a green tick.
+
+Verified locally: `bash -e -c 'false | tee /dev/null'` exits 0, and the same with
+`set -o pipefail` exits 1. The workflow now sets it explicitly under `shell: bash`.
+
+**Verified on hardware** after both changes: Debug and Release build clean (0 warnings,
+Release 167 420 B), boot, DHCP 192.168.2.141, heap 13 840 B, flexPTP → MASTER, addend
+3435973836, ping 1400 B 0% loss, and a 1500-packet 500 pps flood 0% loss.
+
 ---
 
 ## Minor Findings

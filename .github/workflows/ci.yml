@@ -31,8 +31,17 @@ jobs:
           path: toolchains/arm-gnu-toolchain-15.3.rel1-x86_64-arm-none-eabi
           key: arm-gnu-15.3.rel1
 
+      # pipefail is not optional here. GitHub runs `run:` steps with `bash -e`, NOT
+      # `bash -eo pipefail`, so the exit status of a pipeline is tee's -- always 0. A compile
+      # or link failure would not fail this step, and nothing downstream would catch it: the
+      # warning gate passes trivially on a truncated log, the patch check is independent of the
+      # build, and upload-artifact only *warns* when its paths are missing. A broken build could
+      # produce a green tick (finding N16).
       - name: Build
-        run: ./build.sh -t ${{ matrix.config }} -b build/${{ matrix.config }} 2>&1 | tee build.log
+        shell: bash
+        run: |
+          set -o pipefail
+          ./build.sh -t ${{ matrix.config }} -b build/${{ matrix.config }} 2>&1 | tee build.log
 
       # The gate is first-party warnings, not all warnings: lwipcore is not built with this
       # project's flags, so a vendored warning must not fail the build. As of P6.6 there are
