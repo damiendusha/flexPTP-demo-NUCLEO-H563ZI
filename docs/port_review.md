@@ -535,12 +535,35 @@ samples against a `linuxptp` grandmaster:
 | \|error\| median | 47 µs |
 | Best sample | **−69 ns** |
 | Addend range | 3435557497 … 3436028351 |
-| Steady-state frequency offset | **−41 ppb** |
+| Steady-state frequency offset | **−41 ppm** |
 
 The mean of −535 ns over 150 samples is the meaningful figure: the servo holds the clock
 centred rather than drifting. The addend is tuned around the `0xCCCCCCCC` derived in
-[ptp_clock.md](ptp_clock.md), settling ~41 ppb below nominal — the ST-Link MCO's real
+[ptp_clock.md](ptp_clock.md), settling ~41 **ppm** below nominal — the ST-Link MCO's real
 frequency error, measured and corrected.
+
+> **Corrected: this figure read "−41 ppb" until re-measured on 2026-08-12.** The magnitude
+> was right and the unit was wrong by a factor of 1000. −41 ppb would be 141 addend units;
+> the departure from nominal is ~141 **thousand**. The quoted addend range above is itself
+> the proof — its own midpoint is tens of ppm from nominal, which no ppb-scale figure can
+> explain.
+>
+> The error is easy to make because two different quantities are both reported in ppb:
+>
+> | Quantity | Where | What it is |
+> |---|---|---|
+> | `corr_ppb` column | servo log line | the **per-cycle increment** the servo applies this cycle. Mean tends toward zero once locked; it is a residual drive, not an offset |
+> | `(addend − 0xCCCCCCCC) / K` | not logged; derive it | the **total** frequency offset now applied, where `K` = `PTP_ADDEND_CORR_PER_PPB_F` ≈ 3.436 addend units per ppb |
+>
+> They differ because [`slave.c`](../Modules/flexptp/src/flexptp/slave.c) *accumulates*:
+> `compAddend = addend + (int64_t)(tuning_ppb * K)`. Confirmed against 209 strictly
+> consecutive log lines — `addend[n] − addend[n−1]` matches `corr_ppb[n] × K` with a maximum
+> residual of **1.00 unit**, exactly the `(int64_t)` truncation.
+>
+> Re-measured 2026-08-12 over 285 and 211 samples in separate runs: **−41.40 ppm** and
+> **−40.47 ppm** (stderr 0.96 ppm), against a mean `corr_ppb` of +182 and a median of +27 —
+> which is the residual drive, near zero as expected, and nowhere near −41 of anything.
+> Tens of ppm is an unremarkable figure for an ordinary crystal oscillator.
 
 The ±83 µs spread is **host-side, not the board**. The test NIC has no PHC, so `-S` places
 master timestamps in software at the mercy of kernel scheduling. The −69 ns sample shows
@@ -570,8 +593,9 @@ A second hypothesis — that halting the core over SWD was perturbing the system
 
 - **PTP does synchronise.** Two independent sessions, servo running and holding:
   mean time error −535 ns over 150 samples in the first, best single samples of −69 ns and
-  −2634 ns. The addend is tuned around the derived `0xCCCCCCCC`, settling ~41 ppb below
-  nominal — the ST-Link MCO's real frequency error, measured and corrected.
+  −2634 ns. The addend is tuned around the derived `0xCCCCCCCC`, settling ~41 **ppm** below
+  nominal — the ST-Link MCO's real frequency error, measured and corrected. (This read
+  "ppb" until re-measured on 2026-08-12; see the correction above.)
 - **The ±83–120 µs spread is host-side**, from software timestamping on a NIC with no PHC.
 - **There is a startup failure lasting 40–60 s.** From `flexptp` start, every Delay_Req
   reports *"no response received"*, then synchronisation begins and is stable thereafter.

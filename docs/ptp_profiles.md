@@ -194,9 +194,23 @@ You want all five of Announce, Sync, Follow_Up, Delay_Req and Delay_Resp. On the
 With `ptp log def on` the board prints one line per Sync. Two columns matter:
 
 - **`Dt [ns]`** — the offset. It should collapse toward zero.
-- **`corr_ppb`** — the servo's frequency correction. If this reads `0.0000` on every line
-  while the offset drifts, the servo is not running and the clock is free-running, however
-  healthy the state machine looks. That was [F59](port_review.md).
+- **`corr_ppb`** — the frequency correction the servo applies **this cycle**. If it reads
+  `0.0000` on every line while the offset drifts, the servo is not running and the clock is
+  free-running, however healthy the state machine looks. That was [F59](port_review.md).
+
+`corr_ppb` is an *increment*, not the total correction in force — the addend accumulates it
+(`addend += corr_ppb × K` in [`slave.c`](../Modules/flexptp/src/flexptp/slave.c)). So once
+the clock is locked `corr_ppb` hovers near zero, and reading it as the oscillator's error
+understates that error by orders of magnitude. The total correction currently applied is
+
+```
+frequency offset [ppb] = (addend − 3435973836) / 3.436
+```
+
+where 3.436 is `PTP_ADDEND_CORR_PER_PPB_F` = 2³² / (5 ns × 250 MHz), i.e. the nominal addend
+times 1e-9. On this board that comes to about **−41 ppm** — the ST-Link MCO running fast,
+an unremarkable magnitude for an ordinary crystal. Conflating the two quantities is what put
+a wrong figure in the docs for months; see [port_review.md](port_review.md).
 
 The equivalent check without logging is `ptp addend`: the nominal free-run value on this port
 is **3435973836** (`0xCCCCCCCC`, from [`flexptp_options.h`](../Inc/flexptp_options.h)). An

@@ -925,7 +925,11 @@ Tested against `linuxptp` 4.4 on a Linux host.
   698 for 698, no losses. The project's MAC driver and lwIP glue are correct.
 - **PTP synchronises.** 150 samples against a `linuxptp` grandmaster give a mean time error
   of **−535 ns**, best sample −69 ns, with the addend actively tuned around `0xCCCCCCCC`
-  and settling ~41 ppb below nominal — the ST-Link MCO's real frequency error. The ±83 µs
+  and settling ~41 **ppm** below nominal — the ST-Link MCO's real frequency error, which is
+  an unremarkable magnitude for an ordinary crystal. (This read "ppb" until re-measured on
+  2026-08-12: the magnitude was right, the unit wrong by 1000. Note that the `corr_ppb`
+  column is a *per-cycle increment* and not this quantity — see
+  [port_review.md](port_review.md).) The ±83 µs
   spread is host-side software timestamping, not the board.
 - **F42 resolved: the switch was discarding Delay_Resp.** Direct cable, nothing else
   changed: 65 Delay_Resp received (≈1/s) and zero failures, versus 0 and continuous failure
