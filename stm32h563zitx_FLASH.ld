@@ -190,6 +190,27 @@ SECTIONS
   } >SRAM1
 
   /*
+   * End of everything the linker has allocated in SRAM1.
+   *
+   * ThreadX's _tx_initialize_low_level() reads this symbol and publishes it as
+   * _tx_initialize_unused_memory -- the base of the region handed to
+   * tx_application_define(), and what the CMSIS-RTOS2 wrapper carves its two byte pools
+   * from under USE_DYNAMIC_MEMORY_ALLOCATION. Every thread stack and kernel object comes
+   * out of there, so if this lands in the wrong place the failure is a boot-time allocation
+   * failure rather than anything subtle.
+   *
+   * It must come AFTER ._user_heap_stack, for the same reason the FreeRTOS heap had to come
+   * before it: _sbrk() hands out everything between `_end` and `_estack - _Min_Stack_Size`,
+   * so a byte pool placed inside that window would be handed to malloc() as well. Sitting
+   * above the reservation keeps the two allocators disjoint.
+   *
+   * Defined unconditionally, so the symbol exists while FreeRTOS is still the kernel (S2)
+   * and nothing has to change here when ThreadX takes over (S3).
+   */
+  . = ALIGN(8);
+  PROVIDE ( __RAM_segment_used_end__ = . );
+
+  /*
    * Ethernet DMA buffers and descriptors — placed in SRAM3.
    *
    * On the H7, these lived in RAM_D1 (AXI-SRAM) which was accessible

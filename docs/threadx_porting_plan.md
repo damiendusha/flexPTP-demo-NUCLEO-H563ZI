@@ -76,7 +76,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending · ⏸️ optional/deferred
 | **S0** | Baseline capture + HIL harness (`tools/hil/`) | ✅ 8/8 green, twice | 1 d | ✅ **done** |
 | **S1** | C++ proof TU + host GTest tree (`test/`) | ✅ 9/9, `cpp_ctor: ok`, no regressions | 0.5–1 d | ✅ **done** |
 | **S1b** | Tier 1+2 host harness: real ST headers + descriptor-ring model; characterisation tests pinning current-driver behaviour | ⬜ host only | 1–1.5 d | ✅ **done — 25 tests, 0.06 s; F57/F61/F71 + wrap ordering all mutation-verified; no production change needed** |
-| **S2** | Vendor ThreadX + wrapper; `tx_user.h`; low-level init; linker script | ⬜ does not link yet | 0.5–1 d | ⬜ pending |
+| **S2** | Vendor ThreadX + wrapper; `tx_user.h`; low-level init; linker script | ✅ 9/9, image byte-identical | 0.5–1 d | ✅ **done** |
 | **S3** | Kernel swap: CMSIS-RTOS2 on ThreadX, `main.c` reorder, hooks, `osinfo` — **lwIP removed, no network** | ✅ boot, CLI, console, threads, fault handlers | 1.5–2 d | ⬜ pending |
 | **S4** | Vendor NetX Duo; `nx_user.h`; IP instance + packet pool; **stub driver** | ✅ boot, IP thread alive, `osinfo` | 0.5 d | ⬜ pending |
 | **S5a** | Driver: `INITIALIZE` / `ENABLE` / `DISABLE` / `GET_STATUS` | ✅ link up/down detection on console | 0.5 d | ⬜ pending |
@@ -525,8 +525,35 @@ linker-script region; CMake integration. **Does not link yet** — FreeRTOS is s
 | `TX_PORT_USE_BASEPRI` | **not set** initially | PRIMASK is the port default. Revisit only if an ISR above the old level-5 boundary is ever added |
 | Byte pools | sized from the S3 thread inventory | ~15 KB of stacks today plus headroom; verify against `tx_byte_pool_info_get()` |
 
-**Hardware verification:** none — this stage produces no runnable image. It is the only
-implementation stage without one, and it is kept short for that reason.
+**Hardware verification:** the plan expected none, but there is a better test available and
+it was used: **the firmware image must be unchanged.** ThreadX is built but not linked, so if
+adding it moves FLASH or SRAM by a byte, something is wired in that should not be yet.
+
+#### Progress — 14 Aug 2026 — **DONE**
+
+Submodules pinned: `Modules/threadx` @ `v6.5.1.202602a_rel` (MIT), `Modules/cmsis_rtos_threadx`
+@ `v1.4.1` (SLA0044). Both libraries build with **zero warnings**.
+
+FLASH 217 160 B and SRAM1 133 168 B — **identical to S1**. Hardware suite 9/9, no regressions.
+
+Four things the plan did not anticipate, each resolved:
+
+| Issue | Resolution |
+|---|---|
+| The upstream `example_build/tx_initialize_low_level.S` defines its **own `HardFault_Handler` and `UsageFault_Handler`**, which collide with the reporting handlers in `Src/main.c` | Both omitted from the adapted copy. The project's handlers are what actually catch a stack overflow on this part (`UFSR.STKOF` via `PSPLIM`). What is given up is ThreadX's *recovery* path — S3 wires `_tx_thread_stack_error_handler` in as a notification before the halt |
+| TrustZone secure-stack sources warn (`cmse_nonsecure_entry` without `-mcmse`) and are meaningless at TZEN=0 | Excluded from the build **and** `TX_SINGLE_MODE_NON_SECURE` defined. Both are needed: excluding without the define fails to link, defining without excluding merely warns |
+| The wrapper `#error`s unless `TX_THREAD_USER_EXTENSION` is defined as exactly `ULONG tx_thread_detached_joinable;` | Added to `tx_user.h`. It backs `osThreadDetach`/`osThreadJoin` |
+| The wrapper **forbids `TX_DISABLE_ERROR_CHECKING`** | Removed from `tx_user.h`. The intent had been to compile checks out in Release, mirroring `configASSERT()`; the wrapper depends on ThreadX returning error codes it can translate into `osStatus_t`. Accepted — the firmware is at 10% of flash |
+
+Two configuration facts verified in the artefacts rather than assumed:
+
+- `arm-none-eabi-nm` shows `U __RAM_segment_used_end__` in `libthreadx.a`, so the new
+  `PROVIDE` in the linker script has a referent and will resolve when S3 links it. Until then
+  `PROVIDE` correctly emits nothing.
+- The SysTick reload word compiled to **`0x0003D08F` = 249 999 = 250 MHz / 1000 − 1**, proving
+  `tx_user.h` reached the assembler and that both `SYSTEM_CLOCK` and
+  `TX_TIMER_TICKS_PER_SECOND` took effect. A wrong tick rate here would otherwise not surface
+  until flexPTP's heartbeat drifted in S6.
 
 ---
 

@@ -46,3 +46,12 @@ target_include_directories(
 set(device_header "${freertos_kernel_SOURCE_DIR}/portable/GCC/ARM_CM33_NTZ/non_secure/portmacro.h" PARENT_SCOPE)
 
 target_link_directories(${CMAKE_PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_LIST_DIR})
+# ---------------------------------------------------------------------------
+# ThreadX + the CMSIS-RTOS2 wrapper.
+#
+# Built from S2, deliberately NOT linked into the firmware until S3. Vendoring and
+# configuring the kernel is kept separate from swapping it in, so that S2 can be verified by
+# the hardware suite showing NO change: if adding these sources moves the image, something is
+# wired in that should not be yet.
+# ---------------------------------------------------------------------------
+include(${CMAKE_CURRENT_LIST_DIR}/threadx.cmake)
