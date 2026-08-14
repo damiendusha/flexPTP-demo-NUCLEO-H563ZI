@@ -68,6 +68,11 @@ void cli_init() {
     memset(&attr, 0, sizeof(osThreadAttr_t));
     attr.stack_size = CLI_STACK_SIZE;
     attr.name = CLI_TASK_NAME;
+    /* Priority stated explicitly. Under FreeRTOS this was left at zero and the shim
+       substituted osPriorityNormal; ST's ThreadX wrapper instead REJECTS osPriorityNone (0)
+       because it is below osPriorityIdle (1), and osThreadNew() returns NULL. See
+       docs/threadx_porting_plan.md, S3. */
+    attr.priority = osPriorityNormal;
     sTH = osThreadNew(task_cli, NULL, &attr);
     if (sTH == NULL) { // taszk létrehozása
         MSG("Failed to create CLI task!\n");

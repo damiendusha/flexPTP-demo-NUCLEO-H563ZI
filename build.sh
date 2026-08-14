@@ -187,6 +187,7 @@ provision_openocd() {
 SUBMODULE_PATCHES=(
     "Modules/embfmt:patches/embfmt/0001-formatting-fixes.patch"
     "Modules/flexptp:patches/flexptp/0002-servo-nan-latch-fix.patch"
+    "Modules/flexptp:patches/flexptp/0003-generic-netstack-igmp-addresses.patch"
 )
 
 # Bring each submodule to its patched state, and refuse to build if that cannot be reached.

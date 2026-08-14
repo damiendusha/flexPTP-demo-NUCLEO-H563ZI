@@ -77,7 +77,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending · ⏸️ optional/deferred
 | **S1** | C++ proof TU + host GTest tree (`test/`) | ✅ 9/9, `cpp_ctor: ok`, no regressions | 0.5–1 d | ✅ **done** |
 | **S1b** | Tier 1+2 host harness: real ST headers + descriptor-ring model; characterisation tests pinning current-driver behaviour | ⬜ host only | 1–1.5 d | ✅ **done — 25 tests, 0.06 s; F57/F61/F71 + wrap ordering all mutation-verified; no production change needed** |
 | **S2** | Vendor ThreadX + wrapper; `tx_user.h`; low-level init; linker script | ✅ 9/9, image byte-identical | 0.5–1 d | ✅ **done** |
-| **S3** | Kernel swap: CMSIS-RTOS2 on ThreadX, `main.c` reorder, hooks, `osinfo` — **lwIP removed, no network** | ✅ boot, CLI, console, threads, fault handlers | 1.5–2 d | ⬜ pending |
+| **S3** | Kernel swap: CMSIS-RTOS2 on ThreadX, `main.c` reorder, hooks, `osinfo` — **lwIP removed, no network** | ✅ 5/5 | 1.5–2 d | ✅ **done** |
 | **S4** | Vendor NetX Duo; `nx_user.h`; IP instance + packet pool; **stub driver** | ✅ boot, IP thread alive, `osinfo` | 0.5 d | ⬜ pending |
 | **S5a** | Driver: `INITIALIZE` / `ENABLE` / `DISABLE` / `GET_STATUS` | ✅ link up/down detection on console | 0.5 d | ⬜ pending |
 | **S5b** | Driver: RX path → `nx_link_ethernet_packet_received()` | ✅ host `arping` gets replies | 1 d | ⬜ pending |
@@ -583,6 +583,67 @@ this survives the kernel change, and the claim should be tested, not trusted.
 
 **Exit criteria:** board boots to a fully usable CLI on ThreadX. `ping` and PTP are expected to be
 gone; the checks for them are not run at this stage.
+
+#### Progress — 14 Aug 2026 — **DONE**
+
+`--stage S3` green 5/5. FreeRTOS is gone from the image (`nm`: zero `xTaskCreate`/`vTaskDelay`/
+`pvPortMalloc`/`xQueueGeneric` symbols, 65 `_tx_*`). FLASH **149 408 B / 7.12%** and SRAM1
+**67 312 B / 25.68%**, down from 217 160 / 133 168 — lwIP, its 30 KB FreeRTOS heap and the
+SRAM3 Ethernet buffers all left with it.
+
+`osinfo` on the running board:
+
+```
+OS: ThreadX
+Kernel version: 6.5.1
+Free OS memory:
+  stacks: 18656 bytes free in 5 fragments
+  objects: 7108 bytes free in 12 fragments
+Threads:
+  System Timer Thread pri=0 (cmsis 56) state=3 runs=339
+  serialio pri=32 (cmsis 24) state=0 runs=16
+  init pri=32 (cmsis 24) state=4 runs=11
+  cli pri=32 (cmsis 24) state=0 runs=8
+C++ static init: ok (C++202002)
+```
+
+The three application threads land at ThreadX priority 32 = CMSIS 24, confirming the
+wrapper's `tx = osPriorityISR - cmsis` mapping in the only way that counts.
+
+**Three defects found on hardware, none predicted by the plan.**
+
+**1. `osThreadNew()` rejects a zeroed priority — five threads would never have been created.**
+The plan anticipated that priorities invert. It did not anticipate that the two CMSIS-RTOS2
+implementations *disagree about `osPriority_t = 0`*. FreeRTOS's shim substitutes
+`osPriorityNormal`; ST's ThreadX wrapper compares against `osPriorityIdle` (1), finds
+`osPriorityNone` (0) below it, and **returns NULL**.
+[architecture.md](architecture.md#threads) records that five of the nine threads relied on
+that default. Symptom: the board booted, printed the banner, and halted in
+`serial_io_start()` — which it could report only because S3 had already split USART3's
+hardware init to before the kernel. Fixed by stating the priority at every `osThreadNew()`
+site, which is what the architecture doc always claimed was happening.
+
+**2. `MSG("%-10s", …)` is a HardFault, not a formatting wart.** embfmt's `pfn_string()` is
+`string_copy(outbuf, va_arg(char *), free_space)` — no width, no left-justify, no NULL guard.
+The `-` flag desynchronises the argument walk and the next `%s` dereferences whatever it
+picks up: precise BusFault, `CFSR = 0x00008200`, faulting address `0x00000000`. Same family as
+F60 and F66, and the fault handlers introduced for those printed the diagnosis directly.
+
+**3. `%lu` prints garbage.** `C++%lu` of `202002` rendered as `C++867591983928594`. `unsigned
+long` is 32-bit here, so `%u` with a cast is lossless. Also F60/F66 family.
+
+Two smaller things resolved along the way:
+
+- **flexPTP cannot build against an unrecognised network stack.** `ptp_defs.c` `#error`s
+  unless it sees `LWIP`, `ETHLIB` or `__linux__`, while its own message asks the integrator to
+  "define `PTP_IGMP_PRIMARY` and `PTP_IGMP_PEER_DELAY`" — for which it offers no mechanism,
+  both being `const` objects it defines itself. Added as
+  `patches/flexptp/0003-generic-netstack-igmp-addresses.patch`, a 2-line extension point.
+  This is S6 work done early: the NetX Duo NSD would have hit it too. Worth reporting upstream.
+
+- **The docs link checker went red**, because `docs/reviews/` and `port_review.md` reference
+  files S3 deleted. Those links were correct when written. The checker now accepts that exact
+  set by path rather than the archive being rewritten to hide it.
 
 ---
 

@@ -45,6 +45,12 @@ class Context:
     host_iface: str = "enp5s0"
     ptp_settle_s: float = 90.0
     ptp_locked: bool = False
+
+    # Whether an Ethernet driver is expected to exist at this stage. False for S3/S4 of the
+    # ThreadX port, where lwIP has been removed and the NetX Duo driver is not in yet: the
+    # board boots to a working console with no PHY and no link, and `boot` must not read that
+    # as a regression. Set from STAGE_CONTEXT in run.py.
+    expect_network: bool = True
     baseline: dict = field(default_factory=dict)
 
 
@@ -97,7 +103,18 @@ def check_boot(board: Board, ctx: Context) -> CheckResult:
         "banner_present": True,
         "phy": phy.group(1).strip() if phy else None,
         "link": link.group(1) if link else None,
+        "expect_network": ctx.expect_network,
     }
+
+    if not ctx.expect_network:
+        # Assert the absence, rather than merely tolerating it: if a PHY turns up at a stage
+        # with no Ethernet driver linked, something is being built that should not be.
+        if phy is not None:
+            return CheckResult(
+                "boot", Status.FAIL,
+                f"PHY '{data['phy']}' reported at a stage with no Ethernet driver", data)
+        return CheckResult("boot", Status.PASS, "banner, no faults (no network expected)", data)
+
     if phy is None:
         return CheckResult("boot", Status.FAIL, "PHY was never identified", data)
     return CheckResult(
@@ -493,6 +510,9 @@ ALL_CHECKS = {
 
 # Which checks are meaningful at each stage of the ThreadX port. Ordering matters: `dhcp`
 # populates the board IP that `ping`, `ptp_ts` and `ptp_sync` need.
+# Stages at which no Ethernet driver is linked, so `boot` must expect no PHY and no link.
+STAGES_WITHOUT_NETWORK = {"S3", "S4"}
+
 STAGES = {
     "S0": ["boot", "cli", "osinfo", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync"],
     "S1": ["boot", "cli", "osinfo", "cpp_ctor", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync"],

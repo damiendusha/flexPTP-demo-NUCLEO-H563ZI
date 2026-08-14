@@ -22,21 +22,21 @@ static char c;
 
 #define SERIAL_IO_TX_CPLT_FLAG (0x01)
 
-void serial_io_init() {
-    // initialize FIFO. The result is checked at the end of this function rather than here:
-    // the failure is a heap exhaustion at boot, and reporting it needs USART3 configured
-    // first. Discarding it entirely left the console silently dead if it ever happened.
-    bool fifoOK = bfifo_create(&fifo, buf, SERIAL_IO_FIFO_LEN);
-
-    // initialize flags and thread
-    flags = osEventFlagsNew(NULL);
-
-    osThreadAttr_t attr;
-    memset(&attr, 0, sizeof(osThreadAttr_t));
-    attr.name = "serialio";
-    attr.stack_size = 2048;
-    th = osThreadNew(serial_io_thread, NULL, &attr);
-
+/* Split into hardware and RTOS halves in S3 of the ThreadX port.
+ *
+ * Under FreeRTOS this was one function that created its FIFO, event flags and thread before
+ * osKernelInitialize() -- outside the CMSIS-RTOS2 contract, but harmless, because the shim
+ * forwarded straight to xTaskCreate() which is documented as callable before the scheduler
+ * starts. main.c carried a long comment explaining why that was safe and left alone.
+ *
+ * It is not safe under ThreadX. ST's CMSIS-RTOS2 wrapper creates the two ThreadX byte pools
+ * that back every object inside osKernelInitialize(), so anything allocated before that call
+ * has nowhere to come from and fails.
+ *
+ * The split keeps the useful part of the old ordering: USART3 is configured first, so the
+ * polled panic writer works before any RTOS object exists and a failure in the second half
+ * can still be reported. */
+void serial_io_init(void) {
     // Enable peripheral clocks
     __HAL_RCC_GPIOD_CLK_ENABLE();
     __HAL_RCC_USART3_CLK_ENABLE();
@@ -110,10 +110,37 @@ void serial_io_init() {
     HAL_NVIC_SetPriority(GPDMA1_Channel0_IRQn, 12, 0);
     HAL_NVIC_EnableIRQ(GPDMA1_Channel0_IRQn);
 
-    // USART3 is up now, so the polled writer works and the FIFO failure can be reported.
+}
+
+/* The RTOS half. Must be called AFTER osKernelInitialize() and before osKernelStart():
+   the objects below come out of the wrapper's byte pools, which do not exist until then. */
+void serial_io_start(void) {
+    bool fifoOK = bfifo_create(&fifo, buf, SERIAL_IO_FIFO_LEN);
+
+    flags = osEventFlagsNew(NULL);
+
+    osThreadAttr_t attr;
+    memset(&attr, 0, sizeof(osThreadAttr_t));
+    attr.name = "serialio";
+    attr.stack_size = 2048;
+    /* Priority stated explicitly. Under FreeRTOS this was left at zero and the shim
+       substituted osPriorityNormal; ST's ThreadX wrapper instead REJECTS osPriorityNone (0)
+       because it is below osPriorityIdle (1), and osThreadNew() returns NULL. See
+       docs/threadx_porting_plan.md, S3. */
+    attr.priority = osPriorityNormal;
+    th = osThreadNew(serial_io_thread, NULL, &attr);
+
+    /* USART3 was configured by serial_io_init(), so the polled writer works and these
+       failures can be reported rather than presenting as a silently dead console. */
     if (!fifoOK) {
-        serial_io_panic_write("\n\n*** FATAL: console FIFO could not be created (out of heap)\n"
-                              "Halted. Raise configTOTAL_HEAP_SIZE.\n");
+        serial_io_panic_write("\n\n*** FATAL: console FIFO could not be created\n"
+                              "Halted. Raise RTOS2_BYTE_POOL_HEAP_SIZE (Middlewares/threadx.cmake).\n");
+        for (;;) {
+        }
+    }
+    if ((flags == NULL) || (th == NULL)) {
+        serial_io_panic_write("\n\n*** FATAL: console thread or event flags could not be created\n"
+                              "Halted. Raise RTOS2_BYTE_POOL_STACK_SIZE (Middlewares/threadx.cmake).\n");
         for (;;) {
         }
     }

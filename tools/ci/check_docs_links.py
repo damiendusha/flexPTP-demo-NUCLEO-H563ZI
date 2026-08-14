@@ -15,6 +15,32 @@ LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 SKIP_PREFIX = ("http://", "https://", "mailto:", "file://")
 LINE_FRAG = re.compile(r"L\d+(?:-L\d+)?")
 
+# Source files the ThreadX/NetX Duo port deleted, which historical documents still reference.
+#
+# docs/reviews/ is an archive of reviews of the FreeRTOS/lwIP firmware, and port_review.md
+# records findings against it. Their links to these paths were correct on the day they were
+# written; the files were removed later, by S3 of the ThreadX port. Rewriting the archive to
+# hide that would falsify the record, and deleting the links would lose the reference.
+#
+# So they are accepted here instead, by exact path. The checker still catches every other
+# broken link, including a typo in one of these names -- which is the property that matters.
+# Remove an entry if the file ever comes back.
+REMOVED_BY_THREADX_PORT = {
+    "Drivers/CMSIS/CMSIS_RTOS_V2/cmsis_os2.c",
+    "Drivers/CMSIS/CMSIS_RTOS_V2/freertos_os2.h",
+    "Drivers/CMSIS/CMSIS_RTOS_V2/freertos_mpool.h",
+    "Drivers/EthDrv/eth_drv_lwip.c",
+    "Drivers/EthDrv/eth_drv_lwip.h",
+    "Src/ethernet/ethernet_lwip.c",
+    "Src/ethernet/ethernet_lwip.h",
+    "Inc/FreeRTOSConfig.h",
+    "Inc/lwipopts.h",
+    "Modules/lwip_port/arch/cc.h",
+    "Modules/lwip_port/arch/cpu.h",
+    "Modules/lwip_port/arch/sys_arch.h",
+    "Modules/lwip_port/sys_arch.c",
+}
+
 
 def anchors(path):
     """GitHub-style slugs for every ATX heading in a Markdown file."""
@@ -52,6 +78,12 @@ def main():
             dest = dest.resolve()
             rel = f.relative_to(ROOT)
             if not dest.exists():
+                try:
+                    rel_dest = dest.relative_to(ROOT).as_posix()
+                except ValueError:
+                    rel_dest = None
+                if rel_dest in REMOVED_BY_THREADX_PORT:
+                    continue
                 bad.append(f"{rel}: missing file -> {target}")
                 continue
             # "#L12" / "#L12-L34" are GitHub *line* references, not heading anchors. They

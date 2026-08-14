@@ -62,7 +62,8 @@ set(symbols_asm_SYMB)
 
 # Link directories and names of libraries
 set(link_DIRS)
-set(link_LIBS freertos_kernel)
+# The RTOS comes in via Middlewares/CMakeLists.txt (cmsis_rtos_tx -> threadx).
+set(link_LIBS)
 
 # Linker script
 set(linker_script_SRC
@@ -86,7 +87,9 @@ add_executable(${CMAKE_PROJECT_NAME})
 target_sources(${CMAKE_PROJECT_NAME} PUBLIC ${sources_SRCS})
 
 # Seéect Ethernet stack
-set(ETH_STACK "LWIP") # select "LWIP" or "ETHERLIB"
+# S3 removed lwIP and S4-S6 bring NetX Duo in. "NONE" is the interim state: the MAC driver
+# and flexPTP are still compiled, but nothing above the link layer is.
+set(ETH_STACK "NONE") # "NONE" (S3-S5), "NETXDUO" (from S6), "LWIP" or "ETHERLIB" (historical)
 
 # Add definitions
 # DEBUG is NOT listed here: it belongs to the Debug configuration only, and is applied
@@ -107,7 +110,6 @@ target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC
 # Add Middlewares
 add_subdirectory(Middlewares)
 
-add_compile_definitions(CMSIS_device_header="${device_header}") # exported from Middlewares
 if (ETH_STACK STREQUAL "ETHERLIB")
     add_compile_definitions("ETH_ETHERLIB")
 elseif(ETH_STACK STREQUAL "LWIP")

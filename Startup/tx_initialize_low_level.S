@@ -165,6 +165,14 @@ SysTick_Handler:
 #if (defined(TX_ENABLE_EXECUTION_CHANGE_NOTIFY) || defined(TX_EXECUTION_PROFILE_ENABLE))
     BL      _tx_execution_isr_enter
 #endif
+    /* Advance the HAL's millisecond counter.
+     *
+     * Under FreeRTOS this was vApplicationTickHook(). ThreadX has no tick hook, so the call
+     * lives here -- in the one SysTick handler this project owns. It is not optional: the
+     * HAL's own timeout loops (HAL_UART_Init, HAL_DMA_Abort and friends) poll uwTick, and
+     * with it frozen they would spin forever rather than time out. Both this and the
+     * FreeRTOS hook it replaces run at 1000 Hz, so HAL timing is unchanged. */
+    BL      HAL_IncTick
     BL      _tx_timer_interrupt
 #if (defined(TX_ENABLE_EXECUTION_CHANGE_NOTIFY) || defined(TX_EXECUTION_PROFILE_ENABLE))
     BL      _tx_execution_isr_exit

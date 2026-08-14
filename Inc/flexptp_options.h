@@ -7,11 +7,42 @@
 #define LWIP
 #endif
 
-// Select the OS binding explicitly. Without this, ptp_defs.h silently falls back to
-// FLEXPTP_FREERTOS. That fallback happens to be what we want -- flexPTP calls the FreeRTOS
-// API directly while the application uses CMSIS-OS2 on top of the same kernel -- but the
-// choice is load-bearing, so state it. (F40)
-#define FLEXPTP_FREERTOS (1)
+/* No network stack linked (S3-S5 of the ThreadX port), or NetX Duo (from S6).
+ *
+ * flexPTP does not have a "generic stack" mode: ptp_defs.h typedefs ip_addr_t from a type
+ * named ip4_addr unless LWIP is defined, and ptp_defs.c #errors unless it recognises the
+ * stack. Both are satisfied here rather than by pretending to be lwIP -- providing the type
+ * and the two IGMP constants is all flexPTP actually needs from a stack at this level.
+ *
+ * PTP_IGMP_*_INIT is the extension point added by
+ * patches/flexptp/0003-generic-netstack-igmp-addresses.patch; the values are the same
+ * little-endian words flexPTP's own lwIP branch uses. */
+#if !defined(ETH_ETHERLIB) && !defined(ETH_LWIP)
+typedef struct ip4_addr {
+    uint32_t addr;
+} ip4_addr;
+
+#define PTP_IGMP_PRIMARY_INIT    {0x810100E0} /* 224.0.1.129 */
+#define PTP_IGMP_PEER_DELAY_INIT {0x6B0000E0} /* 224.0.0.107 */
+#endif
+
+/* OS binding. Was FLEXPTP_FREERTOS until S3 of the ThreadX port.
+ *
+ * flexPTP has no ThreadX binding, but it has a CMSIS-RTOS2 one, and this application is
+ * CMSIS-RTOS2 throughout -- so the same wrapper that carries the application onto ThreadX
+ * carries flexPTP with it, with no change to the submodule.
+ *
+ * WARNING, and it is the sharpest hazard in this port: flexPTP's CMSIS-RTOS2 binding calls
+ * osMessageQueuePut(..., osWaitForever) from ptp_transmit_timestamp_cb() and
+ * ptp_transmit_enqueue(), both of which run in interrupt context on this hardware
+ * (ETHHW_ProcessTx is called from ETH_IRQHandler). CMSIS-RTOS2 forbids a non-zero timeout
+ * from an ISR and ST's wrapper returns osErrorParameter, which flexPTP does not check -- so
+ * every transmit timestamp would be silently discarded and the servo would never see t3.
+ *
+ * That does not bite yet: the S3 stub driver transmits nothing. S6 must defer the callback
+ * out of interrupt context before wiring up a real driver. See finding 1 in
+ * docs/threadx_netxduo_feasibility.md, and the ptp_ts check in tools/hil/. (F40) */
+#define FLEXPTP_CMSIS_OS2 (1)
 
 #define FLEXPTP_TASK_PRIORITY 24
 
@@ -23,9 +54,9 @@
 
 #ifdef ETH_ETHERLIB
 #include <etherlib/etherlib.h>
-#elif defined(ETH_LWIP)
-#include <lwip/ip_addr.h>
 #endif
+/* No lwip/ip_addr.h: ip_addr_t comes from the ip4_addr typedef above when no stack is
+   linked. */
 
 // Give a printf-like printing implementation MSG(...)
 // Give a maskable printing implementation CLILOG(en,...)

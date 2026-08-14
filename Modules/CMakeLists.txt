@@ -20,31 +20,18 @@ if (ETH_STACK STREQUAL "ETHERLIB")
     set(ETHERLIB_INCLUDES ${include_dirs})
     set(ETHERLIB_CPU_PARAMS ${cpu_PARAMS})
     add_subdirectory(etherlib)
-
     target_link_libraries(${CMAKE_PROJECT_NAME} etherlib)
 elseif(ETH_STACK STREQUAL "LWIP")
-    set(ETH_STACK_LIB lwipcore)
-    set(LWIP_DIR ${CMAKE_CURRENT_LIST_DIR}/lwip)
-    set(LWIP_PORT_DIR ${CMAKE_CURRENT_LIST_DIR}/lwip_port)
-    #set(LWIP_CONTRIB_DIR ${LWIP_DIR}/contrib)
-    set(LWIP_INCLUDE_DIRS
-        ${LWIP_DIR}/src/include
-        ${LWIP_DIR}/contrib
-        ${LWIP_PORT_DIR}/arch
-        ${LWIP_PORT_DIR}
-        ${include_dirs}
-    )
-    message(${LWIP_PORT_DIR})
-    set(LWIP_COMPILER_FLAGS ${cpu_PARAMS})
-    include(${LWIP_DIR}/src/Filelists.cmake)
-    #include(${LWIP_DIR}/contrib/Filelists.cmake)
-    
-    target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC ${LWIP_DIR}/src/include ${LWIP_PORT_DIR})
-    target_include_directories(lwipcore PUBLIC ${LWIP_DIR}/src/include ${LWIP_PORT_DIR})
-    target_sources(lwipcore PUBLIC ${LWIP_PORT_DIR}/sys_arch.c)
-    #target_sources(${CMAKE_PROJECT_NAME} PUBLIC ${LWIP_PORT_DIR}/OS/sys_arch.c)
-
-    target_link_libraries(${CMAKE_PROJECT_NAME} lwipcore)
+    # Historical. lwIP was removed from the build in S3; the submodule is still pinned so
+    # that this path -- and the pre-port firmware -- remain reconstructable from history.
+    message(FATAL_ERROR
+        "ETH_STACK=LWIP is no longer wired up. lwIP was removed in S3 of the ThreadX port; "
+        "see docs/threadx_porting_plan.md. Check out a pre-S3 commit to build it.")
+elseif(ETH_STACK STREQUAL "NONE")
+    # S3-S5: no network stack. flexPTP is kept in the build with a no-op driver so that its
+    # 19 CLI commands, the servo, the profile machinery and the H563 hardware port all stay
+    # compiled and exercised while the stack underneath is replaced. See Src/flexptp_nsd/.
+    set(ETH_STACK_LIB)
 endif()
 
 # flexPTP ships no STM32H5 hardware port, so this project supplies one. Populating
@@ -53,10 +40,16 @@ endif()
 set(FLEXPTP_HWPORT "H563_CUSTOM")
 set(FLEXPTP_HWPORT_SRC ${CMAKE_SOURCE_DIR}/Src/flexptp_port/ptp_port_stm32h563.c)
 
-set(FLEXPTP_NSD ${ETH_STACK})
+# A project-supplied network stack driver, using flexPTP's documented extension point
+# (FLEXPTP_NSD_SRC + FLEXPTP_NETWORK_STACK) rather than one of its bundled examples. Leaving
+# FLEXPTP_NSD unmatched is what makes flexPTP take its "custom network stack driver" path.
+set(FLEXPTP_NSD "CUSTOM")
+if (ETH_STACK STREQUAL "NONE")
+    set(FLEXPTP_NSD_SRC ${CMAKE_SOURCE_DIR}/Src/flexptp_nsd/nsd_stub.c)
+endif()
+set(FLEXPTP_NETWORK_STACK ${ETH_STACK_LIB})
 set(FLEXPTP_SERVO "KALMAN")
-set(FLEXPTP_INCLUDES ${include_dirs} ${LWIP_DIR}/src/include ${LWIP_PORT_DIR}
-    ${CMAKE_SOURCE_DIR}/Src/flexptp_port)
+set(FLEXPTP_INCLUDES ${include_dirs} ${CMAKE_SOURCE_DIR}/Src/flexptp_port)
 set(FLEXPTP_CPU_PARAMS ${cpu_PARAMS})
 # flexPTP >= a60190f uses __PRI64_PREFIX, a glibc-internal macro, in cli_cmds.c,
 # master.c and slave.c. Newlib does not define it, so the library does not build for

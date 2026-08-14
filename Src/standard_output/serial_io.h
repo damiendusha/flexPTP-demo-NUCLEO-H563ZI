@@ -3,7 +3,15 @@
 
 #include <stdint.h>
 
-void serial_io_init();
+// Hardware only: USART3, its pins, GPDMA1 channel 0 and the two interrupts. Safe to call
+// before the kernel is initialised, and deliberately done there, so that
+// serial_io_panic_write() works for any failure that follows.
+void serial_io_init(void);
+
+// RTOS objects: the FIFO, the completion event flag and the "serialio" thread. MUST be called
+// after osKernelInitialize() -- the CMSIS-RTOS2 wrapper's byte pools do not exist before it --
+// and before osKernelStart().
+void serial_io_start(void);
 
 // THREAD CONTEXT ONLY. A call from an ISR is counted and discarded -- see the contract note at
 // the definition. Interrupt-context diagnostics must latch state and let a thread report it.

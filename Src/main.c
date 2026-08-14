@@ -6,15 +6,11 @@
 
 #include <stm32h5xx_ll_rng.h>
 
-#include "FreeRTOSConfig.h"
-
-#include "FreeRTOS.h" // TaskHandle_t and taskDISABLE_INTERRUPTS() for the failure hooks
-#include "task.h"
+#include "tx_api.h" // TX_THREAD and the stack-error notification, for the failure hooks
 
 
 #include "cliutils/cli.h"
 #include "cmds.h"
-#include "ethernet/ethernet_lwip.h"
 
 #include "flexptp/event.h"
 #include "flexptp/logging.h"
@@ -37,9 +33,21 @@
 
 void Error_Handler(void);
 
+/* Registered with tx_thread_stack_error_notify() in main(); defined below with the other
+   failure paths. */
+void app_stack_error_handler(TX_THREAD *thread_ptr);
+
 // ------------------------
 
-#define TARGET_SYSCLK_MHZ (configCPU_CLOCK_HZ / 1000000)
+/* Target SYSCLK. Was configCPU_CLOCK_HZ, which went with FreeRTOSConfig.h in S3.
+ *
+ * Stated here because this is where the PLL that produces it is configured. Two other places
+ * must agree and neither can include this header: SYSTEM_CLOCK in
+ * Startup/tx_initialize_low_level.S (the SysTick divisor) and PTP_MAIN_OSCILLATOR_FREQ_HZ in
+ * Inc/flexptp_options.h (pll1_q_ck feeds the timestamp unit at the same 250 MHz). Change one,
+ * change all three. */
+#define TARGET_SYSCLK_HZ  (250000000UL)
+#define TARGET_SYSCLK_MHZ (TARGET_SYSCLK_HZ / 1000000UL)
 
 void init_pll() {
     RCC_OscInitTypeDef osc;
@@ -175,8 +183,9 @@ void task_startup(void *arg) {
     // print greetings
     print_welcome_message();
 
-    // initialize Ethernet
-    init_ethernet();
+    /* No network stack between S3 and S5 of the ThreadX port: lwIP is gone and NetX Duo is
+     * not in yet. flexPTP still starts -- with a no-op driver -- so the CLI, the servo and
+     * the PTP hardware port stay exercised. See docs/threadx_porting_plan.md. */
 
     // initialize commands
     cmd_init();
@@ -258,36 +267,62 @@ int main(void) {
     // before the scheduler starts: cli_init() creates the "cli" task, whose first act is to
     // print, while task_startup() goes on to print the banner -- both at priority 24, so
     // they can interleave from the very first tick.
-    MSG_init();
+    /* Hardware half only. The RTOS half -- FIFO, event flags, thread -- is serial_io_start(),
+       after osKernelInitialize(); see the note there. */
     serial_io_init();
 
     // -------------
 
-    /* Note on ordering: serial_io_init() above calls osThreadNew() to create "serialio",
-     * BEFORE osKernelInitialize(). That is outside the CMSIS-RTOS2 contract, which says
-     * osKernelInitialize() comes first.
+    /* Ordering, corrected in S3 of the ThreadX port.
      *
-     * It works, and is left alone deliberately. The shim's osThreadNew() checks only for IRQ
-     * context, then calls xTaskCreate(), which is explicitly documented as callable before
-     * vTaskStartScheduler() -- the task is created and simply does not run until
-     * osKernelStart(). Reordering would mean either splitting serial_io_init() into hardware
-     * setup and thread creation, or moving all of it after osKernelInitialize() and giving up
-     * having USART3 configured before anything can want to print through it.
+     * Under FreeRTOS, serial_io_init() created its thread here -- before osKernelInitialize()
+     * -- which is outside the CMSIS-RTOS2 contract but worked, because the shim forwarded to
+     * xTaskCreate() and that is documented as callable before vTaskStartScheduler(). The
+     * previous comment here recorded that as safe and deliberately left alone.
      *
-     * Recorded rather than corrected, so the next reader does not have to re-derive that this
-     * is safe. */
+     * ThreadX turns it into a hard failure. ST's CMSIS-RTOS2 wrapper creates the two byte
+     * pools that back every RTOS object inside osKernelInitialize() (and calls
+     * _tx_initialize_kernel_setup() there, which is what makes creating objects before
+     * osKernelStart() legal at all). Anything allocated before that has nowhere to come from.
+     *
+     * So the split the old comment described as the alternative is now the arrangement:
+     * hardware first, so the polled panic writer works, then the kernel, then everything that
+     * needs to allocate. */
 
-    // initialize the FreeRTOS kernel
-    osKernelInitialize();
+    // initialize the ThreadX kernel, via the CMSIS-RTOS2 wrapper
+    if (osKernelInitialize() != osOK) {
+        serial_io_panic_write("\n\n*** FATAL: osKernelInitialize() failed\n"
+                              "Halted. The byte pools could not be created; check\n"
+                              "__RAM_segment_used_end__ and RTOS2_BYTE_POOL_* sizing.\n");
+        for (;;) {
+        }
+    }
+
+    // Objects, now that there is somewhere to allocate them from.
+    MSG_init();
+    serial_io_start();
+
+    // Report a stack overflow the kernel notices before the hardware trap does.
+    tx_thread_stack_error_notify(app_stack_error_handler);
 
     // create startup thread
     osThreadAttr_t attr;
     memset(&attr, 0, sizeof(attr));
     attr.stack_size = 2048;
     attr.name = "init";
-    osThreadNew(task_startup, NULL, &attr);
+    /* Priority stated explicitly. Under FreeRTOS this was left at zero and the shim
+       substituted osPriorityNormal; ST's ThreadX wrapper instead REJECTS osPriorityNone (0)
+       because it is below osPriorityIdle (1), and osThreadNew() returns NULL. See
+       docs/threadx_porting_plan.md, S3. */
+    attr.priority = osPriorityNormal;
+    if (osThreadNew(task_startup, NULL, &attr) == NULL) {
+        serial_io_panic_write("\n\n*** FATAL: could not create the 'init' thread\n"
+                              "Halted. Raise RTOS2_BYTE_POOL_STACK_SIZE.\n");
+        for (;;) {
+        }
+    }
 
-    // start the FreeRTOS!
+    // start ThreadX
     osKernelStart();
 
     for (;;) {
@@ -311,42 +346,64 @@ void flexptp_user_event_cb(PtpUserEventCode uev) {
 
 // ------------------------
 
-uint8_t ucHeap[configTOTAL_HEAP_SIZE] __attribute__((section(".FreeRTOSHeapSection")));
-
-// ------------------------
-
-void vApplicationTickHook(void) {
-    HAL_IncTick();
-}
-
-void vApplicationIdleHook(void) {
-    return;
-}
-
-/* configCHECK_FOR_STACK_OVERFLOW and configUSE_MALLOC_FAILED_HOOK are both enabled, but
- * neither hook was implemented, so both resolved to the CMSIS-RTOS2 shim's __WEAK stubs --
- * and those call configASSERT(0), which halts with interrupts disabled and prints nothing.
- * The two most likely runtime failures in this firmware therefore presented exactly as F53
- * did: a board that stops, with no clue why.
+/* --- Kernel integration points, S3 of the ThreadX port -----------------------------------
  *
- * Both report through the polled writer rather than MSG(), which cannot work here: it pushes
- * into a FIFO drained by a task that will never run again. */
-void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
-    (void)xTask;
+ * What FreeRTOS needed here, and what replaced it:
+ *
+ *   ucHeap[configTOTAL_HEAP_SIZE]  -> gone. ThreadX has no heap. The CMSIS-RTOS2 wrapper
+ *                                    carves two byte pools out of the RAM above
+ *                                    __RAM_segment_used_end__, so the sizing lives in the
+ *                                    linker script and Middlewares/threadx.cmake rather than
+ *                                    in a C array.
+ *   vApplicationTickHook           -> gone. HAL_IncTick() is now called from SysTick_Handler
+ *                                    in Startup/tx_initialize_low_level.S. It still has to
+ *                                    happen -- the HAL's own timeouts read uwTick -- but
+ *                                    ThreadX offers no tick hook, so the call moved into the
+ *                                    handler this project already owns.
+ *   vApplicationIdleHook           -> gone. It was empty.
+ *   vAssertCalled                  -> gone with configASSERT(). ThreadX's equivalent is its
+ *                                    API error checking, which returns codes rather than
+ *                                    halting, and the CMSIS wrapper forbids disabling it.
+ *   vApplicationMallocFailedHook   -> gone. Byte-pool exhaustion is a return value, not a
+ *                                    hook, so each creation site checks its own result --
+ *                                    see osKernelInitialize() and serial_io_start().
+ *   vApplicationStackOverflowHook  -> app_stack_error_handler(), registered in main() with
+ *                                    tx_thread_stack_error_notify().
+ */
 
-    taskDISABLE_INTERRUPTS();
-    serial_io_panic_write("\n\n*** FATAL: stack overflow in task '");
-    serial_io_panic_write((pcTaskName != NULL) ? pcTaskName : "<unnamed>");
+/**
+ * Stack-overflow notification from ThreadX.
+ *
+ * On this part it is usually NOT the first thing to notice an overflow. The Cortex-M33 port
+ * programs PSPLIM on every context switch, so the offending push faults and lands in
+ * UsageFault_Handler below with UFSR.STKOF set -- exactly as under FreeRTOS, and for the same
+ * reason. This covers the case hardware cannot see: a stack overrun and then unwound before
+ * the next context switch, caught by TX_ENABLE_STACK_CHECKING's pattern check.
+ *
+ * Reports through the polled writer rather than MSG(), which queues into a FIFO drained by a
+ * thread that may be the one that just died.
+ */
+void app_stack_error_handler(TX_THREAD *thread_ptr) {
+    __disable_irq();
+    serial_io_panic_write("\n\n*** FATAL: stack overflow in thread '");
+    serial_io_panic_write((thread_ptr != NULL && thread_ptr->tx_thread_name != NULL)
+                              ? thread_ptr->tx_thread_name
+                              : "<unnamed>");
     serial_io_panic_write("'\n"
-                          "Halted. Raise that task's stack_size; see docs/architecture.md#threads.\n");
+                          "Halted. Raise that thread's stack_size; see docs/architecture.md#threads.\n");
 
     for (;;) {
     }
 }
 
 /* Decimal output for the panic paths. MSG() cannot be used here: it queues into a FIFO
- * drained by a task that will never run again. */
-static void panic_write_ulong(unsigned long v) {
+ * drained by a task that will never run again.
+ *
+ * Currently uncalled: its user was vAssertCalled(), which went with configASSERT() in S3.
+ * Kept as the decimal counterpart of panic_write_hex32() below -- a line number or a byte
+ * count wants decimal -- and marked unused rather than deleted, because deleting it would
+ * mean rewriting it the first time a panic path needs to print a quantity. */
+__attribute__((unused)) static void panic_write_ulong(unsigned long v) {
     char buf[12];
     unsigned i = sizeof(buf) - 1U;
 
@@ -384,7 +441,7 @@ static void panic_write_hex32(uint32_t v) {
  * Stack overflow deserves special mention: the CM33 port programs PSPLIM on every context
  * switch, so the hardware raises UsageFault.STKOF on the offending push, long before
  * FreeRTOS's software pattern check would run at the next switch. UsageFault is not enabled
- * in SHCSR, so it escalates here. This handler -- not vApplicationStackOverflowHook() -- is
+ * in SHCSR, so it escalates here. This handler -- not app_stack_error_handler() -- is
  * what actually catches a stack overflow on this target.
  *
  * `frame` is the exception stack frame, so the reported PC is the faulting instruction
@@ -450,30 +507,5 @@ const char fault_name_hard[] = "HardFault";
 const char fault_name_mem[] = "MemManage fault";
 const char fault_name_bus[] = "BusFault";
 const char fault_name_usage[] = "UsageFault";
-
-/* Reached from configASSERT(). A failed FreeRTOS assertion is a programming error, and the
- * previous definition halted with interrupts disabled and printed nothing -- indistinguishable
- * from a hang, and the same signature that made F53 costly. Safe from an ISR: the writer
- * polls rather than using the FIFO. */
-void vAssertCalled(const char *pcFile, unsigned long ulLine) {
-    taskDISABLE_INTERRUPTS();
-    serial_io_panic_write("\n\n*** FATAL: FreeRTOS assertion failed\n  ");
-    serial_io_panic_write((pcFile != NULL) ? pcFile : "<unknown>");
-    serial_io_panic_write(":");
-    panic_write_ulong(ulLine);
-    serial_io_panic_write("\nHalted.\n");
-
-    for (;;) {
-    }
-}
-
-void vApplicationMallocFailedHook(void) {
-    taskDISABLE_INTERRUPTS();
-    serial_io_panic_write("\n\n*** FATAL: FreeRTOS heap exhausted (pvPortMalloc returned NULL)\n"
-                          "Halted. Raise configTOTAL_HEAP_SIZE; 'osinfo' reports the free space.\n");
-
-    for (;;) {
-    }
-}
 
 // --------

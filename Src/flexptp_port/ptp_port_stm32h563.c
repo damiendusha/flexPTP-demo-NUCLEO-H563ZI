@@ -5,8 +5,7 @@
 #include <math.h>
 #include <stdlib.h>
 
-#include "FreeRTOS.h"
-#include "task.h"
+#include <cmsis_os2.h>
 
 #include "stm32h5xx_hal.h"
 
@@ -116,7 +115,7 @@ void ptphw_init(uint32_t increment, uint32_t addend) {
     // 1. enable PTP timestamping (TSENA)
     ETHHW_EnablePTPTimeStamping(ETH);
 
-    vTaskDelay(pdMS_TO_TICKS(10));
+    osDelay(10); // ms; the CMSIS-RTOS2 tick is 1 kHz (TX_TIMER_TICKS_PER_SECOND)
 
     // 2. programme the subsecond increment (MACSSIR) -- must precede the addend
     ETHHW_SetPTPSubsecondIncrement(ETH, increment);

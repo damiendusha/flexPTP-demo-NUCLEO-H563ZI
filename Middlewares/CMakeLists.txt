@@ -1,57 +1,30 @@
-include(FetchContent)
- 
-FetchContent_Declare(
-  freertos_kernel
-  GIT_REPOSITORY https://github.com/FreeRTOS/FreeRTOS-Kernel.git
-  GIT_TAG        V11.3.0 # pinned: the CM33 port API is load-bearing for this project
-)
+# RTOS: Eclipse ThreadX, reached through ST's CMSIS-RTOS2 wrapper.
+#
+# S3 replaced a FreeRTOS FetchContent block here. The application never called FreeRTOS in any
+# quantity -- it is CMSIS-RTOS2 throughout -- so swapping the kernel is largely a matter of
+# swapping which implementation of that API gets linked.
+#
+# Removed along with FreeRTOS, each for a stated reason:
+#
+#   - FetchContent of FreeRTOS-Kernel V11.3.0, and the freertos_config interface library that
+#     carried Inc/FreeRTOSConfig.h to it. ThreadX takes its configuration from Inc/tx_user.h
+#     instead, reached via TX_INCLUDE_USER_DEFINE_FILE.
+#
+#   - FREERTOS_PORT=GCC_ARM_CM33_NTZ_NONSECURE and FREERTOS_HEAP=4. The ThreadX equivalents
+#     are ports/cortex_m33/gnu and the CMSIS wrapper's two byte pools; TX_SINGLE_MODE_NON_SECURE
+#     is what now expresses "no TrustZone".
+#
+#   - the `device_header` export, which pointed the CMSIS_device_header compile definition at
+#     the FreeRTOS port's portmacro.h. Nothing in this project ever included
+#     CMSIS_device_header -- it was inherited from the H743 template -- so it goes rather than
+#     being repointed at something equally unused.
+#
+# The kernel and wrapper themselves are in threadx.cmake, which was added in S2 and built but
+# left unlinked so that vendoring could be verified separately from the swap.
 
-add_library(freertos_config INTERFACE)
+include(${CMAKE_CURRENT_LIST_DIR}/threadx.cmake)
 
-target_include_directories(
-    freertos_config
-    SYSTEM INTERFACE
-    # (a bare "Inc" used to be listed here; Middlewares/Inc does not exist -- finding F32)
-    ${CMAKE_CURRENT_LIST_DIR}/../Inc
-)
-
-target_compile_definitions(freertos_config
-  INTERFACE
-    projCOVERAGE_TEST=0
-)
-
-target_compile_options(
-  freertos_config
-  INTERFACE
-  ${cpu_PARAMS}
-)
-
-set( FREERTOS_HEAP "4" CACHE STRING "" FORCE)
-# Select the native compile PORT
-set( FREERTOS_PORT "GCC_POSIX" CACHE STRING "" FORCE)
-# Select the cross-compile PORT
-if (CMAKE_CROSSCOMPILING)
-  set(FREERTOS_PORT "GCC_ARM_CM33_NTZ_NONSECURE" CACHE STRING "" FORCE)
-endif()
-
-FetchContent_MakeAvailable(freertos_kernel)
-
-target_include_directories(
-  ${CMAKE_PROJECT_NAME} 
-  PUBLIC
-  ${freertos_kernel_SOURCE_DIR}/include  
-  ${freertos_kernel_SOURCE_DIR}/portable/GCC/ARM_CM33_NTZ/non_secure
-)
-
-set(device_header "${freertos_kernel_SOURCE_DIR}/portable/GCC/ARM_CM33_NTZ/non_secure/portmacro.h" PARENT_SCOPE)
+# Linked in from S3. cmsis_rtos_tx pulls threadx in transitively.
+target_link_libraries(${CMAKE_PROJECT_NAME} cmsis_rtos_tx)
 
 target_link_directories(${CMAKE_PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_LIST_DIR})
-# ---------------------------------------------------------------------------
-# ThreadX + the CMSIS-RTOS2 wrapper.
-#
-# Built from S2, deliberately NOT linked into the firmware until S3. Vendoring and
-# configuring the kernel is kept separate from swapping it in, so that S2 can be verified by
-# the hardware suite showing NO change: if adding these sources moves the image, something is
-# wired in that should not be yet.
-# ---------------------------------------------------------------------------
-include(${CMAKE_CURRENT_LIST_DIR}/threadx.cmake)
