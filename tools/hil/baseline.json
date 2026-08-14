@@ -1,0 +1,94 @@
+{
+  "stage": "S0",
+  "checks": [
+    {
+      "name": "boot",
+      "status": "PASS",
+      "detail": "PHY SMSC LAN8742A (rev. 1) @0, link UP",
+      "data": {
+        "banner_present": true,
+        "phy": "SMSC LAN8742A (rev. 1) @0",
+        "link": "UP"
+      }
+    },
+    {
+      "name": "cli",
+      "status": "PASS",
+      "detail": "23/64 commands",
+      "data": {
+        "registered": 23,
+        "slots": 64,
+        "commands": [
+          "?",
+          "hist",
+          "osinfo",
+          "flexptp",
+          "ptp reset",
+          "ptp servo offset [offset_ns]",
+          "ptp log {def|corr|ts|info|locked|bmca} {on|off}",
+          "time [ns]",
+          "ptp master [[un]prefer] [clockid]",
+          "ptp info",
+          "ptp domain [domain]",
+          "ptp addend [addend]",
+          "ptp transport [{ipv4|802.3}]",
+          "ptp delmech [{e2e|p2p}]",
+          "ptp transpec [{def|gPTP}]",
+          "ptp profile [preset [<name>]]",
+          "ptp tlv [preset [name]|unload]",
+          "ptp pflags [<flags>]",
+          "ptp period <delreq|sync|ann> [<lp>|matched]",
+          "ptp coarse [threshold]",
+          "ptp priority [<p1> <p2>]",
+          "ptp pps {freq}",
+          "ptp servo st [var|default]",
+          "ptp servo sg [var|default]",
+          "ptp servo stm [var|default]"
+        ]
+      }
+    },
+    {
+      "name": "osinfo",
+      "status": "PASS",
+      "detail": "FreeRTOS V11.3.0, 10752 B free",
+      "data": {
+        "os": "FreeRTOS",
+        "version": "V11.3.0",
+        "free_bytes": 10752
+      }
+    },
+    {
+      "name": "ptp_start",
+      "status": "PASS",
+      "detail": "addend 3435973836",
+      "data": {
+        "addend": 3435973836,
+        "clock_id": "510400feff1e0056"
+      }
+    },
+    {
+      "name": "dhcp",
+      "status": "SKIP",
+      "detail": "enp5s0 has no IPv4 address -- run: sudo tools/hil/setup_host_net.sh",
+      "data": {}
+    },
+    {
+      "name": "ping",
+      "status": "SKIP",
+      "detail": "no board IP (dhcp check did not run)",
+      "data": {}
+    },
+    {
+      "name": "ptp_ts",
+      "status": "SKIP",
+      "detail": "no board IP",
+      "data": {}
+    },
+    {
+      "name": "ptp_sync",
+      "status": "SKIP",
+      "detail": "no board IP",
+      "data": {}
+    }
+  ]
+}
