@@ -44,13 +44,24 @@ class Context:
     board_ip: str | None = None
     host_iface: str = "enp5s0"
     ptp_settle_s: float = 90.0
+    ptp_locked: bool = False
     baseline: dict = field(default_factory=dict)
 
 
-# The addend is a derived constant, not a tuning knob: 2^32 / 1.25 for a 250 MHz
-# clk_ptp_ref_i and a 5 ns increment. See docs/ptp_clock.md. If this changes, the clock
-# derivation changed with it.
-EXPECTED_ADDEND = 3435973836
+# The addend's NOMINAL value: 2^32 / 1.25 for a 250 MHz clk_ptp_ref_i at a 5 ns increment.
+# See docs/ptp_clock.md.
+NOMINAL_ADDEND = 3435973836
+
+# ...but the servo tunes it, so the live value is never exactly nominal once the clock is
+# disciplining -- that is the entire point of the addend interface. An early version of
+# check_ptp_start asserted equality and failed against a perfectly healthy board that had
+# simply locked before the check ran.
+#
+# The band still catches what matters: an addend of zero (F2's failure mode, where both
+# planned configurations produced one) and any gross error in the clock derivation. The
+# observed range on this bench during a normal lock is 3435585115 - 3436216126, roughly
+# +/-0.02%; 1% is generous around that while remaining nowhere near zero.
+ADDEND_TOLERANCE = 0.01
 
 # The CLI's registered/available slot count once flexPTP has registered its commands.
 EXPECTED_CMD_COUNT = 23
@@ -165,10 +176,11 @@ def check_cpp_ctor(board: Board, ctx: Context) -> CheckResult:
 
 
 def check_ptp_start(board: Board, ctx: Context) -> CheckResult:
-    """flexPTP starts and programs the documented addend.
+    """flexPTP starts and the timestamp clock is programmed plausibly.
 
-    The addend is the single best one-line proof that the timestamp clock derivation is
-    intact: it is 2^32/1.25 for a 250 MHz clk_ptp_ref_i at a 5 ns increment (F53, F2).
+    The addend is the best one-line proof that the clock derivation is intact -- but it is a
+    tuning register, so assert a band around nominal rather than equality. See
+    ADDEND_TOLERANCE.
     """
     board.cmd("flexptp", quiet=1.2, timeout=10)
     out = board.cmd("ptp addend")
@@ -179,16 +191,26 @@ def check_ptp_start(board: Board, ctx: Context) -> CheckResult:
     addend = int(m.group(1))
     info = board.cmd("ptp info", quiet=0.8)
     cid = re.search(r"Own clock ID:\s*([0-9a-fA-F]+)", info)
-    data = {"addend": addend, "clock_id": cid.group(1) if cid else None}
+    deviation = abs(addend - NOMINAL_ADDEND) / NOMINAL_ADDEND
+    data = {
+        "addend": addend,
+        "nominal_addend": NOMINAL_ADDEND,
+        "deviation": deviation,
+        "clock_id": cid.group(1) if cid else None,
+    }
 
-    if addend != EXPECTED_ADDEND:
+    if addend == 0:
+        return CheckResult("ptp_start", Status.FAIL, "addend is zero -- see F2", data)
+    if deviation > ADDEND_TOLERANCE:
         return CheckResult(
             "ptp_start",
             Status.FAIL,
-            f"addend {addend} != expected {EXPECTED_ADDEND}",
+            f"addend {addend} is {deviation * 100:.2f}% from nominal {NOMINAL_ADDEND}",
             data,
         )
-    return CheckResult("ptp_start", Status.PASS, f"addend {addend}", data)
+    return CheckResult(
+        "ptp_start", Status.PASS, f"addend {addend} ({deviation * 100:+.3f}% of nominal)", data
+    )
 
 
 def check_threads(board: Board, ctx: Context) -> CheckResult:
@@ -282,104 +304,174 @@ def check_ping(board: Board, ctx: Context) -> CheckResult:
     )
 
 
-def check_ptp_sync(board: Board, ctx: Context) -> CheckResult:
-    """The servo locks against a host `ptp4l` and stays locked.
+def _ptp4l_running(ctx: Context) -> bool:
+    r = subprocess.run(["pgrep", "-af", "ptp4l"], capture_output=True, text=True)
+    return ctx.host_iface in r.stdout
 
-    Requires `ptp4l` already running on the host -- the harness does not start it, because
-    it needs root and outlives a single check. See tools/hil/README.md.
+
+def _ptp_is_slaved(board: Board) -> bool:
+    """True when the BMCA has selected a master other than ourselves.
+
+    A state probe rather than a transition watch. Watching the console for '-> SLAVE' only
+    works if the transition happens inside the observation window; once the board is already
+    locked the string never appears again, so the second PTP check to run would always fail.
     """
-    if ctx.board_ip is None:
-        return CheckResult("ptp_sync", Status.SKIP, "no board IP")
+    info = board.cmd("ptp info", quiet=0.8)
+    own = re.search(r"Own clock ID:\s*([0-9a-fA-F]+)", info)
+    master = re.search(r"Master clock ID:\s*([0-9a-fA-F]+)", info)
+    if not (own and master):
+        return False
+    return own.group(1).lower() != master.group(1).lower()
 
-    if not _ptp4l_running(ctx):
-        return CheckResult(
-            "ptp_sync",
-            Status.SKIP,
-            f"no ptp4l on {ctx.host_iface} -- see tools/hil/README.md",
-        )
 
+def _ensure_ptp_slaved(board: Board, ctx: Context) -> str | None:
+    """Get the board into the SLAVE state. Returns a failure reason, or None on success.
+
+    Shared by the two PTP checks so that each is independently runnable but they do not pay
+    for the settle twice.
+    """
+    if ctx.ptp_locked and _ptp_is_slaved(board):
+        return None
+
+    # Quiet the console first: polling `ptp info` against a stream of per-Sync log lines
+    # makes the reply hard to isolate.
     board.cmd("flexptp", quiet=1.2, timeout=10)
-    board.cmd("ptp log def on")
+    board.cmd("ptp log def off")
+    board.cmd("ptp log ts off")
 
-    text = board.read_for(ctx.ptp_settle_s)
-    if "-> SLAVE" not in text:
-        return CheckResult(
-            "ptp_sync",
-            Status.FAIL,
-            f"never reached SLAVE within {ctx.ptp_settle_s:.0f}s",
-            {"tail": text[-800:]},
-        )
+    deadline = time.time() + ctx.ptp_settle_s
+    while time.time() < deadline:
+        if _ptp_is_slaved(board):
+            ctx.ptp_locked = True
+            return None
+        time.sleep(2.0)
 
-    # One line per Sync; the correction in ppb is the 9th field.
-    corrections = []
-    for line in text.splitlines():
-        fields = line.split()
-        if len(fields) >= 11 and fields[0].isdigit():
-            try:
-                corrections.append(float(fields[8]))
-            except ValueError:
-                pass
-
-    if len(corrections) < 20:
-        return CheckResult(
-            "ptp_sync",
-            Status.FAIL,
-            f"only {len(corrections)} sync samples; expected >= 20",
-            {"samples": len(corrections)},
-        )
-
-    data = {
-        "samples": len(corrections),
-        "corr_ppb_mean": sum(corrections) / len(corrections),
-        "corr_ppb_absmax": max(abs(c) for c in corrections),
-    }
-    return CheckResult(
-        "ptp_sync",
-        Status.PASS,
-        f"SLAVE, {data['samples']} samples, mean {data['corr_ppb_mean']:.1f} ppb",
-        data,
-    )
+    return f"never reached SLAVE within {ctx.ptp_settle_s:.0f}s"
 
 
 def check_ptp_ts(board: Board, ctx: Context) -> CheckResult:
-    """Transmit AND receive timestamps are both flowing.
+    """Both hardware timestamps -- receive AND transmit -- are being captured.
 
-    This check exists because of the flexPTP CMSIS-RTOS2 defect documented in
-    docs/threadx_netxduo_feasibility.md: in that binding the transmit-timestamp callback is
-    invoked from an ISR with a blocking enqueue, which fails silently and drops every t3.
-    A sync test alone can still look plausible with t3 missing -- this one cannot.
+    THIS IS THE CHECK THAT MUST RUN BEFORE ptp_sync, and the reason is finding 1 of
+    docs/threadx_netxduo_feasibility.md: flexPTP's CMSIS-RTOS2 binding invokes the
+    transmit-timestamp callback from an ISR with a blocking enqueue, which ST's wrapper
+    rejects, so every t3 is silently discarded. A servo missing t3 can still *look* like it
+    is converging, so a sync test alone does not exclude it.
 
-    Needs `ptp log ts on`, whose output pairs each message with its timestamp.
+    `ptp log ts on` prints one block per sync cycle:
+
+        seqID: 403
+        T1: 1786703371.012952002 <- Sync TX (master)
+        T2: 1786703371.012963609 <- Sync RX (slave)
+        T3: 1786703370.062188559 <- Del_Req TX (slave)
+        T4: 1786703370.062219813 <- Del_Req RX (master)
+
+    T2 is our receive hardware timestamp and **T3 is our transmit hardware timestamp**. T1
+    and T4 come out of the master's messages and prove nothing about this board. So the
+    assertion is on T2 and T3: present, non-zero, and advancing.
     """
     if ctx.board_ip is None:
         return CheckResult("ptp_ts", Status.SKIP, "no board IP")
     if not _ptp4l_running(ctx):
         return CheckResult("ptp_ts", Status.SKIP, f"no ptp4l on {ctx.host_iface}")
 
-    board.cmd("flexptp", quiet=1.2, timeout=10)
+    reason = _ensure_ptp_slaved(board, ctx)
+    if reason:
+        return CheckResult("ptp_ts", Status.FAIL, reason)
+
     board.cmd("ptp log ts on")
-    text = board.read_for(30.0)
+    text = board.read_for(20.0)
     board.cmd("ptp log ts off")
 
-    tx = len(re.findall(r"--->", text))
-    rx = len(re.findall(r"<---", text))
-    data = {"tx_events": tx, "rx_events": rx}
+    def stamps(label: str) -> list[float]:
+        return [
+            int(s) + int(ns) / 1e9
+            for s, ns in re.findall(rf"^{label}:\s*(\d+)\.(\d+)", text, re.M)
+        ]
 
-    if rx == 0:
-        return CheckResult("ptp_ts", Status.FAIL, "no receive timestamps", data)
-    if tx == 0:
+    t2, t3 = stamps("T2"), stamps("T3")
+    data = {"t2_count": len(t2), "t3_count": len(t3)}
+
+    if not t2:
+        return CheckResult("ptp_ts", Status.FAIL, "no T2 -- no receive timestamps", data)
+    if not t3:
         return CheckResult(
             "ptp_ts",
             Status.FAIL,
-            "no TRANSMIT timestamps -- t3 is missing; see the CMSIS-RTOS2 ISR defect",
+            "no T3 -- transmit timestamps are missing (the CMSIS-RTOS2 ISR defect)",
             data,
         )
-    return CheckResult("ptp_ts", Status.PASS, f"tx={tx} rx={rx}", data)
+    if any(v == 0 for v in t3):
+        return CheckResult("ptp_ts", Status.FAIL, "T3 contains zero timestamps", data)
+
+    # Advancing, not merely present: a latched or stale value would otherwise pass.
+    data["t2_span_s"] = t2[-1] - t2[0]
+    data["t3_span_s"] = t3[-1] - t3[0]
+    if len(t3) > 1 and data["t3_span_s"] <= 0:
+        return CheckResult("ptp_ts", Status.FAIL, "T3 is not advancing", data)
+
+    return CheckResult(
+        "ptp_ts", Status.PASS, f"T2 x{len(t2)}, T3 x{len(t3)}, both advancing", data
+    )
 
 
-def _ptp4l_running(ctx: Context) -> bool:
-    r = subprocess.run(["pgrep", "-af", "ptp4l"], capture_output=True, text=True)
-    return ctx.host_iface in r.stdout
+def check_ptp_sync(board: Board, ctx: Context) -> CheckResult:
+    """The servo locks against a host `ptp4l` and the offset settles.
+
+    Requires `ptp4l` already running on the host -- the harness does not start it, because
+    it needs root and outlives a single check. See tools/hil/README.md.
+    """
+    if ctx.board_ip is None:
+        return CheckResult("ptp_sync", Status.SKIP, "no board IP")
+    if not _ptp4l_running(ctx):
+        return CheckResult(
+            "ptp_sync", Status.SKIP, f"no ptp4l on {ctx.host_iface} -- see tools/hil/README.md"
+        )
+
+    reason = _ensure_ptp_slaved(board, ctx)
+    if reason:
+        return CheckResult("ptp_sync", Status.FAIL, reason)
+
+    board.cmd("ptp log def on")
+    text = board.read_for(30.0)
+    board.cmd("ptp log def off")
+
+    # One line per Sync:
+    #   T1[s] T1[ns] T4[s] T4[ns] Dt[s] Dt[ns] Dt[tick] addend corr_ppb mpd_ns sync_period_ns
+    offsets_ns: list[float] = []
+    corrections: list[float] = []
+    for line in text.splitlines():
+        f = line.split()
+        if len(f) >= 11 and f[0].isdigit():
+            try:
+                offsets_ns.append(float(f[5]))
+                corrections.append(float(f[8]))
+            except ValueError:
+                pass
+
+    if len(offsets_ns) < 10:
+        return CheckResult(
+            "ptp_sync",
+            Status.FAIL,
+            f"only {len(offsets_ns)} sync samples in 30 s; expected >= 10",
+            {"samples": len(offsets_ns), "tail": text[-600:]},
+        )
+
+    # Steady state is judged on the back half: the front half may still be converging, and
+    # including it would make the figure depend on when the check happened to start.
+    tail = offsets_ns[len(offsets_ns) // 2 :]
+    data = {
+        "samples": len(offsets_ns),
+        "offset_ns_mean": sum(tail) / len(tail),
+        "offset_ns_absmax": max(abs(v) for v in tail),
+        "corr_ppb_mean": sum(corrections) / len(corrections),
+    }
+    return CheckResult(
+        "ptp_sync",
+        Status.PASS,
+        f"SLAVE, {data['samples']} samples, |offset| <= {data['offset_ns_absmax']:.0f} ns",
+        data,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -402,15 +494,15 @@ ALL_CHECKS = {
 # Which checks are meaningful at each stage of the ThreadX port. Ordering matters: `dhcp`
 # populates the board IP that `ping`, `ptp_ts` and `ptp_sync` need.
 STAGES = {
-    "S0": ["boot", "cli", "osinfo", "ptp_start", "dhcp", "ping", "ptp_ts", "ptp_sync"],
-    "S1": ["boot", "cli", "osinfo", "cpp_ctor", "ptp_start", "dhcp", "ping", "ptp_ts", "ptp_sync"],
+    "S0": ["boot", "cli", "osinfo", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync"],
+    "S1": ["boot", "cli", "osinfo", "cpp_ctor", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync"],
     "S3": ["boot", "cli", "osinfo", "cpp_ctor", "threads"],
     "S4": ["boot", "cli", "osinfo", "cpp_ctor", "threads"],
     "S5a": ["boot", "cli", "osinfo", "threads"],
     "S5b": ["boot", "cli", "osinfo", "threads"],
     "S5c": ["boot", "cli", "osinfo", "threads", "dhcp", "ping"],
     "S5d": ["boot", "cli", "osinfo", "threads", "dhcp", "ping"],
-    "S6": ["boot", "cli", "osinfo", "threads", "ptp_start", "dhcp", "ping", "ptp_ts", "ptp_sync"],
-    "S7": ["boot", "cli", "osinfo", "threads", "ptp_start", "dhcp", "ping", "ptp_ts", "ptp_sync"],
+    "S6": ["boot", "cli", "osinfo", "threads", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync"],
+    "S7": ["boot", "cli", "osinfo", "threads", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync"],
     "S8": list(ALL_CHECKS),
 }

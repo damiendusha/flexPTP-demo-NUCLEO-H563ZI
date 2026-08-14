@@ -73,7 +73,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending · ⏸️ optional/deferred
 | **P1** | Supply-chain decision (Eclipse + ST wrapper) | — | — | ✅ done |
 | **P2** | This execution plan | — | — | ✅ done |
 | **P3** | Plan approved by the maintainer | — | — | ⬜ **pending — blocks everything below** |
-| **S0** | Baseline capture + HIL harness (`tools/hil/`) | 🔄 4/8 captured | 1 d | 🔄 **harness done; baseline blocked on host DHCP/ptp4l setup (needs root)** |
+| **S0** | Baseline capture + HIL harness (`tools/hil/`) | ✅ 8/8 green, twice | 1 d | ✅ **done** |
 | **S1** | C++ proof TU + host GTest tree (`test/`) | ✅ boot, ctor ran, no size/behaviour change | 0.5–1 d | ⬜ pending |
 | **S1b** | Tier 1+2 host harness: real ST headers + descriptor-ring model; characterisation tests pinning current-driver behaviour | ⬜ host only | 1–1.5 d | ✅ **done — 25 tests, 0.06 s; F57/F61/F71 + wrap ordering all mutation-verified; no production change needed** |
 | **S2** | Vendor ThreadX + wrapper; `tx_user.h`; low-level init; linker script | ⬜ does not link yet | 0.5–1 d | ⬜ pending |
@@ -431,32 +431,42 @@ document's stage-detail section before stopping.
 
 **Exit criteria:** `./tools/hil/run.py --stage S0` green, twice in a row, from a power cycle.
 
-#### Progress — 14 Aug 2026
+#### Progress — 14 Aug 2026 — **DONE**
 
 Harness delivered: `tools/hil/{hil,checks,run}.py`, `setup_host_net.sh`, `README.md`.
 Baseline firmware built (Debug, FLASH 216 888 B / 10.34%, SRAM1 133 160 B / 50.80%), flashed
-and verified.
+and verified. **`--stage S0` green 8/8, twice in a row, second run compared against the
+saved baseline with no regressions.**
 
-Captured and passing, against the pre-port firmware:
-
-| Check | Result |
+| Check | Baseline value |
 |---|---|
-| `boot` | banner, `PHY: SMSC LAN8742A (rev. 1) @0`, `ETH LINK: UP (100 Mbps, FULL duplex)`, no fault output |
-| `cli` | **23/64** registered commands — matches the README |
-| `osinfo` | FreeRTOS V11.3.0, 13 840 B free idle / 10 752 B after flexPTP starts |
-| `ptp_start` | addend **3435973836**, exactly the derived nominal (`docs/ptp_clock.md`); clock ID `510400feff1e0056` |
+| `boot` | banner, `PHY: SMSC LAN8742A (rev. 1) @0`, `ETH LINK: UP (100 Mbps, FULL duplex)` |
+| `cli` | **23/64** registered commands |
+| `osinfo` | FreeRTOS V11.3.0; 13 840 B free idle, 10 752 B with flexPTP running |
+| `dhcp` | `192.168.2.191` from the host's dnsmasq |
+| `ping` | 300 × 1400 B, **0% loss, 0.365 ms** mean RTT |
+| `ptp_start` | addend **3435973836**, exactly nominal; clock ID `510400feff1e0056` |
+| `ptp_ts` | **T2 ×20, T3 ×20, both advancing** |
+| `ptp_sync` | `SLAVE`, 30 samples, **|offset| ≤ 11.8 µs** |
 
-Skipped, and why: the board-facing NIC `enp5s0` has carrier but no IPv4, so the board gets no
-DHCP lease and `dhcp`/`ping`/`ptp_ts`/`ptp_sync` cannot run. This bench is the direct-cable
-topology of [host_ptp_setup.md](host_ptp_setup.md), which requires the host to serve DHCP
-itself. That needs root; `sudo` here is password-interactive. **Blocked on the maintainer
-running `sudo tools/hil/setup_host_net.sh`** (and `--with-ptp4l` for the PTP checks).
+The offset figure is the host's software-timestamping floor, not the board: the board-facing
+NIC is an RTL8125 reporting `PTP Hardware Clock: none`, so `ptp4l` runs with `-S`. Consistent
+with the 15–26 µs typical magnitude already recorded in [host_ptp_setup.md](host_ptp_setup.md).
+
+**Three checks were wrong, and finding that out is what this stage is for.** All three passed
+only after being fixed; none was a firmware defect:
+
+| Check | Why it was wrong |
+|---|---|
+| `ptp_start` | Asserted the addend *equalled* nominal. It is a tuning register — once the servo disciplines, it moves (observed 3435888045 mid-lock). Now asserts a ±1% band, which still catches F2's addend-of-zero |
+| `ptp_ts` | Counted `--->`/`<---`, which is `PTP_LOG_TRANSMISSION` — a channel with **no CLI switch** (F56). `ptp log ts` is `PTP_LOG_TIMESTAMPS` and prints T1–T4 blocks. Now parses those, which is a better signal anyway: **T2 is our receive stamp and T3 our transmit stamp**, so asserting both are present, non-zero and advancing is a direct test for the finding-1 failure mode |
+| `ptp_sync` | Watched the console for `-> SLAVE`. That transition happens once; whichever PTP check ran second could never see it. Now probes state via `ptp info` (master clock ID ≠ own clock ID), so both checks are independently runnable |
+
+Stage order also changed: `ptp_ts` now runs **before** `ptp_sync`, so a converging-looking
+offset is never believed before transmit timestamps have been shown to exist.
 
 Incidental finding, not a defect: flexPTP starts and reaches `LISTENING` with no IP address
-at all, contrary to the banner's advice to wait for DHCP. Useful — it is what made the
-`ptp_start` check possible on an unconfigured bench.
-
----
+at all, contrary to the banner's advice to wait for DHCP.
 
 ### S1 — C++ proof TU and host GTest tree
 

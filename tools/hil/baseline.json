@@ -58,37 +58,56 @@
       }
     },
     {
+      "name": "dhcp",
+      "status": "PASS",
+      "detail": "192.168.2.191",
+      "data": {
+        "ip": "192.168.2.191"
+      }
+    },
+    {
+      "name": "ping",
+      "status": "PASS",
+      "detail": "0% loss, avg 0.366 ms",
+      "data": {
+        "loss_pct": 0.0,
+        "rtt_min_ms": 0.341,
+        "rtt_avg_ms": 0.366,
+        "rtt_max_ms": 0.441
+      }
+    },
+    {
       "name": "ptp_start",
       "status": "PASS",
-      "detail": "addend 3435973836",
+      "detail": "addend 3435973836 (+0.000% of nominal)",
       "data": {
         "addend": 3435973836,
+        "nominal_addend": 3435973836,
+        "deviation": 0.0,
         "clock_id": "510400feff1e0056"
       }
     },
     {
-      "name": "dhcp",
-      "status": "SKIP",
-      "detail": "enp5s0 has no IPv4 address -- run: sudo tools/hil/setup_host_net.sh",
-      "data": {}
-    },
-    {
-      "name": "ping",
-      "status": "SKIP",
-      "detail": "no board IP (dhcp check did not run)",
-      "data": {}
-    },
-    {
       "name": "ptp_ts",
-      "status": "SKIP",
-      "detail": "no board IP",
-      "data": {}
+      "status": "PASS",
+      "detail": "T2 x20, T3 x20, both advancing",
+      "data": {
+        "t2_count": 20,
+        "t3_count": 20,
+        "t2_span_s": 19.000669956207275,
+        "t3_span_s": 18.413543224334717
+      }
     },
     {
       "name": "ptp_sync",
-      "status": "SKIP",
-      "detail": "no board IP",
-      "data": {}
+      "status": "PASS",
+      "detail": "SLAVE, 30 samples, |offset| <= 11755 ns",
+      "data": {
+        "samples": 30,
+        "offset_ns_mean": 1875.2,
+        "offset_ns_absmax": 11755.0,
+        "corr_ppb_mean": -31.881900000000005
+      }
     }
   ]
 }
