@@ -79,7 +79,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending · ⏸️ optional/deferred
 | **S2** | Vendor ThreadX + wrapper; `tx_user.h`; low-level init; linker script | ✅ 9/9, image byte-identical | 0.5–1 d | ✅ **done** |
 | **S3** | Kernel swap: CMSIS-RTOS2 on ThreadX, `main.c` reorder, hooks, `osinfo` — **lwIP removed, no network** | ✅ 5/5 | 1.5–2 d | ✅ **done** |
 | **S4** | Vendor NetX Duo; `nx_user.h`; IP instance + packet pool; **stub driver** | ✅ 5/5, IP thread alive | 0.5 d | ✅ **done** |
-| **S5a** | Driver: `INITIALIZE` / `ENABLE` / `DISABLE` / `GET_STATUS` | ✅ link up/down detection on console | 0.5 d | ⬜ pending |
+| **S5a** | Driver: `INITIALIZE` / `ENABLE` / `DISABLE` / `GET_STATUS` | ✅ 4/4, PHY + link UP | 0.5 d | ✅ **done** |
 | **S5b** | Driver: RX path → `nx_link_ethernet_packet_received()` | ✅ host `arping` gets replies | 1 d | ⬜ pending |
 | **S5c** | Driver: TX path, multicast join/leave, deferred processing | ✅ `ping` 0% loss @ 1400 B | 1 d | ⬜ pending |
 | **S5d** | DHCP client | ✅ address acquired, matches baseline behaviour | 0.5 d | ⬜ pending |
@@ -680,6 +680,36 @@ Add one that is new: **assert the ≥12-byte head-room precondition** before
 
 **Hardware verification:** as per the S5a–S5d table above. `ping` at 0% loss over 300 × 1400 B is
 the gate for S5c; do not proceed to S6 on a lossy link.
+
+#### S5a progress — 15 Aug 2026 — **DONE**
+
+`--stage S5a` green 4/4. `Drivers/EthDrv/eth_drv_netxduo.c` created, on the **unchanged**
+`mac_drv.c`. On the board:
+
+```
+PHY: SMSC LAN8742A (rev. 1) @0
+ETH LINK: UP (100 Mbps, FULL duplex)
+...
+  phy pri=32 (cmsis 24) state=4 runs=30
+```
+
+Carried over from `eth_drv_lwip.c` rather than rewritten: the `_Static_assert` on the
+state/descriptor layout, the ring depths and buffer size, the SRAM3 placement, and the
+`phy_thread` that also drains the DMA error latch (F68 — the abnormal flags cannot be printed
+from the ISR that detects them).
+
+Three things the port shaped differently:
+
+- **The MAC address is split, not copied.** lwIP took a 6-byte `netif->hwaddr`; NetX Duo wants
+  a 16-bit MSW and a 32-bit LSW — the same form `nx_link_ethernet_packet_send()` takes its
+  destination in. Written out byte by byte rather than `memcpy`'d, because getting the split
+  wrong yields an address that looks plausible in a debugger and is wrong on the wire.
+- **No `nx_interface_address_length` field exists**, unlike the guess in the first draft; NetX
+  Duo takes the address purely from the msw/lsw pair.
+- **The first poll no longer announces `DOWN`.** Auto-negotiation has simply not finished at
+  that point, and reporting it made a normal boot look like a cable fault. Genuine transitions
+  after the first poll are still reported. The `boot` check correspondingly now reads the
+  **last** link state rather than the first, and fails if it is not `UP`.
 
 ---
 

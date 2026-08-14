@@ -101,12 +101,15 @@ def check_boot(board: Board, ctx: Context) -> CheckResult:
         return CheckResult("boot", Status.FAIL, "banner missing")
 
     phy = re.search(r"PHY:\s*(.+?)\s*$", text, re.M)
-    link = re.search(r"ETH LINK:\s*(UP|DOWN)", text)
+    # The LAST reported state, not the first: the link legitimately starts down and comes up
+    # when auto-negotiation completes, so the first match says nothing useful.
+    links = re.findall(r"ETH LINK:\s*(UP|DOWN)", text)
+    link = links[-1] if links else None
 
     data = {
         "banner_present": True,
         "phy": phy.group(1).strip() if phy else None,
-        "link": link.group(1) if link else None,
+        "link": link,
         "expect_phy": ctx.expect_phy,
     }
 
@@ -121,6 +124,8 @@ def check_boot(board: Board, ctx: Context) -> CheckResult:
 
     if phy is None:
         return CheckResult("boot", Status.FAIL, "PHY was never identified", data)
+    if link != "UP":
+        return CheckResult("boot", Status.FAIL, f"link is {link}; is the cable in?", data)
     return CheckResult(
         "boot", Status.PASS, f"PHY {data['phy']}, link {data['link']}", data
     )

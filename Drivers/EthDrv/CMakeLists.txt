@@ -8,9 +8,10 @@ if (ETH_STACK STREQUAL "ETHERLIB")
         eth_drv_etherlib.h
         )
 elseif(ETH_STACK STREQUAL "NETXDUO")
-    # S4 has no driver file: the stub lives inside ethernet_netxduo.c so that the stage adds
-    # exactly one translation unit. eth_drv_netxduo.c arrives in S5a and takes it over.
-    set(ETH_DRV_SRC)
+    set(ETH_DRV_SRC
+        eth_drv_netxduo.c
+        eth_drv_netxduo.h
+    )
 elseif(ETH_STACK STREQUAL "NONE")
     # S3-S5 of the ThreadX port: eth_drv_lwip.c was removed with lwIP and eth_drv_netxduo.c
     # arrives in S5a. mac_drv.c is still compiled -- the PTP clock registers it owns are
