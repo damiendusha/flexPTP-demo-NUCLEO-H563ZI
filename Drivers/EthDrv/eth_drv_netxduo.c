@@ -33,6 +33,7 @@
 
 #include "mac_drv.h"
 #include "phy_drv/phy_common.h"
+#include "flexptp_nsd/ptp_tx_timestamp.h"
 #include "standard_output/standard_output.h"
 
 /* --- Descriptors and buffers ----------------------------------------------------------- */
@@ -85,6 +86,7 @@ static LinkState drv_link = {false, false, 0, false};
 static ULONG drv_rx_frames, drv_rx_dropped_nopacket, drv_rx_dropped_size;
 static ULONG drv_tx_frames, drv_tx_dropped_linkdown, drv_tx_dropped_mac;
 static ULONG drv_tx_last_len, drv_tx_last_cmd;
+static ULONG drv_tx_timestamped;
 static uint8_t drv_tx_last_head[34];
 
 /* --- Receive ------------------------------------------------------------------------------- */
@@ -398,6 +400,71 @@ static void drv_get_status(NX_IP_DRIVER *request) {
     request->nx_ip_driver_status = NX_SUCCESS;
 }
 
+/* --- Pending transmit timestamps ------------------------------------------------------------ */
+
+/* Which uid belongs to which outgoing packet.
+ *
+ * lwIP let this project bolt `tag` and `tx_cb` straight onto struct pbuf through
+ * LWIP_PBUF_CUSTOM_DATA. NX_PACKET has no such hook and no spare field, so the association
+ * lives beside the packet instead, keyed on its address.
+ *
+ * Keying on a pointer has one hazard worth naming: NetX Duo recycles packets, so a stale entry
+ * whose packet has been freed and reallocated would hand the servo a completely wrong uid --
+ * silently, and only for the Delay_Req cycles unlucky enough to collide. Two things prevent
+ * that: the entry is cleared the moment the driver consumes it, and the NSD cancels the record
+ * explicitly if the send fails. Both paths are exercised; neither is optional.
+ *
+ * Four entries is ample -- flexPTP has at most a Sync and a Delay_Req outstanding -- and a
+ * linear scan of four is cheaper than anything cleverer. */
+#define TX_TS_PENDING_MAX (4)
+
+typedef struct {
+    NX_PACKET *packet; /* NX_NULL when the slot is free */
+    uint32_t uid;
+} TxTsPending;
+
+static TxTsPending tx_ts_pending[TX_TS_PENDING_MAX];
+
+void eth_drv_request_tx_timestamp(NX_PACKET *packet, uint32_t uid) {
+    if (packet == NX_NULL) {
+        return;
+    }
+
+    for (unsigned i = 0; i < TX_TS_PENDING_MAX; i++) {
+        if (tx_ts_pending[i].packet == NX_NULL) {
+            tx_ts_pending[i].packet = packet;
+            tx_ts_pending[i].uid = uid;
+            return;
+        }
+    }
+
+    /* Full. The message still goes out, just without a transmit timestamp -- flexPTP will
+       time that Delay_Req out rather than mispair it. Reported because a full table means
+       timestamps are not being consumed, which is a real fault upstream of here. */
+    MSG("ETH: transmit-timestamp table full; uid %u will not be stamped\n", (unsigned)uid);
+}
+
+void eth_drv_cancel_tx_timestamp(NX_PACKET *packet) {
+    for (unsigned i = 0; i < TX_TS_PENDING_MAX; i++) {
+        if (tx_ts_pending[i].packet == packet) {
+            tx_ts_pending[i].packet = NX_NULL;
+            return;
+        }
+    }
+}
+
+/** Consume the record for `packet`, if any. Returns true and writes the uid when found. */
+static bool tx_ts_take(NX_PACKET *packet, uint32_t *uid) {
+    for (unsigned i = 0; i < TX_TS_PENDING_MAX; i++) {
+        if (tx_ts_pending[i].packet == packet) {
+            *uid = tx_ts_pending[i].uid;
+            tx_ts_pending[i].packet = NX_NULL; /* cleared before the send, never after */
+            return true;
+        }
+    }
+    return false;
+}
+
 /* --- Transmit -------------------------------------------------------------------------------- */
 
 /* Assembled here because ETHHW_Transmit() takes one flat buffer and NX_PACKET may be chained.
@@ -512,8 +579,31 @@ static void drv_send(NX_IP_DRIVER *request) {
     memcpy(drv_tx_last_head, tx_concat_buf, (offset < sizeof(drv_tx_last_head))
                                                 ? offset : sizeof(drv_tx_last_head));
 
+    /* Does this frame want a hardware transmit timestamp?
+     *
+     * Two things must both be true: the NSD asked for one (the capability flag, which survives
+     * nx_ip_packet_send because that ORs rather than assigns), and it left a uid for us. The
+     * record is taken -- not merely read -- so it cannot be matched twice, and so a packet
+     * recycled at the same address later starts clean. */
+    uint8_t tx_opts = ETHHW_TXOPT_NONE;
+    ETHHW_OptArg_TxTsCap ts_arg;
+    void *tx_opt_args = NULL;
+    uint32_t ts_uid = 0;
+
+    if ((packet->nx_packet_interface_capability_flag & NX_INTERFACE_CAPABILITY_PTP_TIMESTAMP) &&
+        tx_ts_take(packet, &ts_uid)) {
+        memset(&ts_arg, 0, sizeof(ts_arg));
+        /* The MAC driver stores both as uint32_t in the descriptor extension; on this 32-bit
+           target that is lossless for a function pointer and for the uid alike. */
+        ts_arg.txTsCbPtr = (uint32_t)(uintptr_t)&ptp_tx_timestamp_from_isr;
+        ts_arg.tag = ts_uid;
+        tx_opts = ETHHW_TXOPT_CAPTURE_TS;
+        tx_opt_args = &ts_arg;
+        drv_tx_timestamped++;
+    }
+
     bool sent = ETHHW_Transmit(ETH, tx_concat_buf, (uint16_t)offset,
-                               ETHHW_TXOPT_NONE, NULL);
+                               tx_opts, tx_opt_args);
 
     if (sent) {
         drv_tx_frames++;
@@ -640,6 +730,38 @@ void eth_drv_report(void) {
     MSG("  tx: %u sent, %u dropped (link down), %u dropped (MAC busy)\n",
         (unsigned)drv_tx_frames, (unsigned)drv_tx_dropped_linkdown, (unsigned)drv_tx_dropped_mac);
 
+    MSG("  tx timestamped: %u requested\n", (unsigned)drv_tx_timestamped);
+    {
+        /* Declared here rather than in a header: this is a bring-up diagnostic and the NSD is
+           a layer above the driver, so a permanent dependency the other way would be wrong. */
+        extern void ptp_nsd_stats(uint32_t *, uint32_t *, uint32_t *, uint32_t *);
+        extern void ptp_tx_timestamp_stats(uint32_t *, uint32_t *, uint32_t *);
+        uint32_t n = 0, p = 0, e = 0, t = 0, posted = 0, delivered = 0, dropped = 0;
+        ptp_nsd_stats(&n, &p, &e, &t);
+        ptp_tx_timestamp_stats(&posted, &delivered, &dropped);
+        MSG("  nsd: notify %u, packets %u, enqueued %u, tx-requested %u\n",
+            (unsigned)n, (unsigned)p, (unsigned)e, (unsigned)t);
+        MSG("  ptp ts: posted %u, delivered %u, dropped %u\n",
+            (unsigned)posted, (unsigned)delivered, (unsigned)dropped);
+
+        extern void ptp_nsd_rx_types(uint32_t *);
+        uint32_t types[16];
+        ptp_nsd_rx_types(types);
+        /* PTP messageType: 0 Sync, 1 Delay_Req, 8 Follow_Up, 9 Delay_Resp, 11 Announce. */
+        MSG("  nsd rx types: sync %u delreq %u fup %u delresp %u ann %u\n",
+            (unsigned)types[0], (unsigned)types[1], (unsigned)types[8],
+            (unsigned)types[9], (unsigned)types[11]);
+
+        extern void ptp_nsd_last_rx(uint8_t *, uint32_t *);
+        uint8_t head[16];
+        uint32_t hlen = 0;
+        ptp_nsd_last_rx(head, &hlen);
+        MSG("  nsd last rx: %u bytes\n    ", (unsigned)hlen);
+        for (unsigned i = 0; i < sizeof(head); i++) {
+            MSG("%x ", (unsigned)head[i]);
+        }
+        MSG("\n");
+    }
     MSG("  tx last: cmd=%u, %u bytes\n    ", (unsigned)drv_tx_last_cmd, (unsigned)drv_tx_last_len);
     for (unsigned i = 0; i < sizeof(drv_tx_last_head); i++) {
         MSG("%x ", (unsigned)drv_tx_last_head[i]);
@@ -663,6 +785,14 @@ void eth_drv_report(void) {
             MSG("  ip: rx %u (invalid %u, dropped %u, cksum %u), tx %u (failed %u)\n",
                 (unsigned)ip_total_rx, (unsigned)ip_invalid_rx, (unsigned)ip_dropped_rx,
                 (unsigned)ip_cksum_err, (unsigned)ip_total_tx, (unsigned)ip_send_fail);
+        }
+
+        ULONG udp_rx = 0, udp_tx = 0, udp_invalid = 0, udp_dropped = 0, udp_cksum = 0;
+        if (nx_udp_info_get(drv_ip, &udp_tx, NX_NULL, &udp_rx, NX_NULL,
+                            &udp_invalid, &udp_dropped, &udp_cksum) == NX_SUCCESS) {
+            MSG("  udp: rx %u (invalid %u, dropped %u, cksum %u), tx %u\n",
+                (unsigned)udp_rx, (unsigned)udp_invalid, (unsigned)udp_dropped,
+                (unsigned)udp_cksum, (unsigned)udp_tx);
         }
 
         ULONG arp_req_sent = 0, arp_req_rcvd = 0, arp_rsp_sent = 0, arp_rsp_rcvd = 0;

@@ -48,9 +48,14 @@ set(FLEXPTP_HWPORT_SRC ${CMAKE_SOURCE_DIR}/Src/flexptp_port/ptp_port_stm32h563.c
 # (FLEXPTP_NSD_SRC + FLEXPTP_NETWORK_STACK) rather than one of its bundled examples. Leaving
 # FLEXPTP_NSD unmatched is what makes flexPTP take its "custom network stack driver" path.
 set(FLEXPTP_NSD "CUSTOM")
-# S6 replaces this with nsd_netxduo.c. Until then the stub keeps flexPTP linked and its 19
-# CLI commands registered while the stack underneath is rebuilt.
-set(FLEXPTP_NSD_SRC ${CMAKE_SOURCE_DIR}/Src/flexptp_nsd/nsd_stub.c)
+if (ETH_STACK STREQUAL "NETXDUO")
+    set(FLEXPTP_NSD_SRC
+        ${CMAKE_SOURCE_DIR}/Src/flexptp_nsd/nsd_netxduo.c
+        ${CMAKE_SOURCE_DIR}/Src/flexptp_nsd/ptp_tx_timestamp.c)
+else()
+    # S3-S5 kept flexPTP linked on a no-op driver while the stack underneath was rebuilt.
+    set(FLEXPTP_NSD_SRC ${CMAKE_SOURCE_DIR}/Src/flexptp_nsd/nsd_stub.c)
+endif()
 set(FLEXPTP_NETWORK_STACK ${ETH_STACK_LIB})
 set(FLEXPTP_SERVO "KALMAN")
 set(FLEXPTP_INCLUDES ${include_dirs} ${CMAKE_SOURCE_DIR}/Src/flexptp_port)

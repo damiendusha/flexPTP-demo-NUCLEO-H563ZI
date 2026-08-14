@@ -84,7 +84,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending · ⏸️ optional/deferred
 | **S5c** | Driver: TX path, multicast join/leave, deferred processing | ✅ ping 0% @ 1400 B, 0.337 ms | 1 d | ✅ **done** |
 | **S5d** | DHCP client | ✅ 192.168.2.191, 6/6 vs baseline | 0.5 d | ✅ **done** |
 | **S5e** | *Tier 3:* real ThreadX (`ports/linux`) + real NetX Duo + RAM driver on the host | ⬜ host only | 1–2 d | ⬜ pending |
-| **S6** | NSD: UDP/IPv4 E2E + TX-timestamp deferral fix | ✅ **flexPTP syncs; offset vs baseline** | 2–3 d | ⬜ pending |
+| **S6** | NSD: UDP/IPv4 E2E + TX-timestamp deferral fix | 🔄 receive proven end-to-end; **BMCA selects no master** | 2–3 d | 🔄 **in progress** |
 | **S7** | 802.3 transport, P2P, all three profile presets | ✅ each preset against `ptp4l` | 1–2 d | ⬜ pending |
 | **S8** | Cleanup, docs rewrite, CI update, final review | ✅ full regression suite vs S0 baseline | 1.5–2 d | ⬜ pending |
 | **B1** | *Bonus:* unit-test the F42 TX-ring ordering logic | ⏸️ | 0.5 d | ⏸️ optional |
@@ -759,6 +759,61 @@ materially different offset means something is wrong, in either direction.
 
 **Exit criteria:** offset trace statistically indistinguishable from baseline over 15 minutes.
 Run `/code-review ultra` here.
+
+#### Progress — 15 Aug 2026 — **IN PROGRESS, not passing**
+
+Written and on the board: `Src/flexptp_nsd/nsd_netxduo.c` (the four NSD functions over
+UDP/IPv4) and `Src/flexptp_nsd/ptp_tx_timestamp.c` (the finding-1 deferral). The network layer
+is **unregressed** — `--stage S5d --compare baseline.json` still 6/6 — and the host tests still
+pass.
+
+**What is proven to work.** Instrumented end to end with `ethinfo`:
+
+```
+udp: rx 37 (invalid 0, dropped 0, cksum 0), tx 2
+nsd: notify 35, packets 35, enqueued 35, tx-requested 0
+nsd rx types: sync 14 delreq 0 fup 14 delresp 0 ann 7
+nsd last rx: 44 bytes
+  08 12 00 2c 00 00 ...
+```
+
+So: the IGMP join goes out correctly (verified on the wire — destination MAC `01:00:5e:00:01:81`,
+IP protocol 2, to 224.0.1.129); Sync, Follow_Up and Announce all arrive in the right
+proportions on both the event and general sockets; each is a well-formed PTPv2 message at the
+right offset with the right length; and all 35 are handed to `ptp_receive_enqueue()`. flexPTP's
+`ptp` thread is alive and has woken 52 times, so it is consuming them.
+
+**What does not work.** BMCA selects nothing: `ptp info` reports
+`Master clock ID: 0000000000000000`, no state transition is logged even with `ptp log info`
+and `ptp log bmca` enabled, and consequently no `Delay_Req` is ever sent
+(`tx-requested 0`). The transport, domain and delay mechanism all read correctly
+(`IPv4`, `0`, `E2E`).
+
+**Where the next session should start.** The fault is above the NSD — messages of the right
+shape reach flexPTP and it declines to act on them — so the remaining candidates are inside
+flexPTP's own processing under the `FLEXPTP_CMSIS_OS2` binding, which this port is the first
+to exercise here. Worth checking in order:
+
+1. Whether `ptp_process_packet()` rejects on the `versionPTP` byte. The received value is
+   `0x12` — PTPv2 in the low nibble, `minorVersionPTP = 1` in the high nibble, which is what
+   a current `ptp4l` emits. Note the **lwIP baseline accepted the same traffic from the same
+   `ptp4l` instance**, so this is only a candidate if something else differs.
+2. The `sRawRxMsgBuf` path: whether `msgb_alloc()` is returning NULL and the
+   `MSGB_ERR_FULL` branch is silently swallowing every message. `ptp log info on` should
+   print "The PTP receive packet buffer is full" if so, and it prints nothing — which is
+   itself informative.
+3. Whether the notification/uid queue pairing in the CMSIS-RTOS2 binding is losing the
+   association — the binding posts to two separate queues per message and only the
+   FreeRTOS path has been exercised in the field.
+
+Diagnostics are all in place for that work: `ethinfo` now reports driver, IP, UDP, ARP and NSD
+counters, a message-type histogram, the head of the last received PTP payload and the head of
+the last transmitted frame.
+
+**One real bug was found and fixed along the way:** `ptp_tx_timestamp_init()` was never called,
+so the deferral queue would have been NULL when the first transmit timestamp arrived and every
+`t3` would have been dropped in the ISR — the exact failure the module exists to prevent,
+reintroduced by forgetting to wire it up. Now initialised from `ptp_nsd_init()`, idempotently.
 
 ---
 
