@@ -8,7 +8,8 @@ Rationale, evidence and the supply-chain decision are in
 
 Companion documents: [architecture.md](architecture.md) ·
 [implementation_plan.md](implementation_plan.md) (the original H743→H563 port, same format) ·
-[port_review.md](port_review.md)
+[port_review.md](port_review.md) ·
+**[threadx_s6_handoff.md](threadx_s6_handoff.md) — start here to pick up the outstanding stage**
 
 > **Status: NOT STARTED.** Written for approval. No implementation work has begun.
 
