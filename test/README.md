@@ -90,5 +90,23 @@ restored and verified byte-identical:
 |---|---|
 | Drop `!(bd)->ext.inFlight` from `ETHHW_DESC_NEEDS_PROCESSING` (**F61**) | `RxRing.DoesNotRedeliverAFrameStillInFlight` **fails** |
 | Remove the `DMACRDTPR` write from `ETHHW_RestoreRXDesc` (**F71**) | `RxRing.RestoringWritesTheTailPointerToRestartTheEngine` **fails** |
+| Hoist `found` out of `ETHHW_ProcessTx`'s retry loop (**F57**) | six `TxRing` tests **time out** — see below |
+| Widen the ordering delta to `int32_t` (the wrap bug) | `TxRing.DispatchesInOrderAcrossTheSixteenBitCounterWrap` **fails** |
 
 Do the same for any new characterisation test: break the thing, watch it go red, put it back.
+
+Two things this exercise taught, both of which changed the code above:
+
+- **F57 presents as a hang, not a wrong value.** With the per-pass count hoisted, `found`
+  never reaches zero and the drain loop spins forever. Without a timeout the suite wedges and
+  CI waits for its job limit instead of reporting anything. That is why `add_host_test()` sets
+  `TIMEOUT 10` — 250× headroom over the 0.04 s the whole suite takes, and it turns the hang
+  into six clean failures.
+
+- **The first version of the wrap test could not fail.** Four timestamped frames straddling
+  the wrap are ordered identically by the correct modular arithmetic and by the buggy widened
+  subtraction: the `delta == 1` fast path takes the first, and the rest are all post-wrap. A
+  discriminating case needs two candidates pending *simultaneously* on opposite sides of the
+  wrap with neither at delta 1 — which is why that test now sends untimestamped filler frames
+  to open a gap. It passes on the real driver and fails on the mutation; the original passed
+  on both, and would have been worse than no test at all.

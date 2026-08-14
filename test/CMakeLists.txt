@@ -93,7 +93,15 @@ function(add_host_test name)
     add_executable(${name} ${name}.cpp)
     target_link_libraries(${name} PRIVATE eth_model GTest::gtest_main)
     target_compile_options(${name} PRIVATE -Wall -Wextra)
-    gtest_discover_tests(${name})
+
+    # A timeout is not boilerplate here. Some of the defects these tests pin present as a
+    # HANG rather than a wrong value: reintroducing F57 -- hoisting ETHHW_ProcessTx()'s
+    # per-pass descriptor count out of the retry loop -- makes `found` never reach zero, so
+    # the drain loop spins forever. Verified by mutation: without this, the suite wedges and
+    # CI waits for its job limit instead of reporting a failure.
+    #
+    # Whole suite runs in 0.04 s, so 10 s is ~250x headroom and still fails fast.
+    gtest_discover_tests(${name} PROPERTIES TIMEOUT 10)
 endfunction()
 
 add_host_test(test_host_harness)
