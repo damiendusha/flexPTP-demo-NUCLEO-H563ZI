@@ -8,6 +8,10 @@ target_sources(
 
     cmds.c
     cmds.h
+
+    # The project's first C++ translation unit. Its only job is to make the C++ runtime
+    # observable on hardware -- see the file header and the cpp_ctor check in tools/hil/.
+    cpp_support.cpp
 )
 
 # EtherLib's option/glue translation unit, only meaningful when that stack is selected.

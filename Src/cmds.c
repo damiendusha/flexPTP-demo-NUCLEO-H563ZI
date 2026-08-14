@@ -9,6 +9,11 @@
 
 #include "flexptp/task_ptp.h"
 
+/* Defined in cpp_support.cpp. Reported here because the C++ runtime's initialisation cannot
+   be verified by the build alone -- only by asking the running board. */
+extern const char *cpp_static_init_status(void);
+extern unsigned long cpp_standard(void);
+
 // ---------------------------------
 
 CMD_FUNCTION(os_info) {
@@ -17,6 +22,8 @@ CMD_FUNCTION(os_info) {
     HeapStats_t stats;
     vPortGetHeapStats(&stats);
     MSG("Free OS memory: %u bytes\n", stats.xAvailableHeapSpaceInBytes);
+
+    MSG("C++ static init: %s (C++%lu)\n", cpp_static_init_status(), cpp_standard());
 
     // Console output attempted from interrupt context is discarded rather than printed (N6).
     // Report the count so that loss is visible instead of assumed to be zero.

@@ -74,7 +74,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending · ⏸️ optional/deferred
 | **P2** | This execution plan | — | — | ✅ done |
 | **P3** | Plan approved by the maintainer | — | — | ⬜ **pending — blocks everything below** |
 | **S0** | Baseline capture + HIL harness (`tools/hil/`) | ✅ 8/8 green, twice | 1 d | ✅ **done** |
-| **S1** | C++ proof TU + host GTest tree (`test/`) | ✅ boot, ctor ran, no size/behaviour change | 0.5–1 d | ⬜ pending |
+| **S1** | C++ proof TU + host GTest tree (`test/`) | ✅ 9/9, `cpp_ctor: ok`, no regressions | 0.5–1 d | ✅ **done** |
 | **S1b** | Tier 1+2 host harness: real ST headers + descriptor-ring model; characterisation tests pinning current-driver behaviour | ⬜ host only | 1–1.5 d | ✅ **done — 25 tests, 0.06 s; F57/F61/F71 + wrap ordering all mutation-verified; no production change needed** |
 | **S2** | Vendor ThreadX + wrapper; `tx_user.h`; low-level init; linker script | ⬜ does not link yet | 0.5–1 d | ⬜ pending |
 | **S3** | Kernel swap: CMSIS-RTOS2 on ThreadX, `main.c` reorder, hooks, `osinfo` — **lwIP removed, no network** | ✅ boot, CLI, console, threads, fault handlers | 1.5–2 d | ⬜ pending |
@@ -486,6 +486,25 @@ at all, contrary to the banner's advice to wait for DHCP.
 `ptp_sync` all still match baseline. **Nothing else may change** — this stage is a control.
 
 **Exit criteria:** hardware regression identical to S0; `ctest` green locally and in CI.
+
+#### Progress — 14 Aug 2026 — **DONE**
+
+`Src/cpp_support.cpp` added and reported through `osinfo`. Every C++ prerequisite was already
+configured in this project and had simply never been exercised, so the stage cost almost
+nothing — but it was worth doing, because a configuration that only *looks* right is the class
+of thing F62 and F70 both were.
+
+Verified on hardware: `osinfo` prints `C++ static init: ok (C++202002)`, and the map confirms
+the chain rather than assuming it — `.init_array` holds three entries, the third being
+`Src/cpp_support.cpp.obj` at `0x080345d0`, with `_GLOBAL__sub_I_cpp_static_init_status` linked
+at `0x08004a20`.
+
+The probe distinguishes the two failure modes it can have: `DID NOT RUN` if dynamic
+initialisation never happened, `RAN BUT CLOBBERED` if the constructor ran but a bad
+`.data`/`.bss` layout overwrote the object afterwards. Only `ok` passes.
+
+Cost: **FLASH +272 B** (216 888 → 217 160, 10.34% → 10.35%), SRAM1 +8 B. Full suite 9/9 with
+no regressions against the S0 baseline.
 
 ---
 
