@@ -297,6 +297,8 @@ PID servo expose `ptp servo params` instead.
 | [`docs/host_ptp_setup.md`](docs/host_ptp_setup.md) | Running a PTP master on a Linux host, and what to check when nothing happens |
 | [`docs/port_review.md`](docs/port_review.md) | Every finding of the port review, with evidence — including the ones that cost days |
 | [`docs/implementation_plan.md`](docs/implementation_plan.md) | The staged work plan and what remains |
+| [`docs/threadx_netxduo_feasibility.md`](docs/threadx_netxduo_feasibility.md) | What porting to Eclipse ThreadX and NetX Duo would cost, and the one flexPTP defect that would break it silently |
+| [`docs/threadx_porting_plan.md`](docs/threadx_porting_plan.md) | The staged execution plan for that port — hardware checkpoints, the host test tree, and progress tracking |
 | [`docs/reviews/`](docs/reviews/README.md) | Archive of the independent reviews that fed `port_review.md` — historical, superseded by it where they disagree |
 
 ## Related papers and references
