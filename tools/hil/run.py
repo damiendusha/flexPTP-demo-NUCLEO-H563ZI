@@ -19,7 +19,8 @@ import json
 import sys
 from pathlib import Path
 
-from checks import ALL_CHECKS, STAGES, STAGES_WITHOUT_NETWORK, CheckResult, Context, Status
+from checks import (ALL_CHECKS, STAGES, STAGES_WITHOUT_IP_THREAD, STAGES_WITHOUT_PHY,
+                    CheckResult, Context, Status)
 from hil import Board, BoardError, OpenOcd
 
 GREEN, RED, YELLOW, DIM, RESET = (
@@ -108,7 +109,8 @@ def main() -> int:
     ctx = Context(
         host_iface=args.iface,
         ptp_settle_s=args.settle,
-        expect_network=(args.stage not in STAGES_WITHOUT_NETWORK),
+        expect_phy=(args.stage not in STAGES_WITHOUT_PHY),
+        expect_ip_thread=(args.stage not in STAGES_WITHOUT_IP_THREAD),
     )
 
     if args.flash:

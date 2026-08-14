@@ -78,7 +78,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending · ⏸️ optional/deferred
 | **S1b** | Tier 1+2 host harness: real ST headers + descriptor-ring model; characterisation tests pinning current-driver behaviour | ⬜ host only | 1–1.5 d | ✅ **done — 25 tests, 0.06 s; F57/F61/F71 + wrap ordering all mutation-verified; no production change needed** |
 | **S2** | Vendor ThreadX + wrapper; `tx_user.h`; low-level init; linker script | ✅ 9/9, image byte-identical | 0.5–1 d | ✅ **done** |
 | **S3** | Kernel swap: CMSIS-RTOS2 on ThreadX, `main.c` reorder, hooks, `osinfo` — **lwIP removed, no network** | ✅ 5/5 | 1.5–2 d | ✅ **done** |
-| **S4** | Vendor NetX Duo; `nx_user.h`; IP instance + packet pool; **stub driver** | ✅ boot, IP thread alive, `osinfo` | 0.5 d | ⬜ pending |
+| **S4** | Vendor NetX Duo; `nx_user.h`; IP instance + packet pool; **stub driver** | ✅ 5/5, IP thread alive | 0.5 d | ✅ **done** |
 | **S5a** | Driver: `INITIALIZE` / `ENABLE` / `DISABLE` / `GET_STATUS` | ✅ link up/down detection on console | 0.5 d | ⬜ pending |
 | **S5b** | Driver: RX path → `nx_link_ethernet_packet_received()` | ✅ host `arping` gets replies | 1 d | ⬜ pending |
 | **S5c** | Driver: TX path, multicast join/leave, deferred processing | ✅ `ping` 0% loss @ 1400 B | 1 d | ⬜ pending |

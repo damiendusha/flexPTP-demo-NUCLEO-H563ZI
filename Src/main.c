@@ -11,6 +11,7 @@
 
 #include "cliutils/cli.h"
 #include "cmds.h"
+#include "ethernet/ethernet_netxduo.h"
 
 #include "flexptp/event.h"
 #include "flexptp/logging.h"
@@ -183,9 +184,11 @@ void task_startup(void *arg) {
     // print greetings
     print_welcome_message();
 
-    /* No network stack between S3 and S5 of the ThreadX port: lwIP is gone and NetX Duo is
-     * not in yet. flexPTP still starts -- with a no-op driver -- so the CLI, the servo and
-     * the PTP hardware port stay exercised. See docs/threadx_porting_plan.md. */
+    /* NetX Duo from S4. The Ethernet driver under it is still a stub until S5a, so the IP
+     * thread runs and nothing reaches the wire; a failure here is reported and the CLI
+     * continues, because a board that boots without a network is far more debuggable than
+     * one that does not boot. */
+    (void)init_ethernet();
 
     // initialize commands
     cmd_init();

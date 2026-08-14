@@ -19,3 +19,6 @@
 [submodule "Modules/cmsis_rtos_threadx"]
 	path = Modules/cmsis_rtos_threadx
 	url = https://github.com/STMicroelectronics/stm32-mw-cmsis-rtos-tx.git
+[submodule "Modules/netxduo"]
+	path = Modules/netxduo
+	url = https://github.com/eclipse-threadx/netxduo.git

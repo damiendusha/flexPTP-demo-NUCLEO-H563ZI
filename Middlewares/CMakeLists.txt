@@ -28,3 +28,11 @@ include(${CMAKE_CURRENT_LIST_DIR}/threadx.cmake)
 target_link_libraries(${CMAKE_PROJECT_NAME} cmsis_rtos_tx)
 
 target_link_directories(${CMAKE_PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_LIST_DIR})
+
+# ---------------------------------------------------------------------------
+# NetX Duo. Added in S4; the Ethernet driver under it arrives in S5a.
+# ---------------------------------------------------------------------------
+if (ETH_STACK STREQUAL "NETXDUO")
+    include(${CMAKE_CURRENT_LIST_DIR}/netxduo.cmake)
+    target_link_libraries(${CMAKE_PROJECT_NAME} netxduo)
+endif()

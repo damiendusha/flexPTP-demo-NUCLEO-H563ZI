@@ -46,11 +46,15 @@ class Context:
     ptp_settle_s: float = 90.0
     ptp_locked: bool = False
 
-    # Whether an Ethernet driver is expected to exist at this stage. False for S3/S4 of the
-    # ThreadX port, where lwIP has been removed and the NetX Duo driver is not in yet: the
-    # board boots to a working console with no PHY and no link, and `boot` must not read that
-    # as a regression. Set from STAGE_CONTEXT in run.py.
-    expect_network: bool = True
+    # Two separate things, because between S3 and S5a they differ and conflating them makes
+    # one of the checks lie. Set from run.py.
+    #
+    #   expect_phy       an Ethernet DRIVER exists, so the PHY is identified and a link is
+    #                    reported. False for S3 (no stack at all) and S4 (stack, stub driver).
+    #   expect_ip_thread a network STACK exists, so NetX Duo's IP thread is running. False
+    #                    only for S3.
+    expect_phy: bool = True
+    expect_ip_thread: bool = True
     baseline: dict = field(default_factory=dict)
 
 
@@ -103,10 +107,10 @@ def check_boot(board: Board, ctx: Context) -> CheckResult:
         "banner_present": True,
         "phy": phy.group(1).strip() if phy else None,
         "link": link.group(1) if link else None,
-        "expect_network": ctx.expect_network,
+        "expect_phy": ctx.expect_phy,
     }
 
-    if not ctx.expect_network:
+    if not ctx.expect_phy:
         # Assert the absence, rather than merely tolerating it: if a PHY turns up at a stage
         # with no Ethernet driver linked, something is being built that should not be.
         if phy is not None:
@@ -231,22 +235,54 @@ def check_ptp_start(board: Board, ctx: Context) -> CheckResult:
 
 
 def check_threads(board: Board, ctx: Context) -> CheckResult:
-    """Expected threads exist.
+    """The expected threads exist, at the expected priorities.
 
-    Valid from S3. Requires a CLI command that enumerates threads; `osinfo` is extended to
-    provide one during the port. Skips cleanly until then.
+    Valid from S3, where `osinfo` gained a thread enumeration. Worth asserting rather than
+    just counting: the port changes both the thread set and the priority scale, and
+    docs/architecture.md carries a table of both that was previously checkable only with a
+    debugger.
+
+    The line format is `  <name> pri=<tx> (cmsis <n>) state=<s> runs=<r>`, and names contain
+    spaces ("System Timer Thread", "eth ip") -- so the parse anchors on " pri=" rather than
+    treating the name as one token. An earlier version used \S+ and silently miscounted.
     """
-    out = board.cmd("osinfo")
+    out = board.cmd("osinfo", quiet=1.2, timeout=10)
     if "Threads:" not in out:
         return CheckResult(
-            "threads",
-            Status.SKIP,
-            "osinfo does not enumerate threads yet (added in S3)",
+            "threads", Status.SKIP, "osinfo does not enumerate threads (added in S3)"
         )
-    names = re.findall(r"^\s+(\S+)\s+pri=(\d+)", out, re.M)
-    return CheckResult(
-        "threads", Status.PASS, f"{len(names)} threads", {"threads": dict(names)}
-    )
+
+    found = {
+        m.group(1).strip(): int(m.group(2))
+        for m in re.finditer(r"^\s+(.+?)\s+pri=(\d+)\s+\(cmsis", out, re.M)
+    }
+    data = {"threads": found}
+
+    if not found:
+        return CheckResult("threads", Status.FAIL, "no threads parsed", {"raw": out})
+
+    # Always present: the kernel's timer thread, the console writer, the bring-up thread and
+    # the CLI. flexPTP's "ptp" thread is created on demand and is not required here.
+    missing = [n for n in ("System Timer Thread", "serialio", "init", "cli") if n not in found]
+
+    # The NetX Duo IP thread, once there is a stack to run.
+    if ctx.expect_ip_thread and "eth ip" not in found:
+        missing.append("eth ip")
+
+    if missing:
+        return CheckResult(
+            "threads", Status.FAIL, "missing: " + ", ".join(missing), data
+        )
+
+    # Priority inversion is the single easiest thing to get wrong in this port, so pin it:
+    # the application threads must sit at ThreadX 32, i.e. CMSIS osPriorityNormal (24).
+    for name in ("serialio", "init", "cli"):
+        if found[name] != 32:
+            return CheckResult(
+                "threads", Status.FAIL,
+                f"{name} at ThreadX priority {found[name]}, expected 32 (CMSIS 24)", data)
+
+    return CheckResult("threads", Status.PASS, f"{len(found)} threads, priorities as expected", data)
 
 
 # --------------------------------------------------------------------------
@@ -510,8 +546,11 @@ ALL_CHECKS = {
 
 # Which checks are meaningful at each stage of the ThreadX port. Ordering matters: `dhcp`
 # populates the board IP that `ping`, `ptp_ts` and `ptp_sync` need.
-# Stages at which no Ethernet driver is linked, so `boot` must expect no PHY and no link.
-STAGES_WITHOUT_NETWORK = {"S3", "S4"}
+# Stages with no Ethernet DRIVER linked: `boot` must expect no PHY and no link.
+STAGES_WITHOUT_PHY = {"S3", "S4"}
+
+# Stages with no network STACK at all: `threads` must not expect NetX Duo's IP thread.
+STAGES_WITHOUT_IP_THREAD = {"S3"}
 
 STAGES = {
     "S0": ["boot", "cli", "osinfo", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync"],

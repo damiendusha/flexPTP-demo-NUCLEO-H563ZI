@@ -89,7 +89,7 @@ target_sources(${CMAKE_PROJECT_NAME} PUBLIC ${sources_SRCS})
 # Seéect Ethernet stack
 # S3 removed lwIP and S4-S6 bring NetX Duo in. "NONE" is the interim state: the MAC driver
 # and flexPTP are still compiled, but nothing above the link layer is.
-set(ETH_STACK "NONE") # "NONE" (S3-S5), "NETXDUO" (from S6), "LWIP" or "ETHERLIB" (historical)
+set(ETH_STACK "NETXDUO") # "NETXDUO", "NONE" (S3), "LWIP"/"ETHERLIB" (historical)
 
 # Add definitions
 # DEBUG is NOT listed here: it belongs to the Debug configuration only, and is applied

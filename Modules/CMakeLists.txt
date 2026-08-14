@@ -27,6 +27,10 @@ elseif(ETH_STACK STREQUAL "LWIP")
     message(FATAL_ERROR
         "ETH_STACK=LWIP is no longer wired up. lwIP was removed in S3 of the ThreadX port; "
         "see docs/threadx_porting_plan.md. Check out a pre-S3 commit to build it.")
+elseif(ETH_STACK STREQUAL "NETXDUO")
+    # NetX Duo is built by Middlewares/netxduo.cmake and linked into the firmware there;
+    # flexPTP links against it too, for the NSD.
+    set(ETH_STACK_LIB netxduo)
 elseif(ETH_STACK STREQUAL "NONE")
     # S3-S5: no network stack. flexPTP is kept in the build with a no-op driver so that its
     # 19 CLI commands, the servo, the profile machinery and the H563 hardware port all stay
@@ -44,9 +48,9 @@ set(FLEXPTP_HWPORT_SRC ${CMAKE_SOURCE_DIR}/Src/flexptp_port/ptp_port_stm32h563.c
 # (FLEXPTP_NSD_SRC + FLEXPTP_NETWORK_STACK) rather than one of its bundled examples. Leaving
 # FLEXPTP_NSD unmatched is what makes flexPTP take its "custom network stack driver" path.
 set(FLEXPTP_NSD "CUSTOM")
-if (ETH_STACK STREQUAL "NONE")
-    set(FLEXPTP_NSD_SRC ${CMAKE_SOURCE_DIR}/Src/flexptp_nsd/nsd_stub.c)
-endif()
+# S6 replaces this with nsd_netxduo.c. Until then the stub keeps flexPTP linked and its 19
+# CLI commands registered while the stack underneath is rebuilt.
+set(FLEXPTP_NSD_SRC ${CMAKE_SOURCE_DIR}/Src/flexptp_nsd/nsd_stub.c)
 set(FLEXPTP_NETWORK_STACK ${ETH_STACK_LIB})
 set(FLEXPTP_SERVO "KALMAN")
 set(FLEXPTP_INCLUDES ${include_dirs} ${CMAKE_SOURCE_DIR}/Src/flexptp_port)

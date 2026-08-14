@@ -3,9 +3,13 @@ if (ETH_STACK STREQUAL "ETHERLIB")
         ethernet_etherlib.c
         ethernet_etherlib.h
     )
+elseif(ETH_STACK STREQUAL "NETXDUO")
+    set(ETH_STACK_SRC
+        ethernet_netxduo.c
+        ethernet_netxduo.h
+    )
 elseif(ETH_STACK STREQUAL "NONE")
-    # S3-S5 of the ThreadX port: no stack to bring up. ethernet_lwip.c went with lwIP and
-    # ethernet_netxduo.c arrives in S4.
+    # S3 only: no stack at all.
     set(ETH_STACK_SRC)
 endif()
 
