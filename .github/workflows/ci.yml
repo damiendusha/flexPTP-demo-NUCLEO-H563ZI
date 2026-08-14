@@ -68,6 +68,32 @@ jobs:
             build/${{ matrix.config }}/flexptp-demo.elf
             build/${{ matrix.config }}/flexptp-demo.map
 
+  host-tests:
+    name: Host unit tests
+    runs-on: ubuntu-latest
+    steps:
+      # submodules: recursive is required. The host tests compile mac_drv.c against ST's REAL
+      # CMSIS device header and REAL HAL headers -- Drivers/stm32h5xx-hal-driver is a
+      # submodule -- so that register layouts and bit positions come from the same
+      # definitions the firmware uses rather than from a hand-copied fake that can drift.
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
+      # No board and no network needed: these are pure logic tests and run in well under a
+      # second, which is why they gate every push while the hardware suite cannot.
+      - name: Configure
+        run: cmake -S test -B build/test -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build/test -j
+
+      - name: Test
+        run: ctest --test-dir build/test --output-on-failure
+
   docs:
     name: Docs cross-references
     runs-on: ubuntu-latest

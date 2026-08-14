@@ -75,7 +75,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending · ⏸️ optional/deferred
 | **P3** | Plan approved by the maintainer | — | — | ⬜ **pending — blocks everything below** |
 | **S0** | Baseline capture + HIL harness (`tools/hil/`) | 🔄 4/8 captured | 1 d | 🔄 **harness done; baseline blocked on host DHCP/ptp4l setup (needs root)** |
 | **S1** | C++ proof TU + host GTest tree (`test/`) | ✅ boot, ctor ran, no size/behaviour change | 0.5–1 d | ⬜ pending |
-| **S1b** | Tier 1+2 host harness: fake `ETH_TypeDef` + descriptor ring; characterisation tests pinning F57/F58/F61/F71/F75 behaviour on the **current** driver | ⬜ host only | 1–1.5 d | ⬜ pending |
+| **S1b** | Tier 1+2 host harness: real ST headers + descriptor-ring model; characterisation tests pinning current-driver behaviour | ⬜ host only | 1–1.5 d | 🔄 **RX path done (16 tests, F61+F71 mutation-verified); TX path pending** |
 | **S2** | Vendor ThreadX + wrapper; `tx_user.h`; low-level init; linker script | ⬜ does not link yet | 0.5–1 d | ⬜ pending |
 | **S3** | Kernel swap: CMSIS-RTOS2 on ThreadX, `main.c` reorder, hooks, `osinfo` — **lwIP removed, no network** | ✅ boot, CLI, console, threads, fault handlers | 1.5–2 d | ⬜ pending |
 | **S4** | Vendor NetX Duo; `nx_user.h`; IP instance + packet pool; **stub driver** | ✅ boot, IP thread alive, `osinfo` | 0.5 d | ⬜ pending |
