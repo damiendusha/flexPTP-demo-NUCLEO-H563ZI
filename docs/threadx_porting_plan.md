@@ -80,9 +80,9 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending · ⏸️ optional/deferred
 | **S3** | Kernel swap: CMSIS-RTOS2 on ThreadX, `main.c` reorder, hooks, `osinfo` — **lwIP removed, no network** | ✅ 5/5 | 1.5–2 d | ✅ **done** |
 | **S4** | Vendor NetX Duo; `nx_user.h`; IP instance + packet pool; **stub driver** | ✅ 5/5, IP thread alive | 0.5 d | ✅ **done** |
 | **S5a** | Driver: `INITIALIZE` / `ENABLE` / `DISABLE` / `GET_STATUS` | ✅ 4/4, PHY + link UP | 0.5 d | ✅ **done** |
-| **S5b** | Driver: RX path → `nx_link_ethernet_packet_received()` | ✅ host `arping` gets replies | 1 d | ⬜ pending |
-| **S5c** | Driver: TX path, multicast join/leave, deferred processing | ✅ `ping` 0% loss @ 1400 B | 1 d | ⬜ pending |
-| **S5d** | DHCP client | ✅ address acquired, matches baseline behaviour | 0.5 d | ⬜ pending |
+| **S5b** | Driver: RX path → `nx_link_ethernet_packet_received()` | ✅ (with S5c) | 1 d | ✅ **done** |
+| **S5c** | Driver: TX path, multicast join/leave, deferred processing | ✅ ping 0% @ 1400 B, 0.337 ms | 1 d | ✅ **done** |
+| **S5d** | DHCP client | ✅ 192.168.2.191, 6/6 vs baseline | 0.5 d | ✅ **done** |
 | **S5e** | *Tier 3:* real ThreadX (`ports/linux`) + real NetX Duo + RAM driver on the host | ⬜ host only | 1–2 d | ⬜ pending |
 | **S6** | NSD: UDP/IPv4 E2E + TX-timestamp deferral fix | ✅ **flexPTP syncs; offset vs baseline** | 2–3 d | ⬜ pending |
 | **S7** | 802.3 transport, P2P, all three profile presets | ✅ each preset against `ptp4l` | 1–2 d | ⬜ pending |
@@ -677,6 +677,32 @@ Carry these forward from `eth_drv_lwip.c` deliberately, not by accident:
 
 Add one that is new: **assert the ≥12-byte head-room precondition** before
 `nx_link_ethernet_packet_received()` can stash a timestamp over the Ethernet header.
+
+#### S5b–S5d progress — 15 Aug 2026 — **DONE**
+
+Landed together: the natural first proof of receive is an ARP reply, and a reply needs
+transmit, so the two are not separately observable. `--stage S5d --compare baseline.json`
+green **6/6, no regressions**. `ping` 300 × 1400 B at **0% loss, 0.337 ms** against the
+baseline's 0.365 ms; DHCP returns **192.168.2.191**, the same address lwIP got.
+
+**Four defects, all found on hardware, none catchable by the host tests.** Each is exactly the
+class the feasibility study said would stay on the bench, and each was silent in a different
+way. What made them tractable was `ethinfo`, a driver/stack counter dump added mid-stage:
+"it does not work" is not a diagnosis, and the difference between *the driver never saw the
+frame*, *the driver dropped it*, and *the stack refused it* is invisible from the console.
+
+| # | Defect | How it presented |
+|---|---|---|
+| 1 | `nx_interface_link_up` set once at `NX_LINK_INITIALIZE` and never updated | Console said `ETH LINK: UP`, receive worked, and **the board transmitted nothing at all** — the IP thread will not send on an interface it believes is down. Host counted zero frames in twelve seconds |
+| 2 | **No 2-byte alignment shim on receive** | `NX_PHYSICAL_HEADER` is **16**, not 14, precisely so a 14-byte Ethernet header leaves the IP header 4-byte aligned. Copying the frame to `prepend_ptr` directly put it at 2 mod 4 and **every IPv4 packet failed its header checksum** — `ip: rx 11 (invalid 11, dropped 11, cksum 11)` — while ARP, which has no checksum, round-tripped perfectly. That asymmetry is the signature |
+| 3 | Checksum offload not declared to NetX Duo | `ETHHW_Transmit()` sets `CIC_IPHDR_PAYLOAD_INSERT_PHDR_CALC` unconditionally, so the MAC *always* inserts checksums. A stack that also computes them leaves a complete value where the MAC expects a pseudo-header, and every IP frame goes out wrong. lwIP was told via `CHECKSUM_BY_HARDWARE`; NetX Duo's equivalent is `nx_interface_capability_flag`, which is why `NX_ENABLE_INTERFACE_CAPABILITY` is on. IGMP is deliberately excluded — the MAC's payload engine does not cover it |
+| 4 | **`nx_interface_address_mapping_needed` left false** | The one that took longest. `nx_ip_driver_packet_send()` gates *all* destination resolution — broadcast, multicast **and the ARP lookup** — on this flag. False (a zeroed `NX_INTERFACE`) means NetX Duo skips the lot and hands the driver a request with the physical address still zero. Frames left perfectly formed apart from a destination MAC of `00:00:00:00:00:00`; `tx: 16 sent, 0 dropped` against a host receiving nothing. Found by dumping the frame head: `00 00 00 00 00 00 \| 56 00 1e 00 04 51 \| 08 00 \| 45 00 …`. The flag is false by default because it exists for point-to-point links; Ethernet is the other case |
+
+Also of note: **`NX_ENABLE_VLAN` is mandatory**, and this corrects the feasibility study. The
+whole of `nx_link.c` — lines 28 to 1560, every `nx_link_*` function, `NX_LINK_TIME`, and the
+PTP timestamp stashing — sits inside one `#ifdef NX_ENABLE_VLAN`. The study recorded that as a
+quirk of ST's driver, which `#error`s without it. It is upstream, and applies to any port
+using `nx_link` at all. No VLAN tagging is configured; the flag purely compiles the layer in.
 
 **Hardware verification:** as per the S5a–S5d table above. `ping` at 0% loss over 300 × 1400 B is
 the gate for S5c; do not proceed to S6 on a lossy link.

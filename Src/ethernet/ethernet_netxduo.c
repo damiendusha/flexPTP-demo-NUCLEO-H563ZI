@@ -12,6 +12,7 @@
 #include "ethernet_netxduo.h"
 
 #include "nx_api.h"
+#include "nxd_dhcp_client.h"
 
 #include "Drivers/EthDrv/eth_drv_netxduo.h"
 
@@ -51,7 +52,9 @@ static UCHAR eth_ip_thread_stack[ETH_IP_THREAD_STACK_BYTES]
 
 static NX_PACKET_POOL eth_pool;
 static NX_IP eth_ip;
+static NX_DHCP eth_dhcp;
 static bool eth_up = false;
+static bool eth_dhcp_up = false;
 
 NX_IP *ethernet_ip(void) { return eth_up ? &eth_ip : NX_NULL; }
 NX_PACKET_POOL *ethernet_packet_pool(void) { return eth_up ? &eth_pool : NX_NULL; }
@@ -122,10 +125,61 @@ bool init_ethernet(void) {
         return false;
     }
 
+    /* DHCP client. Creates its own thread and its own socket; nx_dhcp_start() is safe before
+     * the link is up -- it retries -- so there is no need to gate it on phy_thread.
+     *
+     * The address is reported by ethernet_poll_dhcp() rather than from a callback, because
+     * the report has to reach the console through MSG(), and MSG() blocks on the console FIFO.
+     * Doing that from inside a DHCP state-change callback would block the DHCP thread on the
+     * console -- the same class of mistake as printing from an ISR (F68). */
+
+    status = nx_dhcp_create(&eth_dhcp, &eth_ip, "h563");
+    if (status != NX_SUCCESS) {
+        MSG("ETH: DHCP client creation failed (0x%x)\n", status);
+    } else if ((status = nx_dhcp_start(&eth_dhcp)) != NX_SUCCESS) {
+        MSG("ETH: DHCP start failed (0x%x)\n", status);
+    } else {
+        eth_dhcp_up = true;
+    }
+
     eth_up = true;
     MSG("ETH: NetX Duo %u.%u.%u up (pool %u x %u B)\n",
         (unsigned)NETXDUO_MAJOR_VERSION, (unsigned)NETXDUO_MINOR_VERSION,
         (unsigned)NETXDUO_PATCH_VERSION,
         (unsigned)NX_PACKET_POOL_PACKET_COUNT, (unsigned)NX_PACKET_POOL_PAYLOAD_SIZE);
     return true;
+}
+
+
+/**
+ * Report the DHCP-assigned address once, when it arrives, and again if it is ever lost.
+ *
+ * Polled from the "init" thread at 1 Hz, which is exactly what the lwIP build did with a
+ * check_dhcp_state() timer -- and for a better reason here: see the note at nx_dhcp_start().
+ */
+void ethernet_poll_dhcp(void) {
+    static bool reported = false;
+
+    if (!eth_up || !eth_dhcp_up) {
+        return;
+    }
+
+    ULONG address = 0, mask = 0;
+    if (nx_ip_address_get(&eth_ip, &address, &mask) != NX_SUCCESS) {
+        return;
+    }
+
+    bool have = (address != 0);
+    if (have == reported) {
+        return;
+    }
+    reported = have;
+
+    if (have) {
+        MSG("IP-address: %u.%u.%u.%u\n",
+            (unsigned)((address >> 24) & 0xFF), (unsigned)((address >> 16) & 0xFF),
+            (unsigned)((address >> 8) & 0xFF), (unsigned)(address & 0xFF));
+    } else {
+        MSG("DHCP configuration lost!\n");
+    }
 }

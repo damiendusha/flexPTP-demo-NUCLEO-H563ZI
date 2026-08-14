@@ -11,7 +11,8 @@
  *   S5b  receive  -> nx_link_ethernet_packet_received()  host `arping` gets replies
  *   S5c  transmit, multicast join/leave, deferred        `ping` 0% loss at 1400 B
  *
- * This file is at S5a. The send and receive paths are stubbed at the bottom, and say so.
+ * S5b and S5c landed together: the natural first proof of receive is an ARP reply, and a
+ * reply needs the transmit path, so the two are not separately observable on hardware.
  */
 
 #include "eth_drv_netxduo.h"
@@ -25,6 +26,10 @@
 #include <stm32h5xx_hal.h>
 
 #include "nx_api.h"
+/* NX_LINK_TIME, nx_link_ethernet_packet_received() and the EtherType constants. Not pulled in
+   by nx_api.h -- the link layer is a separate header, and it is the one that carries this
+   port's hardware timestamps. */
+#include "nx_link.h"
 
 #include "mac_drv.h"
 #include "phy_drv/phy_common.h"
@@ -76,6 +81,120 @@ static NX_INTERFACE *drv_interface;
 static bool drv_enabled;
 static LinkState drv_link = {false, false, 0, false};
 
+/* Defined with eth_drv_report() at the end of the file. */
+static ULONG drv_rx_frames, drv_rx_dropped_nopacket, drv_rx_dropped_size;
+static ULONG drv_tx_frames, drv_tx_dropped_linkdown, drv_tx_dropped_mac;
+static ULONG drv_tx_last_len, drv_tx_last_cmd;
+static uint8_t drv_tx_last_head[34];
+
+/* --- Receive ------------------------------------------------------------------------------- */
+
+/* One event per RX descriptor is the hard ceiling, and the depth is tied to the ring rather
+ * than chosen: ETHHW_ProcessRx() marks a descriptor inFlight before queueing it and does not
+ * revisit it until rx_thread restores it, so one descriptor can never contribute two entries.
+ * Carried over from the lwIP driver, where it had been 32 -- above that ceiling, so its top
+ * third was unreachable. */
+#define RX_MSG_Q_LEN (ETH_RX_DESC_CNT)
+
+static osMessageQueueId_t rx_msg_q;
+
+/* NetX Duo's link layer stashes an RX timestamp in the first THREE ULONGs of the packet
+ * buffer, overwriting the Ethernet header it has already consumed:
+ *
+ *     ((ULONG *)packet -> nx_packet_data_start)[0] = time -> nano_second;
+ *     ((ULONG *)packet -> nx_packet_data_start)[1] = time -> second_low;
+ *     ((ULONG *)packet -> nx_packet_data_start)[2] = time -> second_high;
+ *
+ * That is how the timestamp survives up to a UDP socket, and it is an undocumented layout
+ * dependency of exactly the kind that produced F48. It is only safe while at least 12 bytes
+ * sit between nx_packet_data_start and the IP header -- true here because the full 14-byte
+ * Ethernet header is copied in at data_start -- so the precondition is asserted rather than
+ * assumed. */
+#define NX_LINK_TIMESTAMP_HEADROOM (3U * sizeof(ULONG))
+
+/**
+ * Drains the RX ring into NetX Duo.
+ *
+ * Above the console, below the IP thread. Every descriptor this thread has not yet restored
+ * is one the DMA cannot reuse, so letting a burst of CLI output round-robin against it
+ * lengthens exactly the window that F61's inFlight marker exists to make safe. The marker
+ * fixes the correctness bug; the priority keeps the window short.
+ */
+static void rx_thread(void *arg) {
+    (void)arg;
+    ETHHW_EventDesc evt;
+
+    for (;;) {
+        if (osMessageQueueGet(rx_msg_q, &evt, NULL, osWaitForever) != osOK) {
+            continue;
+        }
+
+        NX_PACKET *packet = NX_NULL;
+        NX_PACKET_POOL *pool = (drv_ip != NX_NULL) ? drv_ip->nx_ip_default_packet_pool : NX_NULL;
+
+        /* NX_NO_WAIT, not a timeout: this runs with two descriptors held out of the ring, and
+           blocking here to wait for a pool that is empty because the stack is busy would
+           starve the DMA to fix a shortage upstream of it. Dropping is the right failure. */
+        if ((pool != NX_NULL) &&
+            (nx_packet_allocate(pool, &packet, NX_RECEIVE_PACKET, NX_NO_WAIT) == NX_SUCCESS)) {
+
+            const ULONG size = evt.data.rx.size;
+            const ULONG capacity =
+                (ULONG)(packet->nx_packet_data_end - packet->nx_packet_prepend_ptr);
+
+            /* Two bytes of shim before the Ethernet header, so that the IP header behind it
+             * lands 4-byte aligned.
+             *
+             * This is why NX_PHYSICAL_HEADER is 16 and not 14: 2 + 14 = 16, and NetX Duo's
+             * checksum and header routines read the IP header as aligned words. Copying the
+             * frame to prepend_ptr directly puts the IP header at data_start + 14, i.e.
+             * 2 mod 4, and EVERY IPv4 packet then fails its header checksum -- measured
+             * exactly that way during bring-up: "ip: rx 11 (invalid 11, dropped 11, cksum
+             * 11)" while ARP, which has no checksum, worked perfectly and answered every
+             * request. That asymmetry is the signature of this bug.
+             *
+             * The timestamp NetX Duo later writes over data_start[0..11] still fits: the
+             * Ethernet header now occupies data_start+2 .. +15, so the 12 bytes it clobbers
+             * are header bytes it has already consumed, and the IP header at +16 is
+             * untouched. */
+            if ((size + 2U <= capacity) && (size >= NX_LINK_TIMESTAMP_HEADROOM)) {
+                packet->nx_packet_prepend_ptr += 2;
+                memcpy(packet->nx_packet_prepend_ptr, (const void *)evt.data.rx.payload, size);
+                packet->nx_packet_length = size;
+                packet->nx_packet_append_ptr = packet->nx_packet_prepend_ptr + size;
+
+                /* The hardware timestamp, straight from the context descriptor the MAC wrote.
+                   Both halves are zero for a frame the MAC did not stamp -- ETHHW_ProcessRx()
+                   zeroes the event for exactly that reason -- and NetX Duo is happy to receive
+                   a zero timestamp; what it must not get is stack garbage. */
+                NX_LINK_TIME ts;
+                ts.nano_second = evt.data.rx.ts_ns;
+                ts.second_low = evt.data.rx.ts_s;
+                ts.second_high = 0;
+
+                drv_rx_frames++;
+                nx_link_ethernet_packet_received(drv_ip,
+                                                 drv_interface->nx_interface_index,
+                                                 packet, &ts);
+            } else {
+                /* Too big for the pool payload, or too short to carry the timestamp NetX Duo
+                   will write over its header. Neither can be delivered; say so rather than
+                   corrupting a buffer. */
+                drv_rx_dropped_size++;
+                MSG("ETH: RX frame of %u bytes not deliverable (capacity %u)\n",
+                    (unsigned)size, (unsigned)capacity);
+                nx_packet_release(packet);
+            }
+        }
+
+        /* Return both descriptors to the DMA. Unconditional: a frame dropped for want of a
+           packet must not also cost a descriptor, which is how a momentary shortage turns
+           into a permanently dead receive path (F71). */
+        ETHHW_RestoreRXDesc(evt.bd);
+        ETHHW_RestoreRXDesc(evt.bd_ctx);
+    }
+}
+
 /* --- PHY link monitoring -------------------------------------------------------------------- */
 
 /* Polls the PHY and pushes speed/duplex into the MAC when the link comes up.
@@ -97,6 +216,19 @@ static void phy_thread(void *arg) {
             bool first_poll = !drv_link.init;
             drv_link.up = status->up;
             drv_link.init = true;
+
+            /* Tell NetX Duo, not just ourselves.
+             *
+             * nx_interface_link_up is what the IP thread consults before handing anything to
+             * the driver -- an interface it believes is down is simply never sent on. Setting
+             * it once at NX_LINK_INITIALIZE and leaving it produced a board that reported
+             * "ETH LINK: UP" on the console, received frames happily, and transmitted
+             * absolutely nothing: DHCP never completed and the host counted zero frames
+             * arriving in twelve seconds. NX_LINK_GET_STATUS is not enough on its own --
+             * NetX Duo only asks when the application asks it to. */
+            if (drv_interface != NX_NULL) {
+                drv_interface->nx_interface_link_up = drv_link.up ? NX_TRUE : NX_FALSE;
+            }
 
             /* Do not announce "DOWN" on the very first poll. At that point auto-negotiation
                has simply not finished yet, and reporting it makes a normal boot look like a
@@ -156,6 +288,47 @@ static void drv_initialize(NX_IP_DRIVER *request) {
     drv_interface->nx_interface_physical_address_lsw =
         (ULONG)((opts.mac[2] << 24) | (opts.mac[3] << 16) | (opts.mac[4] << 8) | opts.mac[5]);
 
+    /* Declare the MAC's checksum offload, and the PTP timestamp capability.
+     *
+     * This is NOT an optimisation, it is a correctness requirement. ETHHW_Transmit() sets
+     * ETH_DMATXNDESCRF_CIC_IPHDR_PAYLOAD_INSERT_PHDR_CALC unconditionally, so the MAC ALWAYS
+     * computes and inserts the IPv4 header checksum and the TCP/UDP/ICMP payload checksum,
+     * and the payload one is computed assuming the field holds a pseudo-header checksum.
+     * A stack that also computes a complete checksum leaves a full value there, the MAC
+     * folds it in again, and every IP frame goes out with a wrong checksum -- accepted by
+     * nothing. Measured during bring-up: ARP round-tripped perfectly (no checksum) while
+     * "ip: tx 5" produced not one reply the host would accept.
+     *
+     * lwIP was told the same thing by CHECKSUM_BY_HARDWARE in lwipopts.h. NetX Duo's
+     * equivalent is per-interface, which is why NX_ENABLE_INTERFACE_CAPABILITY is on.
+     *
+     * IGMP is deliberately absent: the MAC's payload engine covers TCP, UDP and ICMP, not
+     * IGMP (IP protocol 2), so NetX Duo must keep computing that one itself. Claiming it
+     * would break exactly the multicast joins PTP depends on. */
+    drv_interface->nx_interface_capability_flag =
+        NX_INTERFACE_CAPABILITY_IPV4_TX_CHECKSUM | NX_INTERFACE_CAPABILITY_IPV4_RX_CHECKSUM |
+        NX_INTERFACE_CAPABILITY_UDP_TX_CHECKSUM | NX_INTERFACE_CAPABILITY_UDP_RX_CHECKSUM |
+        NX_INTERFACE_CAPABILITY_TCP_TX_CHECKSUM | NX_INTERFACE_CAPABILITY_TCP_RX_CHECKSUM |
+        NX_INTERFACE_CAPABILITY_ICMPV4_TX_CHECKSUM | NX_INTERFACE_CAPABILITY_ICMPV4_RX_CHECKSUM |
+        NX_INTERFACE_CAPABILITY_PTP_TIMESTAMP;
+
+    /* Ethernet needs IP-to-MAC mapping. Not a detail: nx_ip_driver_packet_send() gates ALL
+     * destination resolution on this flag --
+     *
+     *     if (interface -> nx_interface_address_mapping_needed) { ...broadcast? multicast?
+     *                                                             ARP lookup... }
+     *
+     * -- and with it false, as a zeroed NX_INTERFACE leaves it, NetX Duo skips the lot and
+     * hands the driver a request whose physical address fields are still zero. The frames go
+     * out perfectly formed except for a destination MAC of 00:00:00:00:00:00, which nothing
+     * accepts and no counter anywhere reports. Measured exactly that way during bring-up:
+     * "tx: 16 sent, 0 dropped" against a host that received nothing, and a frame dump reading
+     * "00 00 00 00 00 00 | 56 00 1e 00 04 51 | 08 00 | 45 00 ...".
+     *
+     * It is false by default because the flag exists for point-to-point links (PPP, SLIP)
+     * where there are no addresses to resolve. Ethernet is the other case. */
+    drv_interface->nx_interface_address_mapping_needed = NX_TRUE;
+
     /* MTU is the IP payload NetX Duo may hand down, i.e. the 1514-byte maximum Ethernet
        frame less the 14-byte header. There is no address-length field to set: NetX Duo takes
        the 6-byte Ethernet address as given by the msw/lsw split above. */
@@ -164,6 +337,28 @@ static void drv_initialize(NX_IP_DRIVER *request) {
     /* The link starts down and phy_thread reports the transition. Saying UP here would let
        DHCP start before the PHY has negotiated. */
     drv_interface->nx_interface_link_up = NX_FALSE;
+
+    /* The receive queue and thread, created once. NX_LINK_INITIALIZE can be issued again if
+       the interface is taken down and back up, and creating a second thread each time would
+       leak both it and its stack out of the byte pool. */
+    static bool rx_started = false;
+    if (!rx_started) {
+        rx_msg_q = osMessageQueueNew(RX_MSG_Q_LEN, sizeof(ETHHW_EventDesc), NULL);
+
+        osThreadAttr_t rx_attr;
+        memset(&rx_attr, 0, sizeof(rx_attr));
+        rx_attr.name = "rx";
+        rx_attr.stack_size = 2048;
+        /* AboveNormal (32) rather than High (40): the IP thread must stay highest, since this
+           thread hands frames to it and getting ahead of it only queues work. */
+        rx_attr.priority = osPriorityAboveNormal;
+
+        if ((rx_msg_q == NULL) || (osThreadNew(rx_thread, NULL, &rx_attr) == NULL)) {
+            MSG("ETH: could not create the receive thread or queue\n");
+        } else {
+            rx_started = true;
+        }
+    }
 
     static bool phy_thread_started = false;
     if (!phy_thread_started) {
@@ -203,6 +398,138 @@ static void drv_get_status(NX_IP_DRIVER *request) {
     request->nx_ip_driver_status = NX_SUCCESS;
 }
 
+/* --- Transmit -------------------------------------------------------------------------------- */
+
+/* Assembled here because ETHHW_Transmit() takes one flat buffer and NX_PACKET may be chained.
+   Static rather than on the stack: 1528 bytes would be most of rx/IP thread stacks, and the
+   send path is already serialised by NetX Duo's driver mutex. */
+static uint8_t tx_concat_buf[ETH_BUFFER_SIZE];
+
+/**
+ * Transmit one packet, prepending the Ethernet header where NetX Duo expects the driver to.
+ *
+ * NX_LINK_RAW_PACKET_SEND is the exception: the caller has already built the header --
+ * nx_link_ethernet_packet_send() does, which is the path PTP-over-802.3 uses from S7 -- so
+ * adding another would produce a frame with two.
+ */
+static void drv_send(NX_IP_DRIVER *request) {
+    NX_PACKET *packet = request->nx_ip_driver_packet;
+
+    if (packet == NX_NULL) {
+        request->nx_ip_driver_status = NX_INVALID_PACKET;
+        return;
+    }
+
+    if (!drv_link.up || !drv_enabled) {
+        /* Dropping while the link is down is correct and must still release the packet: a
+           pool of 8 disappears in seconds otherwise, and the symptom would be a hang rather
+           than an unplugged cable. */
+        drv_tx_dropped_linkdown++;
+        nx_packet_transmit_release(packet);
+        request->nx_ip_driver_packet = NX_NULL;
+        request->nx_ip_driver_status = NX_SUCCESS;
+        return;
+    }
+
+    if (request->nx_ip_driver_command != NX_LINK_RAW_PACKET_SEND) {
+        USHORT ethertype;
+        switch (request->nx_ip_driver_command) {
+        case NX_LINK_ARP_SEND:
+        case NX_LINK_ARP_RESPONSE_SEND:
+            ethertype = NX_LINK_ETHERNET_ARP;
+            break;
+        case NX_LINK_RARP_SEND:
+            ethertype = NX_LINK_ETHERNET_RARP;
+            break;
+        default:
+            ethertype = (packet->nx_packet_ip_version == NX_IP_VERSION_V6)
+                            ? NX_LINK_ETHERNET_IPV6
+                            : NX_LINK_ETHERNET_IP;
+            break;
+        }
+
+        if ((ULONG)(packet->nx_packet_prepend_ptr - packet->nx_packet_data_start) <
+            NX_LINK_ETHERNET_HEADER_SIZE) {
+            MSG("ETH: no room for the Ethernet header; frame dropped\n");
+            nx_packet_transmit_release(packet);
+            request->nx_ip_driver_packet = NX_NULL;
+            request->nx_ip_driver_status = NX_UNDERFLOW;
+            return;
+        }
+
+        packet->nx_packet_prepend_ptr -= NX_LINK_ETHERNET_HEADER_SIZE;
+        packet->nx_packet_length += NX_LINK_ETHERNET_HEADER_SIZE;
+
+        /* Big-endian on the wire, written byte by byte. The destination comes from the
+           request's msw/lsw pair, the source from the interface's. */
+        uint8_t *h = packet->nx_packet_prepend_ptr;
+        h[0] = (uint8_t)(request->nx_ip_driver_physical_address_msw >> 8);
+        h[1] = (uint8_t)(request->nx_ip_driver_physical_address_msw);
+        h[2] = (uint8_t)(request->nx_ip_driver_physical_address_lsw >> 24);
+        h[3] = (uint8_t)(request->nx_ip_driver_physical_address_lsw >> 16);
+        h[4] = (uint8_t)(request->nx_ip_driver_physical_address_lsw >> 8);
+        h[5] = (uint8_t)(request->nx_ip_driver_physical_address_lsw);
+        h[6] = (uint8_t)(drv_interface->nx_interface_physical_address_msw >> 8);
+        h[7] = (uint8_t)(drv_interface->nx_interface_physical_address_msw);
+        h[8] = (uint8_t)(drv_interface->nx_interface_physical_address_lsw >> 24);
+        h[9] = (uint8_t)(drv_interface->nx_interface_physical_address_lsw >> 16);
+        h[10] = (uint8_t)(drv_interface->nx_interface_physical_address_lsw >> 8);
+        h[11] = (uint8_t)(drv_interface->nx_interface_physical_address_lsw);
+        h[12] = (uint8_t)(ethertype >> 8);
+        h[13] = (uint8_t)(ethertype);
+    }
+
+    /* Bounded, and reported. The lwIP driver learned this as N14: a frame that cannot be sent
+       must not be counted as sent, and an over-length one will never fit however long you
+       wait. */
+    if (packet->nx_packet_length > ETH_BUFFER_SIZE) {
+        MSG("ETH: TX frame of %u bytes exceeds the %u-byte buffer; dropped\n",
+            (unsigned)packet->nx_packet_length, (unsigned)ETH_BUFFER_SIZE);
+        nx_packet_transmit_release(packet);
+        request->nx_ip_driver_packet = NX_NULL;
+        request->nx_ip_driver_status = NX_INVALID_PACKET;
+        return;
+    }
+
+    /* Flatten the chain. */
+    ULONG offset = 0;
+    for (NX_PACKET *p = packet; p != NX_NULL; p = p->nx_packet_next) {
+        ULONG chunk = (ULONG)(p->nx_packet_append_ptr - p->nx_packet_prepend_ptr);
+        if ((offset + chunk) > ETH_BUFFER_SIZE) {
+            chunk = ETH_BUFFER_SIZE - offset;
+        }
+        memcpy(&tx_concat_buf[offset], p->nx_packet_prepend_ptr, chunk);
+        offset += chunk;
+        if (offset >= ETH_BUFFER_SIZE) {
+            break;
+        }
+    }
+
+    /* Bring-up diagnostic: keep the head of the last frame so `ethinfo` can show what
+       actually went to the MAC. */
+    drv_tx_last_cmd = request->nx_ip_driver_command;
+    drv_tx_last_len = offset;
+    memcpy(drv_tx_last_head, tx_concat_buf, (offset < sizeof(drv_tx_last_head))
+                                                ? offset : sizeof(drv_tx_last_head));
+
+    bool sent = ETHHW_Transmit(ETH, tx_concat_buf, (uint16_t)offset,
+                               ETHHW_TXOPT_NONE, NULL);
+
+    if (sent) {
+        drv_tx_frames++;
+    } else {
+        drv_tx_dropped_mac++;
+    }
+
+    nx_packet_transmit_release(packet);
+    request->nx_ip_driver_packet = NX_NULL;
+
+    /* NX_TX_QUEUE_DEPTH rather than NX_SUCCESS on failure: reporting a dropped frame as sent
+       is exactly finding N14, where the stack could not see the loss and the drop counter
+       stayed at zero. */
+    request->nx_ip_driver_status = sent ? NX_SUCCESS : NX_TX_QUEUE_DEPTH;
+}
+
 /* --- Entry point ------------------------------------------------------------------------------ */
 
 VOID nx_h563_eth_driver(NX_IP_DRIVER *request) {
@@ -228,24 +555,27 @@ VOID nx_h563_eth_driver(NX_IP_DRIVER *request) {
         drv_get_status(request);
         break;
 
-    /* Send commands. Stubbed until S5c -- but the packet must still be released, or ARP and
-     * DHCP will drain the 8-packet pool within seconds and the failure will present as a hang
-     * rather than as an unimplemented transmit path.
-     *
-     * Attached to these six commands specifically, NOT to a default: branch:
-     * nx_ip_driver_packet is populated only for the send commands and is uninitialised stack
-     * for everything else. Releasing it unconditionally is what took the board down with an
-     * unaligned UsageFault in S4. */
     case NX_LINK_PACKET_SEND:
     case NX_LINK_PACKET_BROADCAST:
     case NX_LINK_RARP_SEND:
     case NX_LINK_ARP_SEND:
     case NX_LINK_ARP_RESPONSE_SEND:
     case NX_LINK_RAW_PACKET_SEND:
-        if (request->nx_ip_driver_packet != NX_NULL) {
-            nx_packet_transmit_release(request->nx_ip_driver_packet);
-            request->nx_ip_driver_packet = NX_NULL;
-        }
+        drv_send(request);
+        break;
+
+    case NX_LINK_MULTICAST_JOIN:
+    case NX_LINK_MULTICAST_LEAVE:
+        /* Nothing to program. mac_drv.c sets MACPFR.PM -- pass all multicast -- so every
+           group already reaches the stack and the filtering is NetX Duo's, in software. The
+           lwIP driver relied on the same thing. If per-group hardware filtering is ever
+           wanted, this is where the hash table would be maintained. */
+        request->nx_ip_driver_status = NX_SUCCESS;
+        break;
+
+    case NX_LINK_DEFERRED_PROCESSING:
+        /* Not used: this driver hands received frames straight to NetX Duo from rx_thread
+           rather than deferring them onto the IP thread. */
         request->nx_ip_driver_status = NX_SUCCESS;
         break;
 
@@ -259,11 +589,25 @@ VOID nx_h563_eth_driver(NX_IP_DRIVER *request) {
 
 /* --- MAC driver callbacks ---------------------------------------------------------------------- */
 
-/* Receive arrives in S5b. Returning ETHHW_RET_RX_PROCESSED tells the MAC driver to restore
-   the descriptor immediately, so the ring keeps cycling and the DMA never stalls. */
+/* Called from ETHHW_ProcessRx(), in interrupt context.
+ *
+ * Returning 0 means "queued, I will restore the descriptors later" -- rx_thread does it.
+ * Returning ETHHW_RET_RX_PROCESSED means "restore them now", which is the right answer when
+ * the queue is full and the frame is being dropped: holding descriptors for a frame nobody
+ * will collect is how the ring runs dry.
+ *
+ * Timeout 0 is mandatory, not conservative: this is an ISR, and CMSIS-RTOS2 rejects any
+ * non-zero timeout from interrupt context -- the same rule whose violation inside flexPTP is
+ * finding 1 of the feasibility study. */
 int ETHHW_ReadCallback(ETHHW_EventDesc *evt) {
-    (void)evt;
-    return ETHHW_RET_RX_PROCESSED;
+    if (evt->type != ETHHW_EVT_RX_READ) {
+        return 0;
+    }
+
+    if (osMessageQueuePut(rx_msg_q, evt, 0, 0) != osOK) {
+        return ETHHW_RET_RX_PROCESSED;
+    }
+    return 0;
 }
 
 int ETHHW_EventCallback(ETHHW_EventDesc *evt) {
@@ -275,4 +619,58 @@ int ETHHW_EventCallback(ETHHW_EventDesc *evt) {
 
 void ETH_IRQHandler(void) {
     ETHHW_ISR(ETH);
+}
+
+
+/* --- Diagnostics ------------------------------------------------------------------------------ */
+
+/* Counters, because "it does not work" is not a diagnosis.
+ *
+ * Every one of these exists because it was needed during bring-up: the difference between
+ * "the driver never got the frame", "the driver got it and dropped it" and "the stack refused
+ * it" is invisible from the console otherwise, and each has a completely different cause. */
+void eth_drv_report(void) {
+    MSG("ETH driver:\n");
+    MSG("  enabled=%u link=%s %u Mbps %s\n", (unsigned)drv_enabled,
+        drv_link.up ? "UP" : "DOWN", drv_link.speed, drv_link.duplex ? "full" : "half");
+    MSG("  nx_interface_link_up=%u\n",
+        (drv_interface != NX_NULL) ? (unsigned)drv_interface->nx_interface_link_up : 0U);
+    MSG("  rx: %u delivered, %u dropped (no packet), %u dropped (size)\n",
+        (unsigned)drv_rx_frames, (unsigned)drv_rx_dropped_nopacket, (unsigned)drv_rx_dropped_size);
+    MSG("  tx: %u sent, %u dropped (link down), %u dropped (MAC busy)\n",
+        (unsigned)drv_tx_frames, (unsigned)drv_tx_dropped_linkdown, (unsigned)drv_tx_dropped_mac);
+
+    MSG("  tx last: cmd=%u, %u bytes\n    ", (unsigned)drv_tx_last_cmd, (unsigned)drv_tx_last_len);
+    for (unsigned i = 0; i < sizeof(drv_tx_last_head); i++) {
+        MSG("%x ", (unsigned)drv_tx_last_head[i]);
+    }
+    MSG("\n");
+
+    /* NetX Duo's own view, which is the other half of the story: the driver counters above
+       say what reached the stack, these say what the stack made of it. A frame counted
+       delivered here and invalid there is a framing problem; delivered here and simply absent
+       there is a dispatch problem. */
+    if (drv_ip != NX_NULL) {
+        ULONG ip_total_tx = 0, ip_total_rx = 0, ip_invalid_rx = 0, ip_dropped_rx = 0;
+        ULONG ip_cksum_err = 0, ip_send_fail = 0;
+        /* Parameter order matters and is easy to get wrong -- it is
+           (sent, bytes_sent, received, bytes_received, invalid, dropped, cksum_err,
+            send_dropped, frags_sent, frags_received). */
+        if (nx_ip_info_get(drv_ip, &ip_total_tx, NX_NULL,
+                           &ip_total_rx, NX_NULL,
+                           &ip_invalid_rx, &ip_dropped_rx, &ip_cksum_err,
+                           &ip_send_fail, NX_NULL, NX_NULL) == NX_SUCCESS) {
+            MSG("  ip: rx %u (invalid %u, dropped %u, cksum %u), tx %u (failed %u)\n",
+                (unsigned)ip_total_rx, (unsigned)ip_invalid_rx, (unsigned)ip_dropped_rx,
+                (unsigned)ip_cksum_err, (unsigned)ip_total_tx, (unsigned)ip_send_fail);
+        }
+
+        ULONG arp_req_sent = 0, arp_req_rcvd = 0, arp_rsp_sent = 0, arp_rsp_rcvd = 0;
+        if (nx_arp_info_get(drv_ip, &arp_req_sent, &arp_req_rcvd, &arp_rsp_sent, &arp_rsp_rcvd,
+                            NX_NULL, NX_NULL, NX_NULL, NX_NULL) == NX_SUCCESS) {
+            MSG("  arp: req sent %u rcvd %u, rsp sent %u rcvd %u\n",
+                (unsigned)arp_req_sent, (unsigned)arp_req_rcvd,
+                (unsigned)arp_rsp_sent, (unsigned)arp_rsp_rcvd);
+        }
+    }
 }

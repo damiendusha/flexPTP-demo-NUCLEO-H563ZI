@@ -10,4 +10,7 @@
  *  descriptors the HAL abstracts away. */
 VOID nx_h563_eth_driver(NX_IP_DRIVER *request);
 
+/** Print driver state and counters. Bring-up and S6 diagnostic, reachable as `ethinfo`. */
+void eth_drv_report(void);
+
 #endif /* DRIVERS_ETHDRV_ETH_DRV_NETXDUO_H */

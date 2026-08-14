@@ -195,7 +195,10 @@ void task_startup(void *arg) {
 
     // -------------
 
+    /* Resident at 1 Hz. The DHCP poll is here rather than on a timer because it prints, and
+       printing blocks on the console FIFO -- see ethernet_poll_dhcp(). */
     for (;;) {
+        ethernet_poll_dhcp();
         osDelay(1000);
     }
 }

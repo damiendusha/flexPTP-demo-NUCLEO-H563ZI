@@ -23,6 +23,27 @@
  * _nx_ip_packet_send), so a flag the NSD sets before sending survives to the driver. */
 #define NX_ENABLE_INTERFACE_CAPABILITY
 
+/* NOT optional, and not what the name suggests.
+ *
+ * The ENTIRE nx_link layer -- common/src/nx_link.c, lines 28 to 1560 -- sits inside a single
+ * "#ifdef NX_ENABLE_VLAN". That layer is this port's whole reason for choosing NetX Duo:
+ *
+ *   nx_link_ethernet_packet_received()   delivers an RX frame WITH its hardware timestamp
+ *   nx_link_ethernet_packet_send()       transmits raw PTP-over-802.3 frames
+ *   nx_link_packet_receive_callback_add() receives them, timestamp passed to the callback
+ *   nx_link_multicast_join/leave()       the L2 groups gPTP needs
+ *   NX_LINK_TIME, NX_LINK_ETHERNET_PTP   the types and constants above
+ *
+ * Without it, none of those symbols exist and the link fails with an undefined reference --
+ * which is exactly how this was discovered in S5b.
+ *
+ * docs/threadx_netxduo_feasibility.md originally recorded the VLAN dependency as a quirk of
+ * ST's nx_stm32_eth_driver.c, which #errors without it. That was wrong: the requirement is
+ * upstream and applies to any port that uses nx_link at all. The document has been corrected.
+ *
+ * No VLAN tagging is configured or used here; the flag is purely what compiles the layer in. */
+#define NX_ENABLE_VLAN
+
 /* --- Disabled: not used, and each costs code or RAM --------------------------------------- */
 
 /* IPv6 and its dependents. This demo is IPv4-only -- flexPTP's UDP transport is
@@ -68,9 +89,13 @@
 /* --- Diagnostics ------------------------------------------------------------------------------ */
 
 #ifdef DEBUG
-/* Per-interface and per-protocol counters, reachable from the CLI. Cheap, and the lwIP
-   equivalents (LINK_STATS/MIB2) were the only way F75 and F76 were ever quantified. */
-#define NX_ENABLE_INTERFACE_CAPABILITY_INFO
+/* Per-packet owner/file/line, for tracking a packet that never came back. Costs 12 bytes in
+   every NX_PACKET header, which is why it is Debug-only. The pool is 8 packets, so 96 bytes.
+
+   Note that NetX Duo's protocol COUNTERS need nothing enabling: they are on unless a
+   NX_DISABLE_*_INFO is defined, and none is. They are the counterpart of the lwIP
+   LINK_STATS/MIB2 counters that were the only way F75 and F76 were ever quantified. */
+#define NX_ENABLE_PACKET_DEBUG_INFO
 #else
 /* Error checking costs a call and a few comparisons per API. Kept in Debug for the same
    reason ThreadX's is, dropped in Release. */

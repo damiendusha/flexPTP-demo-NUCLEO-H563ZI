@@ -12,6 +12,7 @@
 #include "standard_output/serial_io.h"
 #include "standard_output/standard_output.h"
 
+#include "Drivers/EthDrv/eth_drv_netxduo.h"
 #include "flexptp/task_ptp.h"
 
 /* Defined in cpp_support.cpp. Reported here because the C++ runtime's initialisation cannot
@@ -99,6 +100,11 @@ CMD_FUNCTION(os_info) {
     return 0;
 }
 
+CMD_FUNCTION(eth_info) {
+    eth_drv_report();
+    return 0;
+}
+
 CMD_FUNCTION(start_flexptp) {
     // flexPTP renamed task_ptp_is_operating() -> is_flexPTP_operating() at a60190f
     if (!is_flexPTP_operating()) {
@@ -117,4 +123,5 @@ CMD_FUNCTION(start_flexptp) {
 void cmd_init() {
     cli_register_command("osinfo \t\t\tPrint OS-related information", 1, 0, os_info);
     cli_register_command("flexptp \t\t\tStart flexPTP daemon", 1, 0, start_flexptp);
+    cli_register_command("ethinfo \t\t\tPrint Ethernet driver state and counters", 1, 0, eth_info);
 }

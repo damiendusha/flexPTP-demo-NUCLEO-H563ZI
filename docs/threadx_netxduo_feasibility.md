@@ -251,8 +251,14 @@ Confirmed safe: `_nx_ip_packet_send()` **ORs** into `nx_packet_interface_capabil
 `GET_STATUS`, `DEFERRED_PROCESSING`. ST's `nx_stm32_eth_driver.c` (2 880 lines) is a working
 reference for the contract — **but do not adopt it.** It is built on `HAL_ETH`, which this
 project deliberately bypassed precisely because the HAL abstracts away the DMA descriptors that
-hardware timestamping needs; and its PTP mode is hard-wired to `NX_PTP_CLIENT` types and
-`#error`s without `NX_ENABLE_VLAN`. The existing `rx_thread` / `low_level_output` structure in
+hardware timestamping needs; and its PTP mode is hard-wired to `NX_PTP_CLIENT` types.
+
+> **Correction (S5b, 15 Aug 2026).** This paragraph originally cited ST's `#error` without
+> `NX_ENABLE_VLAN` as one of that driver's quirks. It is not a quirk and it is not ST's: the
+> **entire `nx_link` layer is inside `#ifdef NX_ENABLE_VLAN`** upstream — `nx_link.c` lines 28
+> to 1560, which is every function in [the table above](#the-timestamp-path-is-genuinely-better),
+> `NX_LINK_TIME`, and the timestamp stashing. Any port using `nx_link` must define it,
+> whichever fork it takes. No VLAN tagging need be configured. The existing `rx_thread` / `low_level_output` structure in
 `eth_drv_lwip.c` maps onto the NetX Duo command switch almost one-for-one.
 
 ---

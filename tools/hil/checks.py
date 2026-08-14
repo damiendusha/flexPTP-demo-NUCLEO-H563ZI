@@ -73,8 +73,13 @@ NOMINAL_ADDEND = 3435973836
 # +/-0.02%; 1% is generous around that while remaining nowhere near zero.
 ADDEND_TOLERANCE = 0.01
 
-# The CLI's registered/available slot count once flexPTP has registered its commands.
-EXPECTED_CMD_COUNT = 23
+# The CLI's registered command count once flexPTP has registered its own.
+#
+# 23 in the pre-port firmware: 4 application commands plus flexPTP's 19. S5b added `ethinfo`,
+# a driver-state and counter dump, making 24. Asserted exactly rather than as a minimum,
+# because a command silently failing to register is a real failure mode -- that is what the
+# check is for -- so a deliberate addition is expected to move this number.
+EXPECTED_CMD_COUNT = 24
 
 
 # --------------------------------------------------------------------------
