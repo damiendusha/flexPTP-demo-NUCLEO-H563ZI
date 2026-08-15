@@ -8,10 +8,16 @@ Rationale, evidence and the supply-chain decision are in
 
 Companion documents: [architecture.md](architecture.md) ·
 [implementation_plan.md](implementation_plan.md) (the original H743→H563 port, same format) ·
-[port_review.md](port_review.md) ·
-**[threadx_s6_handoff.md](threadx_s6_handoff.md) — start here to pick up the outstanding stage**
+[port_review.md](port_review.md)
 
-> **Status: NOT STARTED.** Written for approval. No implementation work has begun.
+> **Status: S0–S6 done and green on hardware. S7 is next** — see the
+> [progress table](#progress-table), and the per-stage progress notes under each stage heading.
+>
+> `docs/threadx_s6_handoff.md` was a self-contained brief for picking up S6 with no prior
+> context. S6 is closed, and the brief ranked three candidate causes that all turned out to be
+> wrong, so it has been deleted rather than left to mislead. Recover it with
+> `git show 0d37db6:docs/threadx_s6_handoff.md`; what it was actually chasing is F80 in
+> [port_review.md](port_review.md).
 
 ## Table of Contents
 
@@ -85,14 +91,14 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending · ⏸️ optional/deferred
 | **S5c** | Driver: TX path, multicast join/leave, deferred processing | ✅ ping 0% @ 1400 B, 0.337 ms | 1 d | ✅ **done** |
 | **S5d** | DHCP client | ✅ 192.168.2.191, 6/6 vs baseline | 0.5 d | ✅ **done** |
 | **S5e** | *Tier 3:* real ThreadX (`ports/linux`) + real NetX Duo + RAM driver on the host | ⬜ host only | 1–2 d | ⬜ pending |
-| **S6** | NSD: UDP/IPv4 E2E + TX-timestamp deferral fix | 🔄 receive proven end-to-end; **BMCA selects no master** | 2–3 d | 🔄 **in progress** |
+| **S6** | NSD: UDP/IPv4 E2E + TX-timestamp deferral fix | ✅ 9/9 vs baseline, `\|offset\| ≤ 3301 ns` | 2–3 d | ✅ **done** |
 | **S7** | 802.3 transport, P2P, all three profile presets | ✅ each preset against `ptp4l` | 1–2 d | ⬜ pending |
 | **S8** | Cleanup, docs rewrite, CI update, final review | ✅ full regression suite vs S0 baseline | 1.5–2 d | ⬜ pending |
 | **B1** | *Bonus:* unit-test the F42 TX-ring ordering logic | ⏸️ | 0.5 d | ⏸️ optional |
 
 **Total: 14–20 working days.** Two days above the feasibility estimate, all of it the S1b/S5e
 host-test tiers — bought back if either catches one silent defect, which the finding log suggests
-is likely. S6 still carries the variance.
+is likely. With S6 closed, S7 now carries the variance.
 
 > Update the Status column as stages land. Add a one-line dated note under each stage's detail
 > section recording what was actually observed on hardware — the same discipline
@@ -761,60 +767,65 @@ materially different offset means something is wrong, in either direction.
 **Exit criteria:** offset trace statistically indistinguishable from baseline over 15 minutes.
 Run `/code-review ultra` here.
 
-#### Progress — 15 Aug 2026 — **IN PROGRESS, not passing**
+#### Progress — 15 Aug 2026 — **DONE, 9/9 green**
+
+`./run.py --stage S6 --compare baseline.json` → **9 passed, 0 failed, 0 skipped, no
+regressions**, with `ptp_ts` passing before `ptp_sync` as the stage requires:
+
+```
+PASS ptp_start  addend 3435973836 (+0.000% of nominal)
+PASS ptp_ts     T2 x20, T3 x20, both advancing
+PASS ptp_sync   SLAVE, 30 samples, |offset| <= 3301 ns
+```
+
+Accuracy is *better* than the lwIP baseline's 11 800 ns rather than merely unchanged. The
+exit criterion asked for "statistically indistinguishable", and this is a single 30-sample
+run on a quieter bench, not a 15-minute trace — treat the headline number as "no worse", and
+run the long trace in S8's full regression.
 
 Written and on the board: `Src/flexptp_nsd/nsd_netxduo.c` (the four NSD functions over
 UDP/IPv4) and `Src/flexptp_nsd/ptp_tx_timestamp.c` (the finding-1 deferral). The network layer
-is **unregressed** — `--stage S5d --compare baseline.json` still 6/6 — and the host tests still
-pass.
+is unregressed and the 25 host tests still pass.
 
-**What is proven to work.** Instrumented end to end with `ethinfo`:
+**The bug that held the stage up was F80**, and it was not in anything this stage wrote. It was
+the second defect in flexPTP's `FLEXPTP_CMSIS_OS2` binding, in the same family as the first:
+`ptp_event_enqueue()` posts with `osWaitForever`, and its highest-frequency caller
+`ptp_heartbeat_tmr_cb()` runs in ThreadX's timer thread, which `_txe_queue_send()` refuses to
+suspend. Every heartbeat was rejected, `S.ticks` stayed at 0, `ptp_bmca_tick()` never ran, and
+the BMCA sat in `INITIALIZING` — the one state in which `ptp_handle_announce_msg()` discards
+the Announce through its `default:` arm. Fixed by
+`patches/flexptp/0004-cmsis-os2-event-enqueue-from-timer-thread.patch`. Full analysis, and the
+four counters that found it, in [port_review.md](port_review.md) under F80.
 
-```
-udp: rx 37 (invalid 0, dropped 0, cksum 0), tx 2
-nsd: notify 35, packets 35, enqueued 35, tx-requested 0
-nsd rx types: sync 14 delreq 0 fup 14 delresp 0 ann 7
-nsd last rx: 44 bytes
-  08 12 00 2c 00 00 ...
-```
+**All three candidates the previous session ranked were wrong**, and one counter killed all of
+them at once: `PTP_UEV_ANNOUNCE_RECVED` read 19, exactly equal to the NSD's Announce count. That
+event is dispatched on the last line of the Announce branch of `ptp_process_packet()`, so
+reaching it proves the packet arrived, the queue pairing held, `msgb_alloc()` succeeded, and the
+domain / `transportSpecific` / version gate passed. The fault was never on the receive path at
+all — it was that the *clock* driving the state machine had stopped, which no amount of looking
+at receive would have shown.
 
-So: the IGMP join goes out correctly (verified on the wire — destination MAC `01:00:5e:00:01:81`,
-IP protocol 2, to 224.0.1.129); Sync, Follow_Up and Announce all arrive in the right
-proportions on both the event and general sockets; each is a well-formed PTPv2 message at the
-right offset with the right length; and all 35 are handed to `ptp_receive_enqueue()`. flexPTP's
-`ptp` thread is alive and has woken 52 times, so it is consuming them.
+The lesson generalises, and it is the same one F71 taught: **when a state machine does nothing,
+instrument the thing that advances it before instrumenting the thing that feeds it.** The
+handoff's own strongest clue was in plain sight and went unread — `osinfo` reported the `ptp`
+thread at `runs=52` after 35 packets, when a live 31 ms heartbeat would have put it in the
+thousands.
 
-**What does not work.** BMCA selects nothing: `ptp info` reports
-`Master clock ID: 0000000000000000`, no state transition is logged even with `ptp log info`
-and `ptp log bmca` enabled, and consequently no `Delay_Req` is ever sent
-(`tx-requested 0`). The transport, domain and delay mechanism all read correctly
-(`IPv4`, `0`, `E2E`).
+**Two real bugs were found and fixed along the way:**
 
-**Where the next session should start.** The fault is above the NSD — messages of the right
-shape reach flexPTP and it declines to act on them — so the remaining candidates are inside
-flexPTP's own processing under the `FLEXPTP_CMSIS_OS2` binding, which this port is the first
-to exercise here. Worth checking in order:
+- `ptp_tx_timestamp_init()` was never called, so the deferral queue would have been NULL when
+  the first transmit timestamp arrived and every `t3` would have been dropped in the ISR — the
+  exact failure the module exists to prevent, reintroduced by forgetting to wire it up. Now
+  initialised from `ptp_nsd_init()`, idempotently.
+- F80, above.
 
-1. Whether `ptp_process_packet()` rejects on the `versionPTP` byte. The received value is
-   `0x12` — PTPv2 in the low nibble, `minorVersionPTP = 1` in the high nibble, which is what
-   a current `ptp4l` emits. Note the **lwIP baseline accepted the same traffic from the same
-   `ptp4l` instance**, so this is only a candidate if something else differs.
-2. The `sRawRxMsgBuf` path: whether `msgb_alloc()` is returning NULL and the
-   `MSGB_ERR_FULL` branch is silently swallowing every message. `ptp log info on` should
-   print "The PTP receive packet buffer is full" if so, and it prints nothing — which is
-   itself informative.
-3. Whether the notification/uid queue pairing in the CMSIS-RTOS2 binding is losing the
-   association — the binding posts to two separate queues per message and only the
-   FreeRTOS path has been exercised in the field.
-
-Diagnostics are all in place for that work: `ethinfo` now reports driver, IP, UDP, ARP and NSD
-counters, a message-type histogram, the head of the last received PTP payload and the head of
-the last transmitted frame.
-
-**One real bug was found and fixed along the way:** `ptp_tx_timestamp_init()` was never called,
-so the deferral queue would have been NULL when the first transmit timestamp arrived and every
-`t3` would have been dropped in the ISR — the exact failure the module exists to prevent,
-reintroduced by forgetting to wire it up. Now initialised from `ptp_nsd_init()`, idempotently.
+**Diagnostics left in place.** `ethinfo` now reports, after the driver/IP/UDP/ARP/NSD counters,
+a `flexPTP core:` block: `ticks`, the BMCA state with its `stateDuration` and `masterTOCntr`,
+the selected master identity, and a histogram of the user events that matter
+(`ANNOUNCE_RECVED`, `SYNC_RECVED`, `DELAY_RESP_RECVED`, `RESET_DONE`, `BMCA_STATE_CHANGED`,
+`QUEUE_ERROR`). `osinfo` now enumerates the ThreadX application timers alongside the threads,
+with each timer's active flag, remaining ticks and reschedule period — that is what proved the
+heartbeat timer was firing and moved the search into the callback.
 
 ---
 

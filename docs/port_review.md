@@ -2183,6 +2183,83 @@ Also corrected: `architecture.md`'s RX depth table called `ETH_RX_DESC_CNT` "des
 MAC's DMA can fill before it stalls", which understated it — the stall is a latch, not a pause
 (F71, finding D-b).
 
+### F80 — flexPTP's heartbeat cannot be enqueued from ThreadX's timer thread *(RESOLVED)*
+
+Found in S6 of the ThreadX port. The second defect in flexPTP's `FLEXPTP_CMSIS_OS2` binding,
+and the same shape as the first (F40): a blocking call made from a context that is not allowed
+to block.
+
+`ptp_event_enqueue()` posted with `osWaitForever`:
+
+```c
+ok = osMessageQueuePut(sEventFIFO, event, 0, osWaitForever) == osOK;
+```
+
+Its highest-frequency caller is `ptp_heartbeat_tmr_cb()`, and CMSIS-RTOS2 runs `osTimer`
+callbacks in the RTOS's timer thread. ThreadX refuses to suspend that thread —
+`Modules/threadx/common/src/txe_queue_send.c`:
+
+```c
+if (wait_option != TX_NO_WAIT) {
+    ...
+    else {
+        TX_THREAD_GET_CURRENT(current_thread)
+        if (current_thread == &_tx_timer_thread) {
+            status = TX_WAIT_ERROR;
+        }
+    }
+}
+```
+
+The CMSIS-RTOS2 wrapper maps every `tx_queue_send()` status that is neither `TX_SUCCESS` nor
+`TX_QUEUE_FULL` to `osErrorTimeout`, and `ptp_event_enqueue()` folds that into a bare `false`
+that no caller reads. So **every** heartbeat was rejected, silently, at 32 Hz.
+
+The consequence is not a slow clock, it is no clock at all. `ptp_process_event()` never saw
+`PTP_CEV_HEARTBEAT`, so `S.ticks` stayed at 0 and `ptp_bmca_tick()` never ran. The BMCA FSM
+therefore never left `PTP_BMCA_INITIALIZING` — and `INITIALIZING` is the one state for which
+`ptp_handle_announce_msg()` has no arm, so it falls through `default:` and discards the
+Announce. Every Announce arrived, was parsed, and was thrown away.
+
+**Why it looked like a receive fault.** Receive was flawless throughout — the NSD's counters
+showed 95 packets enqueued in the right 2:2:1 proportions — and the visible symptom was
+`Master clock ID: 0000000000000000` with no BMCA logging at all. The silence was itself the
+evidence: `SBMC_PRINT_LOG` only fires on a *transition*, and there were none to print.
+
+#### How it was found
+
+Four counters on top of `ethinfo`, no print statements, no submodule instrumentation:
+
+| counter | reading | what it eliminated |
+|---|---|---|
+| `PTP_UEV_ANNOUNCE_RECVED` | **19**, equal to the NSD's Announce count | `ptp_process_packet()` is reached and the domain / `transportSpecific` / version gate passes. Kills all three candidates the S6 handoff ranked |
+| `ptp_get_tick()` | **0** | no heartbeat event has ever been processed |
+| `tx_timer_info_get()` over `_tx_timer_created_ptr` | `active=1 reschedule=31` | the timer itself is running and rescheduling correctly, so the fault is in the callback, not the timer |
+| a probe `osTimer` that mirrored flexPTP's exactly | fired **1225** times, `IPSR == 0`, `osMessageQueuePut(..., osWaitForever)` → **−2** | a periodic timer works; a *blocking queue put from its callback* does not — and not because of interrupt context |
+
+The `IPSR == 0` reading is the one that mattered. It ruled out the obvious explanation (the
+callback running in an ISR, which is F40's mechanism) and left only the one ThreadX actually
+implements: a restriction on the timer thread specifically, not on interrupt context.
+
+#### Fixed
+
+`patches/flexptp/0004-cmsis-os2-event-enqueue-from-timer-thread.patch` — a zero timeout for
+both the event and its notification. Dropping an event when the queue is full is the correct
+failure mode for a timer callback, and it also removes a latent self-deadlock:
+`ptp_bmca_handle_state_change()` enqueues from `task_ptp()` itself, the only thread that drains
+that queue, so a full queue there would have blocked forever.
+
+`--stage S6 --compare baseline.json` is 9/9 with no regressions and `ptp_ts` passing before
+`ptp_sync`. The offset figures are in the S6 progress note in
+[threadx_porting_plan.md](threadx_porting_plan.md); note that `ptp_sync` **records** the offset
+but does not threshold it — it passes on reaching `SLAVE` with enough samples, and `--compare`
+has no tolerance entry for the offset. Do not read a green `ptp_sync` as an accuracy assertion.
+
+Worth reporting upstream. The FreeRTOS branch has the same shape — `xQueueSend(...,
+portMAX_DELAY)` from the timer service task risks deadlocking it rather than failing cleanly —
+but only the CMSIS-RTOS2 branch is patched here, because that is the one this port exercises
+and the one that was measured.
+
 ---
 
 ## Minor Findings

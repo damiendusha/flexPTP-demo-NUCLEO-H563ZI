@@ -36,14 +36,24 @@
 /* TX_TIMER_PROCESS_IN_ISR is deliberately NOT defined, and this is load-bearing rather than
  * a default left alone.
  *
- * flexPTP's heartbeat callback calls ptp_event_enqueue(), which in the FLEXPTP_CMSIS_OS2
- * binding does osMessageQueuePut(..., osWaitForever). CMSIS-RTOS2 forbids a non-zero timeout
- * from interrupt context and ST's wrapper enforces it, returning osErrorParameter -- which
- * flexPTP does not check. Defining TX_TIMER_PROCESS_IN_ISR would run that callback in the
- * SysTick ISR and silently stop the PTP heartbeat.
+ * flexPTP's heartbeat callback calls ptp_event_enqueue(). Defining TX_TIMER_PROCESS_IN_ISR
+ * would run that callback in the SysTick ISR, where CMSIS-RTOS2 forbids a blocking enqueue
+ * and ST's wrapper rejects it outright.
  *
- * See docs/threadx_netxduo_feasibility.md, finding 1: the same defect on the transmit path
- * is the sharpest hazard in this whole port. */
+ * CORRECTION, S6. An earlier version of this comment went on to reason that leaving the flag
+ * undefined therefore made the callback safe, because it would run in the timer THREAD rather
+ * than an ISR. That was wrong, and it cost the S6 bench session: ThreadX will not let the
+ * timer thread block either. txe_queue_send.c returns TX_WAIT_ERROR when the caller is
+ * &_tx_timer_thread and the wait option is not TX_NO_WAIT -- the same rejection as from an
+ * ISR, for a different reason. Every heartbeat was dropped, the BMCA never left INITIALIZING,
+ * and no master was ever selected. See F80 in docs/port_review.md.
+ *
+ * So this flag must stay undefined AND the enqueue must be non-blocking; the latter is
+ * patches/flexptp/0004. Neither alone is sufficient.
+ *
+ * Related: docs/threadx_netxduo_feasibility.md, finding 1 -- the same "blocking call from a
+ * context that may not block" shape, on the transmit-timestamp path, handled by
+ * Src/flexptp_nsd/ptp_tx_timestamp.c. Three instances of one mistake in one binding. */
 /* #define TX_TIMER_PROCESS_IN_ISR */
 
 #define TX_TIMER_THREAD_STACK_SIZE 1024

@@ -47,9 +47,18 @@ Every third-party component and its provenance. Where behaviour had to change, i
 through a supported extension point or a compile definition rather than by editing vendored
 source. Two submodules are the exception, and both changes are **permanent bug fixes**.
 
-> **Two submodules carry local patches**, both fixing real defects rather than instrumenting
-> anything: a servo fix in flexPTP ([F59](port_review.md#f59--one-duplicated-sync-cycle-latches-the-servo-into-nan-for-ever-resolved))
-> and **four** formatting fixes in embfmt — `%ll` conversions dropped and NaN rendered as
+> **Two submodules carry local patches**, all fixing real defects rather than instrumenting
+> anything.
+>
+> **flexPTP — three patch files.** A servo fix
+> ([F59](port_review.md#f59--one-duplicated-sync-cycle-latches-the-servo-into-nan-for-ever-resolved));
+> an extension point so a port that supplies its own network stack can provide the two IGMP
+> group addresses, added by the ThreadX/NetX Duo port; and a fix for the CMSIS-RTOS2 binding
+> enqueueing heartbeat events with `osWaitForever` from ThreadX's timer thread, which that
+> thread is not allowed to block in — so every heartbeat was silently dropped and the BMCA
+> never left `INITIALIZING` ([F80](port_review.md#f80--flexptps-heartbeat-cannot-be-enqueued-from-threadxs-timer-thread-resolved)).
+>
+> **embfmt — one patch file, four defects.** `%ll` conversions dropped and NaN rendered as
 > `0.0000` ([F60](port_review.md#f60--embfmt-drops-ll-conversions-and-renders-nan-as-00000-resolved)),
 > plus small `%e` values swallowed by a pre-normalisation rounding constant and a `%f`/`%e`
 > rounding carry that subtracted 10 rather than 10^precision
@@ -66,7 +75,8 @@ source. Two submodules are the exception, and both changes are **permanent bug f
 > build** if a submodule is neither pristine nor patched. This matters because omitting them
 > does not break the build — it produces a firmware that is silently wrong: the servo latches
 > to NaN on the first duplicated Sync (F59) while printing a plausible `0.0000` correction
-> (F60). Before that check existed, a fresh clone built exactly that firmware with no warning.
+> (F60), or the clock never syncs at all because no master is ever selected (F80). Before that
+> check existed, a fresh clone built exactly that firmware with no warning.
 >
 > The temporary F42/F61 instrumentation patch that used to sit alongside them was **dropped**
 > once both findings were resolved. `patches/flexptp/README.md` records how to recover it.

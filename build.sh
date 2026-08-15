@@ -179,15 +179,19 @@ provision_openocd() {
 # build -- it produces a firmware that is silently wrong:
 #   flexptp F59      one duplicated Sync latches the Kalman servo into NaN for ever, and
 #                    every visible indicator stays green while the clock free-runs
+#   flexptp F80      the CMSIS-RTOS2 binding enqueues heartbeat events with osWaitForever from
+#                    the RTOS timer thread, which ThreadX forbids from blocking -- so every
+#                    heartbeat is dropped and the BMCA never leaves INITIALIZING
 #   embfmt  F60/F66  %ll conversions dropped, NaN printed as "0.0000", small %e values and
 #                    any rounding carry misreported
-# See docs/port_review.md for both.
+# See docs/port_review.md for all of them.
 #
 # Format: "<submodule path>:<patch path>", both relative to PROJECT_ROOT.
 SUBMODULE_PATCHES=(
     "Modules/embfmt:patches/embfmt/0001-formatting-fixes.patch"
     "Modules/flexptp:patches/flexptp/0002-servo-nan-latch-fix.patch"
     "Modules/flexptp:patches/flexptp/0003-generic-netstack-igmp-addresses.patch"
+    "Modules/flexptp:patches/flexptp/0004-cmsis-os2-event-enqueue-from-timer-thread.patch"
 )
 
 # Bring each submodule to its patched state, and refuse to build if that cannot be reached.

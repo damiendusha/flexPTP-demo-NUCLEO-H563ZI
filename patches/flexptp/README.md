@@ -57,6 +57,39 @@ clock free-runs. Full analysis in
 
 Report upstream: the defect is target-independent.
 
+### `0003-generic-netstack-igmp-addresses.patch` — **permanent, keep**
+
+Adds `PTP_IGMP_PRIMARY_INIT` / `PTP_IGMP_PEER_DELAY_INIT` so a port that supplies its own
+network stack can provide the two IGMP group addresses. `ptp_defs.c` already `#error`s telling
+the integrator to define `PTP_IGMP_PRIMARY` and `PTP_IGMP_PEER_DELAY`, but both are `const`
+objects defined in that file, so there was no way to comply without editing it.
+
+Report upstream: the defect is target-independent.
+
+### `0004-cmsis-os2-event-enqueue-from-timer-thread.patch` — **permanent, keep**
+
+Makes `ptp_event_enqueue()` non-blocking in the CMSIS-RTOS2 binding. It was using
+`osWaitForever`, and its highest-frequency caller is `ptp_heartbeat_tmr_cb()`, which
+CMSIS-RTOS2 runs in the RTOS's timer thread. ThreadX refuses to suspend that thread:
+`_txe_queue_send()` returns `TX_WAIT_ERROR` when `_tx_thread_current_ptr == &_tx_timer_thread`
+and the wait option is not `TX_NO_WAIT`, which the CMSIS-RTOS2 wrapper reports as
+`osErrorTimeout` — a code `ptp_event_enqueue()` turns into a silent `false`.
+
+So every heartbeat was discarded: `S.ticks` stayed at 0, `ptp_bmca_tick()` never ran, and the
+BMCA FSM never left `INITIALIZING` — the one state in which `ptp_handle_announce_msg()` falls
+through its `default:` arm and drops the Announce. Receive worked perfectly throughout, which
+is what made it look like a receive fault. Full analysis in
+[`docs/port_review.md`](../../docs/port_review.md) under F80.
+
+| File | Change |
+|---|---|
+| `task_ptp.c` | `ptp_event_enqueue()` uses a zero timeout for both the event and its notification in the `FLEXPTP_CMSIS_OS2` branch |
+
+Report upstream: the defect is target-independent, and the FreeRTOS branch has the same shape
+— `xQueueSend(..., portMAX_DELAY)` from the timer service task risks deadlocking it rather
+than failing cleanly. Only the CMSIS-RTOS2 branch is changed here, because that is the one
+this port exercises and the one that was measured.
+
 ## Removed
 
 `0001-temporary-F42-instrumentation.patch` added volatile debug counters to `task_ptp.c`,
