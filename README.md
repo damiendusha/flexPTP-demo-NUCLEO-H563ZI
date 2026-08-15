@@ -303,6 +303,7 @@ PID servo expose `ptp servo params` instead.
 | [`docs/implementation_plan.md`](docs/implementation_plan.md) | The staged work plan and what remains |
 | [`docs/threadx_netxduo_feasibility.md`](docs/threadx_netxduo_feasibility.md) | What porting to Eclipse ThreadX and NetX Duo would cost, and the one flexPTP defect that would break it silently |
 | [`docs/threadx_porting_plan.md`](docs/threadx_porting_plan.md) | The staged execution plan for that port — hardware checkpoints, the host test tree, and progress tracking |
+| [`docs/threadx_s5e_plan.md`](docs/threadx_s5e_plan.md) | The one stage left undone: running the real stack on the host, what it would and would not have caught, and a cheaper alternative |
 | [`docs/reviews/`](docs/reviews/README.md) | Archive of the independent reviews that fed `port_review.md` — historical, superseded by it where they disagree |
 
 ## Related papers and references

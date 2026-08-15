@@ -90,7 +90,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending · ⏸️ optional/deferred
 | **S5b** | Driver: RX path → `nx_link_ethernet_packet_received()` | ✅ (with S5c) | 1 d | ✅ **done** |
 | **S5c** | Driver: TX path, multicast join/leave, deferred processing | ✅ ping 0% @ 1400 B, 0.337 ms | 1 d | ✅ **done** |
 | **S5d** | DHCP client | ✅ 192.168.2.191, 6/6 vs baseline | 0.5 d | ✅ **done** |
-| **S5e** | *Tier 3:* real ThreadX (`ports/linux`) + real NetX Duo + RAM driver on the host | ⬜ host only | 1–2 d | ⬜ pending |
+| **S5e** | *Tier 3:* real ThreadX (`ports/linux`) + real NetX Duo + RAM driver on the host | ⬜ host only | 1–5 d | ⏸️ **not started — see [threadx_s5e_plan.md](threadx_s5e_plan.md)**, which recommends a cheaper variant |
 | **S6** | NSD: UDP/IPv4 E2E + TX-timestamp deferral fix | ✅ 9/9 vs baseline, `\|offset\| ≤ 3301 ns` | 2–3 d | ✅ **done** |
 | **S7** | 802.3 transport, P2P, all three profile presets | ✅ TX, RX and peer-delay proven; Announce/Sync blocked by the host's `asCapable` threshold | 1–2 d | ✅ **done, with a documented host limitation** |
 | **S8** | Cleanup, docs rewrite, CI update, final review | ✅ 10/10 vs baseline | 1.5–2 d | ✅ **done** (review deferred at maintainer's request) |
