@@ -581,6 +581,23 @@ a table of `{const char *name, void (*print)(void)}` that each module registers 
 initialiser. The driver then depends on nothing above it, and every prototype is checked by its
 own translation unit.
 
+> **✅ ADDRESSED — more simply than the sketch above.** No registration table was needed: the
+> dependency did not want inverting, it wanted moving to the layer that legitimately has both.
+>
+> `ethinfo` is an application command, and `Src/cmds.c` may depend on the driver *and* the NSD
+> *and* flexPTP. So `eth_drv_report()` now reports only the driver and NetX Duo's own counters,
+> a new `ptp_nsd_report()` (declared in `Src/flexptp_nsd/nsd_netxduo.h`) reports the NSD's, and
+> `cmds.c` calls them in order. Every prototype is now checked against its definition by the
+> compiler.
+>
+> A registration table would have bought late binding this firmware has no use for — there is
+> one driver, one NSD and one command — at the cost of a function-pointer array and an
+> initialisation order to get wrong.
+>
+> **Evidence.** Hardware `S8` **12/12**; `ethinfo` output verified unchanged in content and
+> order across the move (driver counters → `nsd:` → `nsd rejected:` → rx types → `ptp ts:` →
+> `flexPTP core:`).
+
 ### AR-04 — Debug and Release differ in more than optimisation level
 
 **Priority: Medium** · `Inc/nx_user.h:91-103`, `Inc/tx_user.h:73-75`
@@ -1505,7 +1522,7 @@ how, and for the evidence.
 | [NX-10](#nx-10--nx_link_disable-does-not-stop-the-mac) | ✅ P3 | Gap | `NX_LINK_DISABLE` leaves `RE`/`TE`/`SR`/`ST` set | `eth_drv_netxduo.c:403-406` | Unreachable today; becomes a bug with any link-flap recovery |
 | [AR-01](#ar-01--every-frame-is-copied-twice-on-transmit-and-once-on-receive) | Opp (M) | Arch | Two copies per TX frame, one per RX; NetX Duo's zero-copy is unused | driver + `mac_drv.c` | 48 × 1 528 B = 73 KB of SRAM3 exists only to be copied out of and into. Crosses the `mac_drv.c` boundary this port kept unchanged |
 | [AR-02](#ar-02--the-pending-timestamp-registry-could-key-on-the-message-instead-of-the-pointer) | Opp (M) | Arch | TX-timestamp registry keys on a recycled pointer; keying on `(msgType, sequenceId, portIdentity)` removes the ABA hazard structurally | `ptp_tx_registry.cpp` | Current design is correct and well-tested; recorded because it rests on three invariants a future drop path could break |
-| [AR-03](#ar-03--diagnostics-reach-across-layers-through-function-local-extern-declarations) | P3 | Arch | Four unheadered `extern` prototypes inside `eth_drv_report()` | `eth_drv_netxduo.c:729-759` | Signature-drift exposure — the F48 class. A small registration table fixes it without inverting the dependency |
+| [AR-03](#ar-03--diagnostics-reach-across-layers-through-function-local-extern-declarations) | ✅ P3 | Arch | Four unheadered `extern` prototypes inside `eth_drv_report()` | `eth_drv_netxduo.c:729-759` | Signature-drift exposure — the F48 class. A small registration table fixes it without inverting the dependency |
 | [AR-04](#ar-04--debug-and-release-differ-in-more-than-optimisation-level) | ✅ P2 | Arch/Doc | Release changes NetX Duo API semantics and drops the software stack check | `nx_user.h:91-103`, `tx_user.h:73-75` | Turns NX-02 from an error code into list corruption. No document states the delta |
 | [AR-05](#ar-05--the-eth_stack-switch-is-advertised-as-easier-than-it-is) | ✅ P3 | Doc/Arch | README calls the EtherLib switch easy; design_doc says the files have never been compiled | `README.md:263-271` | Align the two; see TS-08 |
 | [AR-06](#ar-06--no-watchdog-and-every-failure-path-halts-forever) | P3 | Decision | No IWDG; all failure paths halt | `main.c`, `serial_io.c` | Defensible for a bench demo — but undocumented as a choice |

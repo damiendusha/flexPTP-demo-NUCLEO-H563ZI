@@ -207,6 +207,11 @@ Two boundaries are worth calling out:
 - **`flexptp_options.h` is the whole flexPTP configuration surface.** It selects the OS
   binding, the clock interface, the servo, and the print/CLI macros, and it is where the
   hardware port is wired in. flexPTP has no other configuration input.
+- **`ethinfo` is composed by the application, not by the driver.** It prints three layers —
+  the MAC driver's counters, the NSD's, and flexPTP's core state — and `Src/cmds.c` calls all
+  three in order. The driver deliberately does **not** reach up into the NSD: it used to, through
+  four hand-written `extern` declarations inside `eth_drv_report()`'s body, which is four
+  chances for the signature drift that is F48.
 - **`ptp_tx_timestamp.c` exists to break a call chain, not to add a feature.** flexPTP's
   CMSIS-RTOS2 binding blocks when enqueueing a transmit timestamp, and the MAC delivers that
   timestamp from `ETH_IRQHandler`. The file defers the call to a thread. See

@@ -785,49 +785,6 @@ void eth_drv_report(void) {
         (unsigned)drv_tx_frames, (unsigned)drv_tx_dropped_linkdown, (unsigned)drv_tx_dropped_mac);
 
     MSG("  tx timestamped: %u requested\n", (unsigned)drv_tx_timestamped);
-    {
-        /* Declared here rather than in a header: this is a bring-up diagnostic and the NSD is
-           a layer above the driver, so a permanent dependency the other way would be wrong. */
-        extern void ptp_nsd_stats(uint32_t *, uint32_t *, uint32_t *, uint32_t *);
-        extern void ptp_nsd_reject_stats(uint32_t *, uint32_t *);
-        extern void ptp_tx_timestamp_stats(uint32_t *, uint32_t *, uint32_t *);
-        uint32_t n = 0, p = 0, e = 0, t = 0, posted = 0, delivered = 0, dropped = 0;
-        ptp_nsd_stats(&n, &p, &e, &t);
-        ptp_tx_timestamp_stats(&posted, &delivered, &dropped);
-        MSG("  nsd: notify %u, packets %u, enqueued %u, tx-requested %u\n",
-            (unsigned)n, (unsigned)p, (unsigned)e, (unsigned)t);
-        {
-            uint32_t runts = 0, chained = 0;
-            ptp_nsd_reject_stats(&runts, &chained);
-            MSG("  nsd rejected: %u runt, %u chained\n", (unsigned)runts, (unsigned)chained);
-        }
-        MSG("  ptp ts: posted %u, delivered %u, dropped %u\n",
-            (unsigned)posted, (unsigned)delivered, (unsigned)dropped);
-
-        extern void ptp_nsd_rx_types(uint32_t *);
-        uint32_t types[16];
-        ptp_nsd_rx_types(types);
-        /* All the types that actually occur, E2E and P2P.
-         *
-         * The peer-delay trio was missing from an earlier version of this line, which made a
-         * gPTP link look completely dead -- "sync 0 ... ann 0" -- while 368 PDelay frames were
-         * being received and answered perfectly. Print what arrives, not what you expect. */
-        MSG("  nsd rx types: sync %u delreq %u fup %u delresp %u ann %u\n",
-            (unsigned)types[0], (unsigned)types[1], (unsigned)types[8],
-            (unsigned)types[9], (unsigned)types[11]);
-        MSG("                pdelreq %u pdelresp %u pdelrespfup %u\n",
-            (unsigned)types[2], (unsigned)types[3], (unsigned)types[10]);
-
-        extern void ptp_nsd_last_rx(uint8_t *, uint32_t *);
-        uint8_t head[16];
-        uint32_t hlen = 0;
-        ptp_nsd_last_rx(head, &hlen);
-        MSG("  nsd last rx: %u bytes\n    ", (unsigned)hlen);
-        for (unsigned i = 0; i < sizeof(head); i++) {
-            MSG("%x ", (unsigned)head[i]);
-        }
-        MSG("\n");
-    }
     MSG("  tx last: cmd=%u, %u bytes\n    ", (unsigned)drv_tx_last_cmd, (unsigned)drv_tx_last_len);
     for (unsigned i = 0; i < sizeof(drv_tx_last_head); i++) {
         MSG("%x ", (unsigned)drv_tx_last_head[i]);

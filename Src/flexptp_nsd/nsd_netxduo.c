@@ -21,6 +21,7 @@
 
 #include "Drivers/EthDrv/eth_drv_netxduo.h"
 #include "ethernet/ethernet_netxduo.h"
+#include "nsd_netxduo.h"
 #include "ptp_endpoint.h"
 #include "ptp_nsd_lifecycle.h"
 #include "ptp_ts_codec.h"
@@ -524,4 +525,53 @@ void ptp_nsd_transmit_msg(RawPtpMessage *pMsg, uint32_t uid) {
         eth_drv_cancel_tx_timestamp(packet);
         nx_packet_release(packet);
     }
+}
+
+
+/* --- Diagnostics ---------------------------------------------------------------------------- */
+
+/* Printed by `ethinfo`, from Src/cmds.c, alongside the driver's own counters and flexPTP's
+ * core state.
+ *
+ * Composed there rather than reached into from the driver: the driver must not depend on the
+ * NSD above it, which is why this used to be four hand-written `extern` declarations inside
+ * eth_drv_report()'s body -- four chances for the kind of silent signature drift that is
+ * finding F48. `ethinfo` is an application command and may depend on all three layers, so
+ * that is where the composing belongs (AR-03).
+ *
+ * Every counter here exists because it was needed during bring-up: the difference between
+ * "nothing arrived", "it arrived and was refused" and "it arrived and flexPTP did not want it"
+ * is invisible from the console otherwise.
+ */
+void ptp_nsd_report(void) {
+    uint32_t notify = 0, packets = 0, enqueued = 0, tx = 0;
+    ptp_nsd_stats(&notify, &packets, &enqueued, &tx);
+    MSG("  nsd: notify %u, packets %u, enqueued %u, tx-requested %u\n",
+        (unsigned)notify, (unsigned)packets, (unsigned)enqueued, (unsigned)tx);
+
+    uint32_t runts = 0, chained = 0;
+    ptp_nsd_reject_stats(&runts, &chained);
+    MSG("  nsd rejected: %u runt, %u chained\n", (unsigned)runts, (unsigned)chained);
+
+    /* All the types that actually occur, E2E and P2P.
+     *
+     * The peer-delay trio was missing from an earlier version of this line, which made a gPTP
+     * link look completely dead -- "sync 0 ... ann 0" -- while 368 PDelay frames were being
+     * received and answered perfectly. Print what arrives, not what you expect. */
+    uint32_t types[16];
+    ptp_nsd_rx_types(types);
+    MSG("  nsd rx types: sync %u delreq %u fup %u delresp %u ann %u\n",
+        (unsigned)types[0], (unsigned)types[1], (unsigned)types[8],
+        (unsigned)types[9], (unsigned)types[11]);
+    MSG("                pdelreq %u pdelresp %u pdelrespfup %u\n",
+        (unsigned)types[2], (unsigned)types[3], (unsigned)types[10]);
+
+    uint8_t head[16];
+    uint32_t hlen = 0;
+    ptp_nsd_last_rx(head, &hlen);
+    MSG("  nsd last rx: %u bytes\n    ", (unsigned)hlen);
+    for (unsigned i = 0; i < sizeof(head); i++) {
+        MSG("%x ", (unsigned)head[i]);
+    }
+    MSG("\n");
 }

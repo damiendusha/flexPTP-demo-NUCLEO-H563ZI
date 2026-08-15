@@ -19,6 +19,8 @@
    driver does. flexPTP's own state below is stack-agnostic and always reported. */
 #ifdef ETH_NETXDUO
 #include "Drivers/EthDrv/eth_drv_netxduo.h"
+#include "flexptp_nsd/nsd_netxduo.h"
+#include "flexptp_nsd/ptp_tx_timestamp.h"
 #endif
 #include "flexptp/clock_utils.h"
 #include "flexptp/event.h"
@@ -268,8 +270,17 @@ static void ptp_core_report(void) {
 }
 
 CMD_FUNCTION(eth_info) {
+    /* Three layers, composed here because this is the only place entitled to see all three:
+       the driver's counters, the network-stack driver's, and flexPTP's core state. */
 #ifdef ETH_NETXDUO
     eth_drv_report();
+    ptp_nsd_report();
+    {
+        uint32_t posted = 0, delivered = 0, dropped = 0;
+        ptp_tx_timestamp_stats(&posted, &delivered, &dropped);
+        MSG("  ptp ts: posted %u, delivered %u, dropped %u\n",
+            (unsigned)posted, (unsigned)delivered, (unsigned)dropped);
+    }
 #else
     MSG("ETH: no NetX Duo driver in this build (ETH_STACK)\n");
 #endif
