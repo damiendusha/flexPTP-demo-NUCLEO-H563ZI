@@ -24,6 +24,10 @@ unsigned int SystemCoreClock = 250000000U;
 /* The host shim's PRIMASK, which blocking_fifo.c's critical section reads and writes. */
 uint32_t host_primask = 0;
 
+/* The shim's IPSR. Zero means thread context, which is what every test here wants
+   except the ISR-context cases in test_rtos_context.cpp. */
+uint32_t host_fake_ipsr = 0U;
+
 /* --- the captured console ----------------------------------------------------------------- */
 
 #define CLI_UUT_CAPTURE_LEN (16384)

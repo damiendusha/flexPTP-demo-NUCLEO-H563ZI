@@ -43,6 +43,10 @@ extern "C" {
 extern "C" {
 uint32_t host_primask = 0;
 
+/* The shim's IPSR. Zero means thread context, which is what every test here wants
+   except the ISR-context cases in test_rtos_context.cpp. */
+uint32_t host_fake_ipsr = 0U;
+
 /* The wrapper reports this as the system timer frequency. Nothing here reads it. */
 uint32_t SystemCoreClock = 250000000U;
 }

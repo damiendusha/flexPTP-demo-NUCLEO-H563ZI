@@ -126,10 +126,11 @@ configured exactly as the board's. The byte-pool sizes deliberately differ (Goog
 more than a 2 KB CLI thread), and `TX_LINUX_MEMORY_SIZE` must stay larger than their sum —
 overrunning it is not an allocation failure but a segfault inside `_tx_byte_pool_create()`.
 
-**What it cannot cover:** the ISR half of the same rule. `IS_IRQ_MODE()` is built from
-`__get_IPSR()`, which the host shim hard-codes to 0 because Linux has no exception context. The
-transmit-timestamp path that `ptp_tx_timestamp.c` guards stays on the bench. The timer-thread
-half is the one that cost a session, and it is fully covered.
+**Both halves are covered, and they are not equally strong.** The host shim's `__get_IPSR()`
+is settable, so a test can report IRQ mode and assert ST's wrapper refuses a blocking call —
+which is the line `ptp_tx_timestamp.c` exists to work around. But that is the *wrapper's* guard,
+not an interrupt: nothing is preempted and ThreadX still believes it is in a thread. The
+timer-thread half runs against a real kernel restriction and is the stronger of the two.
 
 ## These tests are known to detect the bugs they name
 

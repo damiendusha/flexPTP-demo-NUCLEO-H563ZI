@@ -903,6 +903,20 @@ context (ThreadX's own kernel-entry paths still think they are in a thread), so 
 makes, and it should be documented as such — but it is the difference between "guarded by a
 comment" and "guarded by a test" for the callback `ptp_tx_timestamp.c` exists to defer.
 
+> **✅ ADDRESSED** — `test/host/cmsis_compiler.h` reads a settable `host_fake_ipsr`, and
+> `test_rtos_context.cpp` gains two cases behind a `PretendInterruptContext` RAII guard: a
+> blocking put from IRQ mode must be **refused**, and the timeout-0 form
+> `ptp_tx_timestamp_from_isr()` actually uses must **succeed and deliver**.
+>
+> The narrower claim is stated in the test and in both documents that used to call this
+> unreachable, with a table separating the two halves by *who enforces them*: the timer-thread
+> rule is ThreadX's own (`txe_queue_send.c`), the interrupt rule is ST's wrapper checking
+> `IS_IRQ_MODE()`. Only the first is a kernel restriction.
+>
+> **Evidence.** Mutation: asserting the blocking put *succeeds* fails with **−4**
+> (`osErrorParameter`) against 0 — so the wrapper really does refuse it, and the test is not
+> tautological. `RtosContext` is now 7 cases; host suite 95/95.
+
 ### TS-10 — the 2-byte alignment contract has no static assert
 
 **Priority: Low** · `Drivers/EthDrv/eth_drv_netxduo.c:148-167`
@@ -1480,7 +1494,7 @@ how, and for the evidence.
 | [TS-06](#ts-06--ci-verifies-two-of-the-four-submodule-patches) | ✅ P2 | Test gap | CI verifies patches 0001 and 0002 only; **0004 is the silent one** | `ci.yml:59-62` | Without 0004 no master is ever selected. Loop over `build.sh`'s existing `SUBMODULE_PATCHES` list |
 | [TS-07](#ts-07--no-test-of-the-nsd-lifecycle) | ✅ P2 | Test gap | No lifecycle test for `ptp_nsd_init` teardown / transport switch / re-init | `nsd_netxduo.c` | The state machine holding NX-02. Needs a fake, not a real `NX_IP` |
 | [TS-08](#ts-08--no-compile-only-gate-for-the-non-default-eth_stack-paths) | P3 | Test gap | `ETH_STACK=ETHERLIB` and `=NONE` are not built anywhere | `ci.yml` | Two matrix entries; also settles AR-05 |
-| [TS-09](#ts-09--the-isr-half-of-the-context-rule-is-reachable-on-the-host-after-all) | P3 | Opportunity | A settable host `__get_IPSR()` makes the ISR half of the context rule testable | `test/host/cmsis_compiler.h` | Pins the *wrapper's* rule, not the silicon's — document the narrower claim. Contradicts a "cannot" in two docs |
+| [TS-09](#ts-09--the-isr-half-of-the-context-rule-is-reachable-on-the-host-after-all) | ✅ P3 | Opportunity | A settable host `__get_IPSR()` makes the ISR half of the context rule testable | `test/host/cmsis_compiler.h` | Pins the *wrapper's* rule, not the silicon's — document the narrower claim. Contradicts a "cannot" in two docs |
 | [TS-10](#ts-10--the-2-byte-alignment-contract-has-no-static-assert) | ✅ P3 | Test gap | No `_Static_assert` on `NX_PHYSICAL_HEADER >= 16` | `eth_drv_netxduo.c:148-167` | A NetX Duo bump would silently reintroduce "every IPv4 checksum fails while ARP works" |
 | [CX-01](#cx-01--rxring--txring-as-typed-c-over-an-injected-descriptor-view) | Opp (H) | C++ | Extract the ring state machines; retires the `MAP_32BIT` arena, `-no-pie` and two harness tests | `mac_drv.c` → C++ | Enables ASan/UBSan. Breaks the "`mac_drv.c` unchanged" property — a real trade |
 | [CX-02](#cx-02--bytefifo-with-an-injected-critical-section-policy) | Opp (H) | C++ | `ByteFifo<Crit>` with an injectable critical section | `blocking_fifo.c` → C++ | An instrumented `Crit` makes the F67/N7 mid-push interleaving an actual test. Pairs with TS-01 |

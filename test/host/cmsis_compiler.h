@@ -22,15 +22,28 @@ static inline void __set_PRIMASK(uint32_t v) { host_primask = v; }
 static inline void __disable_irq(void) { host_primask = 1U; }
 static inline void __enable_irq(void) { host_primask = 0U; }
 
-/* Always zero: the host has no exception context.
+/* Settable, and zero unless a test says otherwise.
  *
- * ST's CMSIS-RTOS2 wrapper builds IS_IRQ_MODE() from this, so on the host every API call looks
- * like thread context. That is an honest limitation with a real consequence: the ISR half of
- * the "may not block here" rules -- the one ptp_tx_timestamp.c guards -- is NOT reachable from
- * a host test and stays on the bench. The TIMER-THREAD half is reachable, because ThreadX
- * enforces that in txe_queue_send.c by comparing against &_tx_timer_thread rather than by
- * asking the CPU anything. That is the half F80 lives in. */
-static inline uint32_t __get_IPSR(void) { return 0U; }
+ * ST's CMSIS-RTOS2 wrapper builds IS_IRQ_MODE() from __get_IPSR(), and this used to hard-code
+ * 0 -- so on the host every API call looked like thread context and the ISR half of the "may
+ * not block here" rules was unreachable. That was recorded as a permanent limitation in three
+ * documents. It is not permanent; it is a property of the shim (finding TS-09).
+ *
+ * Setting host_fake_ipsr makes the WRAPPER's rule assertable:
+ *
+ *     if ((IS_IRQ_MODE() && (timeout != 0)) || ...) status = osErrorParameter;
+ *
+ * which is the exact line quoted at the top of Src/flexptp_nsd/ptp_tx_timestamp.c, and the
+ * reason that file exists.
+ *
+ * BE PRECISE ABOUT WHAT THIS PROVES. It is not an interrupt. ThreadX's own kernel-entry paths
+ * still believe they are in a thread, nothing is preempted, and no real exception frame exists.
+ * It pins the wrapper's guard -- that a non-zero timeout from a context reporting IRQ mode is
+ * refused -- and nothing about the silicon. The claim is therefore narrower than the
+ * timer-thread tests next door, which run against a real kernel restriction in
+ * txe_queue_send.c. */
+extern uint32_t host_fake_ipsr;
+static inline uint32_t __get_IPSR(void) { return host_fake_ipsr; }
 
 static inline void __DSB(void) {}
 static inline void __DMB(void) {}

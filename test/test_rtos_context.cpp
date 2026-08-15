@@ -36,10 +36,26 @@ extern "C" {
 #include "tx_api.h"
 }
 
+extern "C" {
 /* The wrapper's osKernelGetSysTimerFreq() reports the CPU clock, which on the target comes
    from ST's CMSIS device header. Nothing here reads it; it just has to link. Same value as the
    board so the two cannot disagree if a test ever does look. */
-extern "C" uint32_t SystemCoreClock = 250000000U;
+uint32_t SystemCoreClock = 250000000U;
+
+/* The shim's IPSR, which IS_IRQ_MODE() is built from. Zero except where a test sets it. */
+uint32_t host_fake_ipsr = 0U;
+}
+
+namespace {
+
+/** Report IRQ mode for the duration of a scope, as an ISR would. */
+class PretendInterruptContext {
+  public:
+    PretendInterruptContext() { host_fake_ipsr = 16U; /* any nonzero IPSR is an exception */ }
+    ~PretendInterruptContext() { host_fake_ipsr = 0U; }
+};
+
+}  // namespace
 
 namespace {
 
@@ -158,6 +174,56 @@ TEST_F(RtosContext, ATimerCallbackIsNotInterruptContext) {
      * restriction that actually bites is not conditioned on IPSR at all. */
     ASSERT_TRUE(run_probe()) << "the timer callback never ran";
     EXPECT_EQ(g_probe.ipsr, 0u);
+}
+
+/* NOTE on the four context tests: they assert the same API from two different contexts, and
+ * only two of the rejections come from the KERNEL. The timer-thread ones are ThreadX's own
+ * restriction (txe_queue_send.c returns TX_WAIT_ERROR when the caller is &_tx_timer_thread);
+ * the interrupt ones are ST's wrapper checking IS_IRQ_MODE(). Both bit this port, for different
+ * reasons -- which is exactly why reasoning "not an ISR, therefore safe to block" was wrong. */
+
+TEST_F(RtosContext, BlockingEnqueueFromInterruptContextIsRejected) {
+    /* The ISR half of the rule, and the reason Src/flexptp_nsd/ptp_tx_timestamp.c exists.
+     *
+     * flexPTP's CMSIS-RTOS2 binding calls osMessageQueuePut(..., osWaitForever) from
+     * ptp_transmit_timestamp_cb(), and on this hardware that is reached from ETH_IRQHandler.
+     * ST's wrapper refuses it:
+     *
+     *     if ((IS_IRQ_MODE() && (timeout != 0)) || ...) { status = osErrorParameter; }
+     *
+     * flexPTP does not check the return, so every transmit timestamp would be discarded in
+     * silence and the servo would converge on a lie.
+     *
+     * WHAT THIS PROVES, EXACTLY. It is not an interrupt: nothing is preempted, ThreadX still
+     * believes it is in a thread, and there is no exception frame. It pins the WRAPPER's guard
+     * against a context that reports IRQ mode -- which is the check that would have to be
+     * removed or changed for the hazard to come back. It says nothing about the silicon, and
+     * it is a narrower claim than the timer-thread cases above, which run against a real
+     * kernel restriction in txe_queue_send.c.
+     *
+     * Three documents used to record this as permanently unreachable on the host. It was a
+     * property of the shim, not of the host (finding TS-09). */
+    uint32_t msg = 0xC0FFEEu;
+
+    PretendInterruptContext irq;
+    EXPECT_NE(osMessageQueuePut(g_queue, &msg, 0, osWaitForever), osOK)
+        << "a blocking enqueue was accepted from interrupt context -- the wrapper's guard is "
+           "what ptp_tx_timestamp.c relies on";
+}
+
+TEST_F(RtosContext, NonBlockingEnqueueFromInterruptContextSucceeds) {
+    /* The other half: the timeout-0 form that ptp_tx_timestamp_from_isr() actually uses must
+       work, or the deferral would drop what the kernel would have accepted. */
+    uint32_t msg = 0xBEEFu;
+
+    {
+        PretendInterruptContext irq;
+        EXPECT_EQ(osMessageQueuePut(g_queue, &msg, 0, 0U), osOK);
+    }
+
+    uint32_t out = 0;
+    EXPECT_EQ(osMessageQueueGet(g_queue, &out, nullptr, 0U), osOK);
+    EXPECT_EQ(out, 0xBEEFu) << "the message posted from 'interrupt context' never arrived";
 }
 
 TEST_F(RtosContext, BlockingEnqueueFromAnOrdinaryThreadIsFine) {

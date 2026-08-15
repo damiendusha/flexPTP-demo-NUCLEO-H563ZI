@@ -23,6 +23,10 @@
 
 uint32_t host_primask = 0U;
 
+/* The shim's IPSR. Zero means thread context, which is what every test here wants
+   except the ISR-context cases in test_rtos_context.cpp. */
+uint32_t host_fake_ipsr = 0U;
+
 /* Point every by-name peripheral reference at host memory. The include guards mean the
    driver's own re-inclusion of these headers cannot put the original definitions back. */
 #undef ETH

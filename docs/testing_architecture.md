@@ -161,10 +161,22 @@ From a real osTimer callback (i.e. ThreadX's timer thread):
 Registered as a single `ctest` entry rather than via `gtest_discover_tests`, because discovery
 runs the binary to enumerate and this one enters a kernel that never returns.
 
-**What it cannot cover:** the ISR half of the same rule. `IS_IRQ_MODE()` is built from
-`__get_IPSR()`, which the host shim hard-codes to 0 because Linux has no exception context. The
-transmit-timestamp path stays on the bench. The timer-thread half is the one that cost a
-session, and it is fully covered.
+**The ISR half is covered too, and it is a narrower claim.** `IS_IRQ_MODE()` is built from
+`__get_IPSR()`, which the host shim used to hard-code to 0 — recorded here as a permanent
+limitation, which it was not: it was a property of the shim (finding TS-09). The shim now reads
+a settable variable, so a test can report IRQ mode and assert ST's wrapper refuses a blocking
+call — the exact line `ptp_tx_timestamp.c` exists to work around.
+
+Be precise about the difference between the two halves, because only one of them is the kernel:
+
+| Half | Enforced by | What the test proves |
+|---|---|---|
+| timer thread | **ThreadX**, `txe_queue_send.c` | a real kernel restriction, on the real kernel |
+| interrupt | **ST's wrapper**, `IS_IRQ_MODE()` | the wrapper's guard, against a context that *reports* IRQ mode |
+
+Nothing is preempted in the second case and there is no exception frame; it says nothing about
+the silicon. It is still worth having, because that guard is what would have to be removed or
+changed for the hazard to come back.
 
 ## Tier 3 — hardware in the loop
 
