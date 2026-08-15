@@ -1155,6 +1155,19 @@ initialisation. It is one `nm | grep -q` away, and it fits this project's existi
 checking configuration claims rather than trusting them (F78). Note it cannot assert "no
 `malloc`" — newlib's `strtod` pulls it in, which is [NX-03](#nx-03--the-newlib-heap-and-the-threadx-byte-pools-are-not-disjoint).
 
+> **✅ ADDRESSED** — `tools/ci/check_cxx_rules.sh`, run by CI on both configurations. It greps
+> the linked image for the mangled names of `operator new`/`new[]`/`delete`/`delete[]`,
+> `__cxa_throw`, `__cxa_allocate_exception` and the `__cxxabiv1` RTTI vtables.
+>
+> Checked against the **image**, not the sources — the same argument `cpp_ctor` makes for
+> asking the running board about static constructors.
+>
+> **Evidence.** Clean today; and **not vacuous**: adding a `std::vector` to `ptp_endpoint.cpp`
+> makes it fail with `08028de0 T _ZdlPv`. As the finding notes, it deliberately does not assert
+> "no `malloc`" — newlib's `strtod` pulls that in, which is
+> [NX-03](#nx-03--the-newlib-heap-and-the-threadx-byte-pools-are-not-disjoint)'s territory and
+> is bounded there instead.
+
 ---
 
 ## 5 — Documentation vs implementation
@@ -1617,7 +1630,7 @@ how, and for the evidence.
 | [CX-04](#cx-04--nsdlifecycle-over-an-injected-stack-interface) | ✅ Opp (M) | C++ | `NsdLifecycle` over a five-call stack interface | `nsd_netxduo.c` → C++ | Makes NX-02 a red test before a fix. Cold path, so dispatch cost is irrelevant |
 | [CX-05](#cx-05--ethernetframer) | ✅ Opp (M) | C++ | `EthernetFramer`: ethertype selection, header write, chain flatten | `eth_drv_netxduo.c` → C++ | Twelve hand-written byte shifts become one expected-array test. Pairs with TS-04 |
 | [CX-06](#cx-06--linkstate-as-a-pure-transition-function) | Opp (L) | C++ | `LinkDecision next(prev, phy_status)` | `eth_drv_netxduo.c:220-269` | Pins the first-poll `DOWN` suppression rule |
-| [CX-07](#cx-07--make-the-c-rules-enforced-rather-than-documented) | Opp (L) | C++ | Assert in CI that the image has no `operator new` / `__cxa_throw` | `cpp_support.cpp:22-30` | Makes the no-allocation rule observable, as `cpp_ctor` does for static init. Cannot assert "no `malloc`" — see NX-03 |
+| [CX-07](#cx-07--make-the-c-rules-enforced-rather-than-documented) | ✅ Opp (L) | C++ | Assert in CI that the image has no `operator new` / `__cxa_throw` | `cpp_support.cpp:22-30` | Makes the no-allocation rule observable, as `cpp_ctor` does for static init. Cannot assert "no `malloc`" — see NX-03 |
 | [DC-01](#dc-01--the-interrupt-priority-table-is-wrong-in-two-rows) | ✅ P2 | Doc | Interrupt table: SVC and SysTick priorities both wrong | `architecture.md:352,354` | Consequence of NX-04 |
 | [DC-02](#dc-02--release-drops-two-checks-the-architecture-document-presents-as-unconditional) | ✅ P2 | Doc | `TX_ENABLE_STACK_CHECKING` presented as unconditional; it is Debug-only | `architecture.md:369-372` | Should also state `NX_DISABLE_ERROR_CHECKING` in Release |
 | [DC-03](#dc-03--ethernet_netxduoc-still-describes-the-s4-stub-driver-and-contradicts-itself-55-lines-later) | ✅ P3 | Doc | File header describes a stub driver and a `nx_driver_stub()` that does not exist | `ethernet_netxduo.c:8-9` | Contradicted by line 63 of the same file |

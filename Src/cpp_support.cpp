@@ -27,6 +27,12 @@
  *   - extern "C" at every boundary. flexPTP's NSD, NetX Duo's driver entry and the MAC
  *     driver's callbacks are all C; C++ stays on the inside.
  *   - Static storage and fixed-capacity containers only.
+ *
+ * AND THEY ARE ENFORCED, not just written here. tools/ci/check_cxx_rules.sh greps the linked
+ * image for operator new/delete, __cxa_throw and the RTTI vtables, and CI fails on any of
+ * them. Two of the four rules were already enforced by compiler flags; "no allocation" was
+ * enforced by nothing until then, and it is exactly the rule that holds right up until
+ * somebody reaches for a std::vector (CX-07).
  */
 
 #include <cstdint>

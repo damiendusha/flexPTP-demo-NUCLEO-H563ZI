@@ -68,6 +68,16 @@ jobs:
       - name: Check the patches really were applied
         run: ./build.sh --check-patches
 
+      # The C++ rules in Src/cpp_support.cpp -- no dynamic allocation, no exceptions, no RTTI
+      # -- checked against the linked image rather than against the sources, for the same
+      # reason `cpp_ctor` in tools/hil/ asks the running board about static constructors: a
+      # rule about what the firmware contains is a question for the firmware (CX-07).
+      #
+      # Verified not to be vacuous: adding a std::vector to one of the NSD units makes it fail
+      # on _ZdlPv.
+      - name: Check the C++ rules hold in the image
+        run: ./tools/ci/check_cxx_rules.sh build/${{ matrix.config }}/flexptp-demo.elf
+
       - uses: actions/upload-artifact@v4
         with:
           name: flexptp-demo-${{ matrix.config }}
