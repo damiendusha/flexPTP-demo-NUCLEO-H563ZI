@@ -16,6 +16,7 @@ them with priority.
 ## Table of Contents
 
 - [Method, and what was measured rather than read](#method-and-what-was-measured-rather-than-read)
+- [Status](#status)
 - [Verdict](#verdict)
 - [1 — Port quality: ThreadX and NetX Duo](#1--port-quality-threadx-and-netx-duo)
 - [2 — Architecture](#2--architecture)
@@ -60,6 +61,38 @@ my first reading was not — recorded because a review that only lists hits is n
 - `ptp_l2_receive`'s unchecked length subtraction looked like a remote buffer overflow. It is
   not: `ptp_receive_enqueue` clamps with `MIN(len, MAX_PTP_MSG_SIZE)` at
   `task_ptp.c:486`. Downgraded to [NX-05](#nx-05--unchecked-length-arithmetic-on-the-8023-receive-path), Low.
+
+---
+
+## Status
+
+**All 56 findings are resolved: 52 addressed, 4 deliberately declined with the reasoning and a
+trigger recorded.** Each section ends with a ✅ or ⊘ box saying how, and with the evidence.
+
+| | Addressed | Declined |
+|---|---|---|
+| **P1** (6) | 6 | — |
+| **P2** (13) | 13 | — |
+| **P3** (28) | 28 | — |
+| **Opportunities** (9) | 5 | 4 |
+
+Every code change was verified on the board as well as on the host: the hardware suite ran
+**23 times** over the course of the work, and grew from 10 checks to 13 — `build_id`,
+`irq_prio` and `counters` were added by findings GI-01, NX-04 and GI-02. The host suite grew
+from **55 entries to 104**. Every fix that could be mutation-tested was, and four mutations
+survived their first round and forced a better test.
+
+**Six findings turned out to be worse, or different, than this document first said**, and each
+is corrected in place rather than quietly:
+
+| Finding | What changed |
+|---|---|
+| [NX-03](#nx-03--the-newlib-heap-and-the-threadx-byte-pools-are-not-disjoint) | Not latent. The heap really was allocating 3 600 B out of the ThreadX byte pools; applying the bound alone wedged the console after seven CLI commands. The overlap was 179 216 B, not ~103 KB, and `atof()` was not the allocator |
+| [NX-09](#nx-09--ptp-pps-0-reports-off-but-may-leave-the-output-running-at-1-hz) | Flagged as "needs bench verification". Confirmed real: `MACPPSCR` 0x61 → 0x60 is a divider change, and `PPSCTRL = 0` is the 1 Hz code |
+| [TS-08](#ts-08--no-compile-only-gate-for-the-non-default-eth_stack-paths) | Both alternative `ETH_STACK` values did not merely lack a gate — they did not **build**, and had not since S6 |
+| [AR-05](#ar-05--the-eth_stack-switch-is-advertised-as-easier-than-it-is) | The blocker was `main.c` and `cmds.c`, not the EtherLib files the design doc blamed |
+| [TS-09](#ts-09--the-isr-half-of-the-context-rule-is-reachable-on-the-host-after-all) | Three documents called this permanently unreachable. It was a property of the shim |
+| [GI-03](#gi-03--add-static-analysis-to-ci) | My first "clean cppcheck run" was cppcheck failing to start. Recorded, and the half I could verify is separated from the half I could not |
 
 ---
 
@@ -540,7 +573,21 @@ At PTP rates this is free, and at the measured 53 000 frames in 6 s it evidently
 costs 73 KB of SRAM3 that duplicates the packet pool, and the DWC EQOS can point descriptors
 directly at `NX_PACKET` payloads. If throughput ever matters, this is the change to make — and it
 is a substantial one, because it moves buffer ownership across the `mac_drv.c` boundary that this
-port deliberately kept unchanged. Recording it as a known trade rather than a defect.
+port deliberately kept unchanged.
+
+> **⊘ DECLINED, and re-measured rather than re-argued.** Under
+> [NX-06](#nx-06--the-receive-queue-drop-path-is-the-only-uninstrumented-one): 70 600 frames of
+> 1 400 B in 8 s, 69 595 delivered, **zero** drops on any of the three receive paths. The copies
+> are not the bottleneck, and there is no measured bottleneck at all. SRAM3 sits at 27% of
+> 320 KB, so the 73 KB is not scarce either.
+>
+> Zero-copy would move buffer ownership across the `mac_drv.c` boundary — the largest blast
+> radius available in this codebase — to buy headroom nothing is asking for.
+>
+> **The trigger is a measurement, and it now exists:** `drv.rx_drop_queue`,
+> `drv.rx_drop_nopacket` and `drv.rx_drop_size` are instrumented and asserted zero by the HIL
+> `counters` check. When one stops being zero under a load this firmware is meant to carry, that
+> is the evidence this change needs and does not have. Recording it as a known trade rather than a defect.
 
 ### AR-02 — the pending-timestamp registry could key on the message instead of the pointer
 
@@ -1061,6 +1108,28 @@ and the one with the best return: it retires a whole class of harness fragility.
 byte-unchanged by this port. Extraction breaks that property. It is the right change only if
 `mac_drv.c` is accepted as this project's file rather than a carried-over one.
 
+> **⊘ DECLINED, with the reasoning recorded** — and better informed than when the finding was
+> written, because the work done since bears on it.
+>
+> The case *for* has weakened: `mac_drv.c` is no longer byte-unchanged (NX-01 and NX-07 both
+> touched it), so the caveat above is spent. It has strengthened in one place — ASan and UBSan
+> over the ring logic would be genuinely valuable.
+>
+> But the case *against* is now concrete rather than theoretical. Four extractions were done
+> during this review — `ptp_nsd_lifecycle`, `eth_framer`, `eth_link_state`, `sysmem_bounds` —
+> and every one lifted out a **decision**, leaving the hardware interaction where it was.
+> `RxRing`/`TxRing` is the opposite shape: the descriptor state machine *is* the hardware
+> interaction, so a `DescriptorView` would have to model OWN-bit ordering and write-back
+> visibility. [TS-03](#ts-03--the-dma-model-cannot-express-a-late-context-descriptor) is this
+> project's own warning about exactly that — "a hardware model that is wrong is a test that
+> passes for the wrong reason" — and the abstraction would be a *second* place to get it wrong,
+> beside the model that was already wrong once.
+>
+> Meanwhile the scaffolding it would retire is working: 19 ring tests, four added this round,
+> three NX-01 branches mutation-verified through it. **The right trigger is `gcc-multilib`** —
+> `-m32` gives the whole ABI, retires the arena and `-no-pie` outright, and costs one CMake
+> line. Strictly better than the extraction, and `test/README.md` already says so.
+
 ### CX-02 — `ByteFifo` with an injected critical-section policy
 
 **Priority: Opportunity (High)** · pairs with [TS-01](#ts-01--blocking_fifoc-has-no-automated-coverage-at-all)
@@ -1082,6 +1151,20 @@ the F67/N7 interleaving — a second writer entering mid-push — an actual test
 code-reading exercise. The blocking wait stays in a thin C wrapper over `osSemaphore`, outside the
 tested core.
 
+> **⊘ DECLINED — [TS-01](#ts-01--blocking_fifoc-has-no-automated-coverage-at-all) removed the
+> premise.**
+>
+> The finding assumed the FIFO could not be tested as it stands. It can: 13 tests now run
+> against **the real ThreadX kernel and the real CMSIS-RTOS2 wrapper**, with semaphores that
+> really block, and the F67/N1 mutation fails four of them — one by *timing out*, which is how
+> the board actually failed. A C++ rewrite would test the same properties against a
+> `std::mutex`, which is weaker evidence, not stronger.
+>
+> What it would still add is the one case TS-01 could not reach: an instrumented `Crit`
+> injecting a simulated ISR entry mid-push, for the N7 interleaving. That is real — and it is
+> one test, against rewriting a file that has been stable since F67 and is now covered.
+> **Trigger: a second ISR producer on this FIFO.**
+
 ### CX-03 — `Tokenizer` and `CommandTable`
 
 **Priority: Opportunity (Medium)** · pairs with [TS-02](#ts-02--the-cli-tokenizer-has-no-automated-coverage)
@@ -1094,6 +1177,17 @@ tested core.
 `CommandTable` — registration, prefix matching, argument counting, help rendering — is the other
 half, and it is where the `ptp servo st` / `ptp servo stm` prefix ambiguity lives. Both are pure
 functions over fixed-capacity storage; neither needs an allocator.
+
+> **⊘ DECLINED — [TS-02](#ts-02--the-cli-tokenizer-has-no-automated-coverage) got there without
+> it.** `cli_uut.c` includes `cli.c` verbatim, the `mac_drv_uut.c` idiom this repo already uses,
+> so the mutex, the FIFO and the thread API stay real and only the console is faked. 15 tests,
+> three mutations caught, including the `ptp servo st` / `ptp servo stm` case named here.
+>
+> A `string_view` tokenizer would make the F74/N8 defect *unrepresentable* rather than merely
+> fixed, which is a real step up — but it would rewrite the input path of the one interface a
+> user touches, to guard a defect that is fixed and now pinned by a test that fails when it
+> returns. **Trigger: a second CLI input source** (a network console, a second UART), where the
+> shared-state question comes back.
 
 ### CX-04 — `NsdLifecycle` over an injected stack interface
 
@@ -1625,7 +1719,8 @@ rather than as an absence would close the question.
 ## Summary table
 
 A leading ✅ marks a finding that has been addressed — see the box at the end of its section for
-how, and for the evidence.
+how, and for the evidence. A leading ⊘ marks one **deliberately not done**, with the reasoning
+and the trigger that would change the decision recorded in the same place.
 
 **Priority key** — **P1**: fix before the next release; latent correctness or silent-failure risk.
 **P2**: fix soon; wrong documentation on a load-bearing detail, or a meaningful test gap.
@@ -1643,7 +1738,7 @@ how, and for the evidence.
 | [NX-08](#nx-08--receive-queue-leaked-if-the-receive-thread-fails-to-start) | ✅ P3 | Defect | RX queue re-created and leaked if `osThreadNew` failed on a previous `NX_LINK_INITIALIZE` | `eth_drv_netxduo.c:356-373` | Defeats the `rx_started` guard it sits inside |
 | [NX-09](#nx-09--ptp-pps-0-reports-off-but-may-leave-the-output-running-at-1-hz) | ✅ P3 | **Confirmed** | `ptp pps 0` writes `PPSCTRL=0`, likely 1 Hz rather than off, while reporting "turned off" | `ptp_port_stm32h563.c:35-40,88-92` | **Needs bench confirmation** — scope on PG8. Not asserted; RM0481 not available to this review |
 | [NX-10](#nx-10--nx_link_disable-does-not-stop-the-mac) | ✅ P3 | Gap | `NX_LINK_DISABLE` leaves `RE`/`TE`/`SR`/`ST` set | `eth_drv_netxduo.c:403-406` | Unreachable today; becomes a bug with any link-flap recovery |
-| [AR-01](#ar-01--every-frame-is-copied-twice-on-transmit-and-once-on-receive) | Opp (M) | Arch | Two copies per TX frame, one per RX; NetX Duo's zero-copy is unused | driver + `mac_drv.c` | 48 × 1 528 B = 73 KB of SRAM3 exists only to be copied out of and into. Crosses the `mac_drv.c` boundary this port kept unchanged |
+| [AR-01](#ar-01--every-frame-is-copied-twice-on-transmit-and-once-on-receive) | ⊘ Opp (M) | Arch | Two copies per TX frame, one per RX; NetX Duo's zero-copy is unused | driver + `mac_drv.c` | 48 × 1 528 B = 73 KB of SRAM3 exists only to be copied out of and into. Crosses the `mac_drv.c` boundary this port kept unchanged |
 | [AR-02](#ar-02--the-pending-timestamp-registry-could-key-on-the-message-instead-of-the-pointer) | ✅ Opp (M) | Arch | TX-timestamp registry keys on a recycled pointer; keying on `(msgType, sequenceId, portIdentity)` removes the ABA hazard structurally | `ptp_tx_registry.cpp` | Current design is correct and well-tested; recorded because it rests on three invariants a future drop path could break |
 | [AR-03](#ar-03--diagnostics-reach-across-layers-through-function-local-extern-declarations) | ✅ P3 | Arch | Four unheadered `extern` prototypes inside `eth_drv_report()` | `eth_drv_netxduo.c:729-759` | Signature-drift exposure — the F48 class. A small registration table fixes it without inverting the dependency |
 | [AR-04](#ar-04--debug-and-release-differ-in-more-than-optimisation-level) | ✅ P2 | Arch/Doc | Release changes NetX Duo API semantics and drops the software stack check | `nx_user.h:91-103`, `tx_user.h:73-75` | Turns NX-02 from an error code into list corruption. No document states the delta |
@@ -1660,9 +1755,9 @@ how, and for the evidence.
 | [TS-08](#ts-08--no-compile-only-gate-for-the-non-default-eth_stack-paths) | ✅ P3 | Test gap | `ETH_STACK=ETHERLIB` and `=NONE` are not built anywhere | `ci.yml` | Two matrix entries; also settles AR-05 |
 | [TS-09](#ts-09--the-isr-half-of-the-context-rule-is-reachable-on-the-host-after-all) | ✅ P3 | Opportunity | A settable host `__get_IPSR()` makes the ISR half of the context rule testable | `test/host/cmsis_compiler.h` | Pins the *wrapper's* rule, not the silicon's — document the narrower claim. Contradicts a "cannot" in two docs |
 | [TS-10](#ts-10--the-2-byte-alignment-contract-has-no-static-assert) | ✅ P3 | Test gap | No `_Static_assert` on `NX_PHYSICAL_HEADER >= 16` | `eth_drv_netxduo.c:148-167` | A NetX Duo bump would silently reintroduce "every IPv4 checksum fails while ARP works" |
-| [CX-01](#cx-01--rxring--txring-as-typed-c-over-an-injected-descriptor-view) | Opp (H) | C++ | Extract the ring state machines; retires the `MAP_32BIT` arena, `-no-pie` and two harness tests | `mac_drv.c` → C++ | Enables ASan/UBSan. Breaks the "`mac_drv.c` unchanged" property — a real trade |
-| [CX-02](#cx-02--bytefifo-with-an-injected-critical-section-policy) | Opp (H) | C++ | `ByteFifo<Crit>` with an injectable critical section | `blocking_fifo.c` → C++ | An instrumented `Crit` makes the F67/N7 mid-push interleaving an actual test. Pairs with TS-01 |
-| [CX-03](#cx-03--tokenizer-and-commandtable) | Opp (M) | C++ | `Tokenizer` over `string_view` + `CommandTable` | `cli.c` → C++ | Makes the F74/N8 shared-state defect unrepresentable rather than fixed. Pairs with TS-02 |
+| [CX-01](#cx-01--rxring--txring-as-typed-c-over-an-injected-descriptor-view) | ⊘ Opp (H) | C++ | Extract the ring state machines; retires the `MAP_32BIT` arena, `-no-pie` and two harness tests | `mac_drv.c` → C++ | Enables ASan/UBSan. Breaks the "`mac_drv.c` unchanged" property — a real trade |
+| [CX-02](#cx-02--bytefifo-with-an-injected-critical-section-policy) | ⊘ Opp (H) | C++ | `ByteFifo<Crit>` with an injectable critical section | `blocking_fifo.c` → C++ | An instrumented `Crit` makes the F67/N7 mid-push interleaving an actual test. Pairs with TS-01 |
+| [CX-03](#cx-03--tokenizer-and-commandtable) | ⊘ Opp (M) | C++ | `Tokenizer` over `string_view` + `CommandTable` | `cli.c` → C++ | Makes the F74/N8 shared-state defect unrepresentable rather than fixed. Pairs with TS-02 |
 | [CX-04](#cx-04--nsdlifecycle-over-an-injected-stack-interface) | ✅ Opp (M) | C++ | `NsdLifecycle` over a five-call stack interface | `nsd_netxduo.c` → C++ | Makes NX-02 a red test before a fix. Cold path, so dispatch cost is irrelevant |
 | [CX-05](#cx-05--ethernetframer) | ✅ Opp (M) | C++ | `EthernetFramer`: ethertype selection, header write, chain flatten | `eth_drv_netxduo.c` → C++ | Twelve hand-written byte shifts become one expected-array test. Pairs with TS-04 |
 | [CX-06](#cx-06--linkstate-as-a-pure-transition-function) | ✅ Opp (L) | C++ | `LinkDecision next(prev, phy_status)` | `eth_drv_netxduo.c:220-269` | Pins the first-poll `DOWN` suppression rule |
