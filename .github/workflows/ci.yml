@@ -75,6 +75,47 @@ jobs:
             build/${{ matrix.config }}/flexptp-demo.elf
             build/${{ matrix.config }}/flexptp-demo.map
 
+  # The ETH_STACK alternatives, compile-only.
+  #
+  # Both had rotted: `NONE` (the no-stack configuration S3-S5 used, and the fallback if NetX
+  # Duo ever has to be bisected out) and `ETHERLIB` both failed to configure, because main.c
+  # and cmds.c included NetX Duo headers unconditionally. Nothing noticed, because nothing
+  # built them (finding TS-08).
+  #
+  # Compile-only is the honest scope: it proves the switch still means something, not that
+  # either configuration works. EtherLib in particular has never been RUN -- see
+  # docs/design_doc.md, "Remaining work to enable EtherLib".
+  eth-stack-alternatives:
+    name: Build (ETH_STACK=${{ matrix.stack }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        stack: [NONE, ETHERLIB]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
+      - name: Cache the Arm toolchain
+        uses: actions/cache@v4
+        with:
+          path: toolchains/arm-gnu-toolchain-15.3.rel1-x86_64-arm-none-eabi
+          key: arm-gnu-15.3.rel1
+
+      - name: Select the stack
+        run: sed -i 's|^set(ETH_STACK "NETXDUO")|set(ETH_STACK "${{ matrix.stack }}")|' CMakeLists.txt
+
+      - name: Build
+        shell: bash
+        run: |
+          set -o pipefail
+          ./build.sh -b build/${{ matrix.stack }} 2>&1 | tee build.log
+
   host-tests:
     name: Host unit tests
     runs-on: ubuntu-latest

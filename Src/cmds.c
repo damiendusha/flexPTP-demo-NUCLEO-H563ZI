@@ -15,7 +15,11 @@
 #include "standard_output/serial_io.h"
 #include "standard_output/standard_output.h"
 
+/* `ethinfo` reports the NetX Duo driver's counters, so the command exists only when that
+   driver does. flexPTP's own state below is stack-agnostic and always reported. */
+#ifdef ETH_NETXDUO
 #include "Drivers/EthDrv/eth_drv_netxduo.h"
+#endif
 #include "flexptp/clock_utils.h"
 #include "flexptp/event.h"
 #include "flexptp/ptp_core.h"
@@ -264,7 +268,11 @@ static void ptp_core_report(void) {
 }
 
 CMD_FUNCTION(eth_info) {
+#ifdef ETH_NETXDUO
     eth_drv_report();
+#else
+    MSG("ETH: no NetX Duo driver in this build (ETH_STACK)\n");
+#endif
     ptp_core_report();
     return 0;
 }

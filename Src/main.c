@@ -11,7 +11,16 @@
 
 #include "cliutils/cli.h"
 #include "cmds.h"
+/* The stack-specific bring-up header. main.c itself is stack-agnostic -- it calls
+   init_ethernet() and ethernet_poll_dhcp() and nothing else -- so the switch is a header
+   choice, not a code path. Keeping it that way is what lets ETH_STACK still mean something;
+   before this it was an unconditional include and neither alternative configuration would even
+   compile (AR-05). */
+#if defined(ETH_ETHERLIB)
+#include "ethernet/ethernet_etherlib.h"
+#elif !defined(ETH_NONE)
 #include "ethernet/ethernet_netxduo.h"
+#endif
 
 #include "flexptp/event.h"
 #include "flexptp/logging.h"
@@ -187,7 +196,9 @@ void task_startup(void *arg) {
     /* NetX Duo: packet pool, IP instance, ARP/ICMP/UDP/IGMP, DHCP client and the Ethernet
      * driver's threads. A failure here is reported and the CLI continues, because a board that
      * boots without a network is far more debuggable than one that does not boot. */
+#ifndef ETH_NONE
     (void)init_ethernet();
+#endif
 
     // initialize commands
     cmd_init();
@@ -197,7 +208,11 @@ void task_startup(void *arg) {
     /* Resident at 1 Hz. The DHCP poll is here rather than on a timer because it prints, and
        printing blocks on the console FIFO -- see ethernet_poll_dhcp(). */
     for (;;) {
+#ifdef ETH_NETXDUO
+        /* NetX Duo only: EtherLib's bring-up has no equivalent, and there is no stack at all
+           under ETH_STACK=NONE. */
         ethernet_poll_dhcp();
+#endif
         osDelay(1000);
     }
 }

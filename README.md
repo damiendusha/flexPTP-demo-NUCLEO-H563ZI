@@ -281,7 +281,13 @@ The project relies on the following large software building blocks:
 > ```
 >set(ETH_STACK "NETXDUO") # select "NETXDUO" or "ETHERLIB"
 >```
-> Only the NetX Duo path is exercised on this port; EtherLib is not compiled. See [`docs/design_doc.md`](docs/design_doc.md) for what porting it would involve.
+> **What "either" means, precisely.** `NETXDUO` is the configuration this port runs, tests and
+> verifies on hardware. `ETHERLIB`, and `NONE` (no stack at all — the S3–S5 staging state, and
+> the fallback if NetX Duo ever has to be bisected out), are **compiled in CI and nothing
+> more**. EtherLib has never been *run* on this port; see
+> [`docs/design_doc.md`](docs/design_doc.md#remaining-work-to-enable-etherlib) for what remains.
+> Until recently neither alternative even configured — `main.c` and `cmds.c` included NetX Duo
+> headers unconditionally — which is why the compile gate now exists.
 >
 > `ETH_STACK="LWIP"` is a hard build error: lwIP was removed in S3 of the ThreadX port. The submodule is still pinned, so a pre-S3 commit builds it.
 

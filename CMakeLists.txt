@@ -110,8 +110,15 @@ target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC
 # Add Middlewares
 add_subdirectory(Middlewares)
 
+# One definition per stack, so the application can select a header without a chain of
+# negations. ETH_NONE is the no-stack configuration S3-S5 used and the one to fall back to if
+# NetX Duo ever has to be bisected out.
 if (ETH_STACK STREQUAL "ETHERLIB")
     add_compile_definitions("ETH_ETHERLIB")
+elseif(ETH_STACK STREQUAL "NETXDUO")
+    add_compile_definitions("ETH_NETXDUO")
+elseif(ETH_STACK STREQUAL "NONE")
+    add_compile_definitions("ETH_NONE")
 elseif(ETH_STACK STREQUAL "LWIP")
     add_compile_definitions("ETH_LWIP")
 endif()

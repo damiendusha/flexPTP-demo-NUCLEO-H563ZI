@@ -377,10 +377,14 @@ zeroing is not required.
 ### Remaining work to enable EtherLib
 
 1. Add the linker placement above.
-2. Build with `ETH_STACK=ETHERLIB` and fix what falls out. `Src/etherlib_options.c`,
-   `Drivers/EthDrv/eth_drv_etherlib.c` and `Src/ethernet/ethernet_etherlib.c` have **never
-   been compiled** in this port — the F51 UID lesson applies, since
-   `eth_drv_etherlib.c:97` builds its MAC from the same `ETH_MAC_ADDR*` macros.
+2. ~~Build with `ETH_STACK=ETHERLIB` and fix what falls out.~~ **Done — it builds**, and CI
+   compiles it on every push (finding TS-08). Two things had to change first, and neither was
+   in the EtherLib files: `Src/main.c` and `Src/cmds.c` included NetX Duo headers
+   unconditionally, so the configuration never reached the compiler at all.
+
+   It **compiles**; it has never **run**. The F51 UID lesson still applies —
+   `eth_drv_etherlib.c:97` builds its MAC from the same `ETH_MAC_ADDR*` macros, and that is a
+   runtime HardFault, not a compile error.
 3. Check the flexPTP network-stack driver. The NSD follows `ETH_STACK`, so the EtherLib NSD
    gets selected automatically — but note that the NetX Duo path does **not** use flexPTP's
    bundled NSD at all: it supplies its own under `Src/flexptp_nsd/` through the

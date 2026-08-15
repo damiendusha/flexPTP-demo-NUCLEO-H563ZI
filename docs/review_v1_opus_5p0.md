@@ -616,6 +616,20 @@ The README does add "Only the NetX Duo path is exercised on this port", which so
 easily be changed" and "never been compiled, fix what falls out" are different claims about the
 same switch. Align the README with the design doc — and consider [TS-08](#ts-08--no-compile-only-gate-for-the-non-default-eth_stack-paths).
 
+> **✅ ADDRESSED — and the switch was worse than either document said.** Neither alternative
+> *configured*: `ETH_STACK=NONE` and `ETH_STACK=ETHERLIB` both died on
+> `fatal error: nx_api.h: No such file or directory`, because `Src/main.c` and `Src/cmds.c`
+> included NetX Duo headers unconditionally. The design doc blamed the EtherLib files, which
+> were not the first blocker.
+>
+> Rather than downgrade the claim, the switch was made real: one `ETH_*` compile definition per
+> stack, a header choice in `main.c`, and `ethinfo`'s driver dump behind `ETH_NETXDUO`.
+> **Both alternatives now build**, and CI compiles them ([TS-08](#ts-08--no-compile-only-gate-for-the-non-default-eth_stack-paths)).
+>
+> The claim is now sized to the evidence in both documents: `NETXDUO` is run and verified;
+> `ETHERLIB` and `NONE` are *compiled and nothing more*. EtherLib has still never been run, and
+> `design_doc.md`'s remaining-work list keeps every item that is about running it.
+
 ### AR-06 — no watchdog, and every failure path halts forever
 
 **Priority: Low (decision to record)**
@@ -879,6 +893,16 @@ ever needs to be bisected out; `ETHERLIB` is advertised in the README. A `config
 matrix entry for each (allowed to fail loudly, not silently) would keep them from rotting, and
 would immediately tell you whether [AR-05](#ar-05--the-eth_stack-switch-is-advertised-as-easier-than-it-is)'s
 "easily changed" is true.
+
+> **✅ ADDRESSED** — a second CI job, `Build (ETH_STACK=…)`, over a `[NONE, ETHERLIB]` matrix.
+>
+> It answered its own question immediately: **neither configuration built.** Both failed at
+> `main.c` and `cmds.c`, which included NetX Duo headers unconditionally — so "easily changed"
+> was not merely optimistic, it was false, and had been since S6. Fixed under
+> [AR-05](#ar-05--the-eth_stack-switch-is-advertised-as-easier-than-it-is); both now compile.
+>
+> **Compile-only is the honest scope**, and the job comment says so: it proves the switch still
+> means something, not that either configuration works.
 
 ### TS-09 — the ISR half of the context rule is reachable on the host after all
 
@@ -1483,7 +1507,7 @@ how, and for the evidence.
 | [AR-02](#ar-02--the-pending-timestamp-registry-could-key-on-the-message-instead-of-the-pointer) | Opp (M) | Arch | TX-timestamp registry keys on a recycled pointer; keying on `(msgType, sequenceId, portIdentity)` removes the ABA hazard structurally | `ptp_tx_registry.cpp` | Current design is correct and well-tested; recorded because it rests on three invariants a future drop path could break |
 | [AR-03](#ar-03--diagnostics-reach-across-layers-through-function-local-extern-declarations) | P3 | Arch | Four unheadered `extern` prototypes inside `eth_drv_report()` | `eth_drv_netxduo.c:729-759` | Signature-drift exposure — the F48 class. A small registration table fixes it without inverting the dependency |
 | [AR-04](#ar-04--debug-and-release-differ-in-more-than-optimisation-level) | ✅ P2 | Arch/Doc | Release changes NetX Duo API semantics and drops the software stack check | `nx_user.h:91-103`, `tx_user.h:73-75` | Turns NX-02 from an error code into list corruption. No document states the delta |
-| [AR-05](#ar-05--the-eth_stack-switch-is-advertised-as-easier-than-it-is) | P3 | Doc/Arch | README calls the EtherLib switch easy; design_doc says the files have never been compiled | `README.md:263-271` | Align the two; see TS-08 |
+| [AR-05](#ar-05--the-eth_stack-switch-is-advertised-as-easier-than-it-is) | ✅ P3 | Doc/Arch | README calls the EtherLib switch easy; design_doc says the files have never been compiled | `README.md:263-271` | Align the two; see TS-08 |
 | [AR-06](#ar-06--no-watchdog-and-every-failure-path-halts-forever) | P3 | Decision | No IWDG; all failure paths halt | `main.c`, `serial_io.c` | Defensible for a bench demo — but undocumented as a choice |
 | [AR-07](#ar-07--equal-priority-scheduling-semantics-changed-with-the-kernel) | P3 | Doc | Equal-priority round-robin quantum changed 1 ms → 4 ms with the kernel swap | `cmsis_os2.c:116,923` | Checked expecting starvation; there is none. `RTOS2_DEFAULT_TIME_SLICE` is overridable |
 | [TS-01](#ts-01--blocking_fifoc-has-no-automated-coverage-at-all) | ✅ **P1** | Test gap | `blocking_fifo.c` untested despite carrying F67 (N1, N7) and wrap-dependent arithmetic | `blocking_fifo.c` | Cheapest high-value test in the tree — the real-ThreadX host target already exists |
@@ -1493,7 +1517,7 @@ how, and for the evidence.
 | [TS-05](#ts-05--the-hil-threads-check-does-not-assert-the-priorities-that-matter) | ✅ P2 | Test gap | HIL `threads` check omits `eth ip` (16), `rx` (24), `ptpts` (24) and their presence | `checks.py:280-295` | `architecture.md` presents that table as the spec; four dictionary entries close it |
 | [TS-06](#ts-06--ci-verifies-two-of-the-four-submodule-patches) | ✅ P2 | Test gap | CI verifies patches 0001 and 0002 only; **0004 is the silent one** | `ci.yml:59-62` | Without 0004 no master is ever selected. Loop over `build.sh`'s existing `SUBMODULE_PATCHES` list |
 | [TS-07](#ts-07--no-test-of-the-nsd-lifecycle) | ✅ P2 | Test gap | No lifecycle test for `ptp_nsd_init` teardown / transport switch / re-init | `nsd_netxduo.c` | The state machine holding NX-02. Needs a fake, not a real `NX_IP` |
-| [TS-08](#ts-08--no-compile-only-gate-for-the-non-default-eth_stack-paths) | P3 | Test gap | `ETH_STACK=ETHERLIB` and `=NONE` are not built anywhere | `ci.yml` | Two matrix entries; also settles AR-05 |
+| [TS-08](#ts-08--no-compile-only-gate-for-the-non-default-eth_stack-paths) | ✅ P3 | Test gap | `ETH_STACK=ETHERLIB` and `=NONE` are not built anywhere | `ci.yml` | Two matrix entries; also settles AR-05 |
 | [TS-09](#ts-09--the-isr-half-of-the-context-rule-is-reachable-on-the-host-after-all) | ✅ P3 | Opportunity | A settable host `__get_IPSR()` makes the ISR half of the context rule testable | `test/host/cmsis_compiler.h` | Pins the *wrapper's* rule, not the silicon's — document the narrower claim. Contradicts a "cannot" in two docs |
 | [TS-10](#ts-10--the-2-byte-alignment-contract-has-no-static-assert) | ✅ P3 | Test gap | No `_Static_assert` on `NX_PHYSICAL_HEADER >= 16` | `eth_drv_netxduo.c:148-167` | A NetX Duo bump would silently reintroduce "every IPv4 checksum fails while ARP works" |
 | [CX-01](#cx-01--rxring--txring-as-typed-c-over-an-injected-descriptor-view) | Opp (H) | C++ | Extract the ring state machines; retires the `MAP_32BIT` arena, `-no-pie` and two harness tests | `mac_drv.c` → C++ | Enables ASan/UBSan. Breaks the "`mac_drv.c` unchanged" property — a real trade |
@@ -1512,7 +1536,7 @@ how, and for the evidence.
 | [DC-07](#dc-07--three-references-to-a-cli-command-that-does-not-exist) | ✅ P3 | Doc | `ptp diag ts` does not exist; the counters are printed by `ethinfo` | `ptp_tx_timestamp.{c:54,h:17}`, `threadx_porting_plan.md:176` | The porting-plan instance describes a HIL dependency |
 | [DC-08](#dc-08--flexptp_optionsh-describes-the-transmit-timestamp-deferral-as-future-work) | ✅ P3 | Doc | "S6 must defer the callback…" — S6 shipped and the deferral exists | `flexptp_options.h:42-44` | Keep the warning, point it at `ptp_tx_timestamp.c`. Also: stale include-guard name |
 | [DC-09](#dc-09--the-igmp-comment-keeps-a-superseded-first-paragraph) | ✅ P3 | Doc | Superseded first paragraph precedes its own correction | `nsd_netxduo.c:328-336` | |
-| [DC-10](#dc-10--readmemd-overstates-the-eth_stack-switch) | P3 | Doc | README/design_doc disagree on the EtherLib switch | `README.md:263-271` | Same as AR-05 |
+| [DC-10](#dc-10--readmemd-overstates-the-eth_stack-switch) | ✅ P3 | Doc | README/design_doc disagree on the EtherLib switch | `README.md:263-271` | Same as AR-05 |
 | [DS-01](#ds-01--port_reviewmds-table-of-contents-omits-its-largest-section) | ✅ P2 | Self-consistency | `port_review.md` TOC omits "Second-Review Findings" (F67–F80, 620 lines) | `port_review.md:22-34` | Includes F80, the finding that required patch 0004 |
 | [DS-02](#ds-02--the-disposition-summary-claims-completeness-it-does-not-have) | ✅ P2 | Self-consistency | Disposition Summary stops at F66 yet says "Every finding is tracked"; both phase tables likewise | `port_review.md:78-95,119-195` | 14 findings with no disposition row and no phase attribution |
 | [DS-03](#ds-03--f80-is-attributed-to-the-second-review-pass-which-did-not-find-it) | ✅ P3 | Self-consistency | F80 filed under "raised by the second review pass"; it came from the S6 bench session | `port_review.md:1656-1660` | Visible symptom: it is the only entry with no `[Nnn]` bracket |
