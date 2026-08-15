@@ -1477,6 +1477,21 @@ unsigned underflow, [NX-08](#nx-08--receive-queue-leaked-if-the-receive-thread-f
 leak-on-error) are in the categories those tools are good at. A `compile_commands.json` already
 falls out of the CMake build.
 
+> **✅ ADDRESSED, with one part verified and one part not — and the difference is recorded.**
+>
+> **GCC `-fanalyzer`, verified.** Enabled on the first-party *host* targets in
+> `test/CMakeLists.txt`, so it runs in the existing host-tests job. Clean today, and **not
+> vacuous**: introducing a NULL dereference into `ptp_tx_registry.cpp` is reported as
+> `-Wanalyzer-null-dereference` with the path that reaches it. Not `-Werror` — a checker that
+> blocks the suite on a false positive is a checker somebody disables.
+>
+> **cppcheck, not verified here.** It covers what `-fanalyzer` cannot reach: the files that only
+> exist cross-compiled (`eth_drv_netxduo.c`, `nsd_netxduo.c`, `main.c`, `cmds.c`,
+> `serial_io.c`). I could not run it — the Debian binary hard-codes `FILESDIR` to a path outside
+> a non-root prefix and refuses to start without an install, and my first apparent "clean run"
+> was in fact cppcheck failing to start. The job comment says so. `--error-exitcode=1` is kept
+> deliberately: if the first CI run finds something, a red job is the correct outcome.
+
 ### GI-04 — two `.pyc` files are committed
 
 **Priority: Low** · `tools/hil/__pycache__/checks.cpython-314.pyc`, `hil.cpython-314.pyc`
@@ -1603,7 +1618,7 @@ how, and for the evidence.
 | [DS-06](#ds-06--the-review-archives-readme-stops-at-f7x) | ✅ P3 | Self-consistency | "every finding (F1–F7x)"; the log reaches F80 | `docs/reviews/README.md:8` | |
 | [GI-01](#gi-01--let-the-hil-runner-prove-which-firmware-it-is-testing) | ✅ P2 | Improvement | HIL cannot prove which image it tested; the control is a README warning | `tools/hil/run.py` | Print a build identity, compare against the ELF, fail on mismatch — the same transformation `build.sh` applied to the patch hazard |
 | [GI-02](#gi-02--give-ethinfo-and-osinfo-a-machine-readable-mode) | P3 | Improvement | HIL regex-parses human prose; a `MSG()` edit can silently disable a check | `checks.py`, `eth_drv_report()` | `checks.py:256` already records one silent miscount |
-| [GI-03](#gi-03--add-static-analysis-to-ci) | P3 | Improvement | No static analysis; `compile_commands.json` already available | `ci.yml` | Would likely have caught NX-05 and NX-08 |
+| [GI-03](#gi-03--add-static-analysis-to-ci) | ✅ P3 | Improvement | No static analysis; `compile_commands.json` already available | `ci.yml` | Would likely have caught NX-05 and NX-08 |
 | [GI-04](#gi-04--two-pyc-files-are-committed) | ✅ P3 | Hygiene | Two `__pycache__/*.pyc` tracked; `.gitignore` lacks the pattern | `tools/hil/__pycache__/` | Also missing a trailing newline |
 | [GI-05](#gi-05--the-release-optimisation-level-analysis-deserves-a-re-run) | ✅ P3 | Stale data | The `-Og`/`-O2`/`-Os` figures predate the port (167 KB quoted; image is now 206 344 B) | `CMakeLists.txt:150-180` | Conclusion likely unchanged; the numbers describe a different firmware |
 | [GI-06](#gi-06--consider-persisting-ptp-settings) | ✅ P3 | Decision | No settings store; profiles are lost on reset | — | Probably correct for a demo. Record it as a decision with a sketch of where it would go |

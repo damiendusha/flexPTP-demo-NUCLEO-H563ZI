@@ -301,6 +301,7 @@ Three jobs, and one of them is not a test in the usual sense:
 | **Build (Debug, Release)** | both configurations compile and link, with **zero first-party warnings** |
 | **Host unit tests** | tiers 1 and 2, above |
 | **Docs cross-references** | every relative link and in-document anchor resolves |
+| **Static analysis** | `cppcheck` over `Src/` and `Drivers/EthDrv/`; GCC's `-fanalyzer` runs inside the host-tests job |
 
 The build job also runs **`./build.sh --check-patches`**, which verifies all four submodule
 patches are applied — independently of the build, and driven from `build.sh`'s own list so the

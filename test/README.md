@@ -27,6 +27,21 @@ Specifically **not** reachable, and no amount of test writing changes it:
 - **Memory ordering.** `__DSB`/`__DMB` are no-ops in the host shim.
 - **Anything downstream of the timestamp capture**, the PHY, the clock tree, or the wire.
 
+## Static analysis rides along
+
+The first-party host targets (`host_mac_drv`, `ptp_units`, `eth_framer`, `test_blocking_fifo`)
+are compiled with GCC's **`-fanalyzer`** — a real interprocedural checker for double-free,
+use-after-free, NULL dereference, leaks and uninitialised reads. It costs nothing here, because
+this is the one place first-party code builds with the system compiler.
+
+Scoped to our targets: the vendored trees are compiled with `-w` and a finding in them is not
+this project's to fix. Not `-Werror`, because `-fanalyzer` has false positives and a checker
+that blocks the suite on one is a checker somebody disables — CI's first-party-warnings gate is
+what turns a warning into a failure.
+
+It is not vacuous: introducing a NULL dereference into `ptp_tx_registry.cpp` is reported as
+`-Wanalyzer-null-dereference` with the path that reaches it.
+
 ## Why this is a separate CMake root
 
 The top-level `CMakeLists.txt` includes `cmake/gcc-arm-none-eabi.cmake` unconditionally —

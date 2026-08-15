@@ -42,6 +42,23 @@ enable_testing()
 include(GoogleTest)
 
 # ---------------------------------------------------------------------------
+# Static analysis, on the first-party code that compiles for the host.
+#
+# GCC's -fanalyzer is a real interprocedural checker -- double-free, use-after-free, NULL
+# dereference, leaks, uninitialised reads -- and it costs nothing to enable here, where the
+# first-party sources already build with the system compiler (finding GI-03).
+#
+# Scoped to OUR targets. The vendored trees (ThreadX, NetX Duo, the CMSIS wrapper, GoogleTest)
+# are compiled with -w already and a finding in them is not this project's to fix; the same
+# reasoning as CI's first-party-warnings gate.
+#
+# Deliberately NOT -Werror: -fanalyzer has false positives, and a checker that blocks the suite
+# on one is a checker somebody disables. It is loud in the build log and CI's warning gate is
+# what turns first-party warnings into failures.
+set(FIRST_PARTY_ANALYSIS -fanalyzer)
+
+
+# ---------------------------------------------------------------------------
 # The driver under test, compiled for the host.
 # ---------------------------------------------------------------------------
 #
@@ -75,6 +92,7 @@ target_compile_definitions(host_mac_drv PUBLIC STM32H563xx USE_HAL_DRIVER)
 target_compile_options(host_mac_drv PRIVATE
     -Wall -Wextra -Wno-unused-parameter
     -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast
+    ${FIRST_PARTY_ANALYSIS}
 )
 
 # -no-pie puts .text at ~0x400000 so that function pointers still fit in the uint32_t
@@ -113,7 +131,7 @@ add_library(ptp_units STATIC
     ${REPO_ROOT}/Src/flexptp_nsd/ptp_nsd_lifecycle.cpp
 )
 target_include_directories(ptp_units PUBLIC ${REPO_ROOT}/Src/flexptp_nsd)
-target_compile_options(ptp_units PRIVATE -Wall -Wextra)
+target_compile_options(ptp_units PRIVATE -Wall -Wextra ${FIRST_PARTY_ANALYSIS})
 
 function(add_unit_test name)
     add_executable(${name} ${name}.cpp)
@@ -131,7 +149,7 @@ add_unit_test(test_ptp_nsd_lifecycle)
 # NSD units, so it gets its own tiny library rather than joining ptp_units.
 add_library(eth_framer STATIC ${REPO_ROOT}/Drivers/EthDrv/eth_framer.cpp)
 target_include_directories(eth_framer PUBLIC ${REPO_ROOT}/Drivers/EthDrv)
-target_compile_options(eth_framer PRIVATE -Wall -Wextra)
+target_compile_options(eth_framer PRIVATE -Wall -Wextra ${FIRST_PARTY_ANALYSIS})
 
 add_executable(test_eth_framer test_eth_framer.cpp)
 target_link_libraries(test_eth_framer PRIVATE eth_framer GTest::gtest_main)
@@ -229,7 +247,8 @@ if (EXISTS ${THREADX_DIR}/common/inc/tx_api.h)
         ${REPO_ROOT}/Modules/blocking_io
         ${CMAKE_CURRENT_LIST_DIR}/host)          # cmsis_compiler.h: PRIMASK, __get_IPSR
     target_link_libraries(test_blocking_fifo PRIVATE host_cmsis_rtos GTest::gtest)
-    target_compile_options(test_blocking_fifo PRIVATE -Wall -Wextra)
+    target_compile_options(test_blocking_fifo PRIVATE -Wall -Wextra
+                           $<$<COMPILE_LANGUAGE:C>:${FIRST_PARTY_ANALYSIS}>)
     add_test(NAME BlockingFifo COMMAND test_blocking_fifo)
     set_tests_properties(BlockingFifo PROPERTIES TIMEOUT 30)
 

@@ -116,6 +116,56 @@ jobs:
           set -o pipefail
           ./build.sh -b build/${{ matrix.stack }} 2>&1 | tee build.log
 
+  # Static analysis over the first-party code only.
+  #
+  # Two analysers, because they reach different code:
+  #
+  #   GCC -fanalyzer   enabled in test/CMakeLists.txt on the first-party host targets, so it
+  #                    runs in the host-tests job below. Verified locally: clean, and NOT
+  #                    vacuous -- introducing a null dereference in ptp_tx_registry.cpp is
+  #                    reported as -Wanalyzer-null-dereference. It only sees the code that
+  #                    compiles for the host.
+  #   cppcheck         this job, for the code that ONLY exists cross-compiled --
+  #                    eth_drv_netxduo.c, nsd_netxduo.c, main.c, cmds.c, serial_io.c.
+  #
+  # Scoped deliberately: Src/, Inc/ and Drivers/EthDrv/ are this project's, and everything else
+  # in the tree is vendored at a pinned commit. A finding in NetX Duo or the HAL is not this
+  # project's to fix and would turn the gate into noise -- the same reasoning as the
+  # first-party-warnings gate in the build job.
+  #
+  # HONEST NOTE: this cppcheck invocation could not be run in the environment it was written
+  # in -- the Debian package hard-codes FILESDIR to a path outside a non-root prefix, so the
+  # binary refuses to start without an install. Its first CI run is therefore its first run.
+  # --error-exitcode=1 is deliberate anyway: if it finds something, a red job is the correct
+  # outcome and the finding is the point.
+  static-analysis:
+    name: Static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+
+      - name: Analyse the first-party sources
+        run: |
+          cppcheck --version
+          cppcheck \
+            --enable=warning,portability \
+            --error-exitcode=1 \
+            --inline-suppr \
+            --std=c11 \
+            --platform=unix32 \
+            -DSTM32H563xx -DUSE_HAL_DRIVER -DETH_NETXDUO -DCMSIS_OS2 -DPPS_SIMPLE \
+            -I Inc -I Src -I Drivers -I Modules \
+            --suppress=missingInclude \
+            --suppress=missingIncludeSystem \
+            --suppress=unusedFunction \
+            --suppress=unmatchedSuppression \
+            Src/ Drivers/EthDrv/
+
   host-tests:
     name: Host unit tests
     runs-on: ubuntu-latest
