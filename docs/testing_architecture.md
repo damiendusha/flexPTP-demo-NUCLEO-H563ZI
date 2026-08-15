@@ -176,7 +176,7 @@ can still be tested against the subset that is meaningful at that point.
 | `cli` | Command table populated |
 | `osinfo` | Kernel version and free memory |
 | `cpp_ctor` | Static C++ constructors ran before `main` |
-| `threads` | Expected thread set exists at expected priorities |
+| `threads` | Expected thread set exists, and **every** documented priority matches — including the two the architecture doc calls load-bearing (`eth ip` 16, `rx` 24) |
 | `irq_prio` | Exception and interrupt priorities match the documented table (**NX-04**) |
 | `dhcp` | Address acquired |
 | `ping` | Round-trip from the host, loss and latency |

@@ -287,6 +287,11 @@ are given below, and `osinfo` prints both for the same reason.
 | `serialio` | **32** | 24 | 2048 B | `serial_io_start()` | FIFO → UART DMA; the only writer to USART3 |
 | `phy` | **32** | 24 | 1024 B | `eth_drv_netxduo.c` | PHY link polling; also drains the DMA error latch |
 
+**This table is asserted, not just written down**: `osinfo` enumerates the threads with their
+priorities on both scales, and the `threads` check in `tools/hil/` compares every one of them
+against the values above. Before that it checked only that `serialio`, `init` and `cli` sat at
+32 — the part of the table with no load-bearing relationship in it (finding TS-05).
+
 Notes:
 
 - **Every thread now states its priority explicitly.** Under FreeRTOS, five of them left

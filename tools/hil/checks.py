@@ -331,6 +331,10 @@ def check_threads(board: Board, ctx: Context) -> CheckResult:
     # the CLI. flexPTP's "ptp" thread is created on demand and is not required here.
     missing = [n for n in ("System Timer Thread", "serialio", "init", "cli") if n not in found]
 
+    # The threads the Ethernet driver creates, once there is a driver to create them.
+    if ctx.expect_phy:
+        missing += [n for n in ("rx", "phy") if n not in found]
+
     # The NetX Duo IP thread, once there is a stack to run.
     if ctx.expect_ip_thread and "eth ip" not in found:
         missing.append("eth ip")
@@ -340,15 +344,35 @@ def check_threads(board: Board, ctx: Context) -> CheckResult:
             "threads", Status.FAIL, "missing: " + ", ".join(missing), data
         )
 
-    # Priority inversion is the single easiest thing to get wrong in this port, so pin it:
-    # the application threads must sit at ThreadX 32, i.e. CMSIS osPriorityNormal (24).
-    for name in ("serialio", "init", "cli"):
-        if found[name] != 32:
-            return CheckResult(
-                "threads", Status.FAIL,
-                f"{name} at ThreadX priority {found[name]}, expected 32 (CMSIS 24)", data)
+    # Priority inversion is the single easiest thing to get wrong in this port, so pin it --
+    # ALL of it, not just the flat part.
+    #
+    # docs/architecture.md presents this table as the specification and calls two of the
+    # relationships load-bearing: `eth ip` highest so the stack stays ahead of everything that
+    # feeds it, and `rx` above the console so a burst of CLI output cannot lengthen the window
+    # F61's inFlight marker exists to make safe. Until this check asserted them, the only thing
+    # verified was that three threads sat at 32 -- the part with no load-bearing relationship
+    # in it at all (TS-05).
+    #
+    # `ptpts` is created by the NSD when flexPTP starts, so it is checked only if present;
+    # `threads` runs before `ptp_start` in every stage.
+    expected = {"System Timer Thread": 0, "serialio": 32, "init": 32, "cli": 32}
+    if ctx.expect_phy:
+        expected.update({"rx": 24, "phy": 32})
+    if ctx.expect_ip_thread:
+        expected["eth ip"] = 16
+    if "ptpts" in found:
+        expected["ptpts"] = 24
+    if "ptp" in found:
+        expected["ptp"] = 32
 
-    return CheckResult("threads", Status.PASS, f"{len(found)} threads, priorities as expected", data)
+    wrong = [f"{n} at ThreadX {found[n]}, expected {want}"
+             for n, want in expected.items() if found[n] != want]
+    if wrong:
+        return CheckResult("threads", Status.FAIL, "; ".join(wrong), data)
+
+    return CheckResult("threads", Status.PASS,
+                       f"{len(found)} threads, {len(expected)} priorities as documented", data)
 
 
 # --------------------------------------------------------------------------
