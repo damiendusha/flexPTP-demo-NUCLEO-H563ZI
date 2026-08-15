@@ -4,10 +4,12 @@
  * Modules/CMakeLists.txt), so the submodule stays unpatched -- the same arrangement as the
  * H563 hardware port. Replaces nsd_stub.c, and stands in for the bundled nsd_lwip.c.
  *
- * S6 implements the UDP/IPv4 transport, which is the `default` profile and the one the board
- * boots into. PTP over raw 802.3 -- the gPTP profile -- arrives in S7 and will use
- * nx_link_ethernet_packet_send() and nx_link_packet_receive_callback_add(), which is where
- * NetX Duo's link layer earns its keep over lwIP's unknown-ethertype hook.
+ * Both transports are implemented: UDP/IPv4 (the `default` and `defp2p` profiles) and raw
+ * 802.3 (`gPTP`). The 802.3 half is where NetX Duo's link layer earns its keep over lwIP --
+ * nx_link_packet_receive_callback_add() delivers PTP frames WITH their hardware timestamp as a
+ * callback argument, where lwIP needed LWIP_HOOK_UNKNOWN_ETH_PROTOCOL plus a hand-rolled
+ * EtherType and destination-MAC parse in nsd_lwip.c, and had to smuggle the timestamp through
+ * two injected pbuf fields.
  */
 
 #include "flexptp/network_stack_driver.h"
@@ -15,6 +17,7 @@
 #include <string.h>
 
 #include "nx_api.h"
+#include "nx_link.h"
 
 #include "Drivers/EthDrv/eth_drv_netxduo.h"
 #include "ethernet/ethernet_netxduo.h"
@@ -29,6 +32,11 @@
 static NX_UDP_SOCKET s_event_socket;   /* port 319: Sync, Delay_Req, PDelay_Req/Resp */
 static NX_UDP_SOCKET s_general_socket; /* port 320: Follow_Up, Delay_Resp, Announce   */
 static bool s_sockets_open;
+
+/* The 802.3 receive registration. NetX Duo keeps this queue structure in a list on the
+   interface, so it must outlive the call -- a stack local would corrupt that list. */
+static NX_LINK_RECEIVE_QUEUE s_l2_queue;
+static bool s_l2_registered;
 
 static PtpTransportType s_tp = -1;
 static PtpDelayMechanism s_dm = -1;
@@ -124,9 +132,76 @@ static void ptp_udp_receive(NX_UDP_SOCKET *socket) {
     }
 }
 
+/* --- Receive, 802.3 -------------------------------------------------------------------------- */
+
+/* Registered for EtherType 0x88F7. NetX Duo hands us the frame AND its hardware timestamp;
+ * contrast nsd_lwip.c, which had to hook unknown ethertypes, re-read the EtherType out of the
+ * frame by hand, compare the destination MAC itself, and pull the timestamp from a pbuf field
+ * this project had injected.
+ *
+ * Returning NX_SUCCESS means "consumed" -- NetX Duo then leaves the packet to us, so it must be
+ * released here. Returning anything else lets it fall through to the next registered queue.
+ *
+ * Runs on the IP thread, so ptp_receive_enqueue()'s blocking enqueue is legal.
+ */
+static UINT ptp_l2_receive(NX_IP *ip_ptr, UINT interface_index, NX_PACKET *packet_ptr,
+                           ULONG physical_address_msw, ULONG physical_address_lsw,
+                           UINT packet_type, UINT header_size, VOID *context,
+                           NX_LINK_TIME *time_ptr) {
+    (void)ip_ptr;
+    (void)interface_index;
+    (void)physical_address_msw;
+    (void)physical_address_lsw;
+    (void)packet_type;
+    (void)context;
+
+    s_rx_notify++;
+    s_rx_packets++;
+
+    /* The timestamp comes as an argument here, rather than being dug out of the packet buffer
+       as it must be on the UDP path. NULL if the MAC did not stamp this frame. */
+    uint32_t ts_s = 0, ts_ns = 0;
+    if (time_ptr != NX_NULL) {
+        ts_ns = (uint32_t)time_ptr->nano_second;
+        ts_s = (uint32_t)time_ptr->second_low;
+    }
+
+    /* header_size is the Ethernet header NetX Duo has already parsed but NOT stripped -- it
+       leaves prepend_ptr at the start of the frame for a raw receiver. flexPTP wants the PTP
+       message, so skip it. */
+    UCHAR *ptp = packet_ptr->nx_packet_prepend_ptr + header_size;
+    ULONG length = packet_ptr->nx_packet_length - header_size;
+
+    if (packet_ptr->nx_packet_next == NX_NULL) {
+        s_rx_type[ptp[0] & 0x0FU]++;
+        s_rx_last_len = (uint32_t)length;
+        memcpy(s_rx_last, ptp, (length < sizeof(s_rx_last)) ? length : sizeof(s_rx_last));
+        s_rx_enqueued++;
+        ptp_receive_enqueue(ptp, (uint32_t)length, ts_s, ts_ns, PTP_TP_802_3);
+    }
+
+    nx_packet_release(packet_ptr);
+    return NX_SUCCESS;
+}
+
+/* The two L2 groups, as NetX Duo's msw/lsw pair. 01:1B:19:00:00:00 for E2E, 01:80:C2:00:00:0E
+   for peer delay -- the latter being the address ordinary bridges must not forward, which is
+   why gPTP needs a direct cable (see docs/ptp_profiles.md). */
+static void l2_group_address(ULONG *msw, ULONG *lsw) {
+    const uint8_t *mac = (s_dm == PTP_DM_E2E) ? PTP_ETHERNET_PRIMARY : PTP_ETHERNET_PEER_DELAY;
+    *msw = ((ULONG)mac[0] << 8) | mac[1];
+    *lsw = ((ULONG)mac[2] << 24) | ((ULONG)mac[3] << 16) | ((ULONG)mac[4] << 8) | mac[5];
+}
+
 /* --- Driver interface ----------------------------------------------------------------------- */
 
 static void close_sockets(void) {
+    NX_IP *ip = ethernet_ip();
+    if (s_l2_registered && (ip != NX_NULL)) {
+        (void)nx_link_packet_receive_callback_remove(ip, 0, &s_l2_queue);
+        s_l2_registered = false;
+    }
+
     if (!s_sockets_open) {
         return;
     }
@@ -181,6 +256,13 @@ void ptp_nsd_init(PtpTransportType tp, PtpDelayMechanism dm) {
         nx_udp_socket_receive_notify(&s_event_socket, ptp_udp_receive);
         nx_udp_socket_receive_notify(&s_general_socket, ptp_udp_receive);
         s_sockets_open = true;
+    } else if (tp == PTP_TP_802_3) {
+        if (nx_link_packet_receive_callback_add(ip, 0, &s_l2_queue, NX_LINK_ETHERNET_PTP,
+                                                ptp_l2_receive, NX_NULL) != NX_SUCCESS) {
+            MSG("PTP: could not register the 802.3 receive callback\n");
+            return;
+        }
+        s_l2_registered = true;
     }
 
     s_tp = tp;
@@ -192,7 +274,27 @@ void ptp_nsd_init(PtpTransportType tp, PtpDelayMechanism dm) {
 void ptp_nsd_igmp_join_leave(bool join) {
     NX_IP *ip = ethernet_ip();
 
-    if ((s_tp != PTP_TP_IPv4) || (ip == NX_NULL)) {
+    if (ip == NX_NULL) {
+        return;
+    }
+
+    /* 802.3 has no IGMP -- the grouping is a link-layer multicast MAC. nx_link_multicast_join()
+       is the equivalent, and the lwIP driver had no counterpart at all: it relied on the MAC
+       being in pass-all-multicast, which works but filters nothing. */
+    if (s_tp == PTP_TP_802_3) {
+        ULONG msw = 0, lsw = 0;
+        l2_group_address(&msw, &lsw);
+        if (join) {
+            if (nx_link_multicast_join(ip, 0, msw, lsw) != NX_SUCCESS) {
+                MSG("PTP: L2 multicast join failed\n");
+            }
+        } else {
+            (void)nx_link_multicast_leave(ip, 0, msw, lsw);
+        }
+        return;
+    }
+
+    if (s_tp != PTP_TP_IPv4) {
         return;
     }
 
@@ -236,12 +338,20 @@ void ptp_nsd_transmit_msg(RawPtpMessage *pMsg, uint32_t uid) {
     NX_IP *ip = ethernet_ip();
     NX_PACKET_POOL *pool = ethernet_packet_pool();
 
-    if ((pMsg == NULL) || (ip == NX_NULL) || (pool == NX_NULL) || (s_tp != PTP_TP_IPv4)) {
+    if ((pMsg == NULL) || (ip == NX_NULL) || (pool == NX_NULL)) {
+        return;
+    }
+    if ((s_tp != PTP_TP_IPv4) && (s_tp != PTP_TP_802_3)) {
         return;
     }
 
+    /* NX_UDP_PACKET reserves room for the UDP, IP and Ethernet headers; NX_PHYSICAL_HEADER
+       reserves only the Ethernet one, which is what a raw 802.3 frame needs. Using the UDP
+       offset for an L2 frame would still work but would waste 28 bytes of every packet and
+       obscure where the header actually starts. */
     NX_PACKET *packet = NX_NULL;
-    if (nx_packet_allocate(pool, &packet, NX_UDP_PACKET, NX_NO_WAIT) != NX_SUCCESS) {
+    UINT alloc_type = (s_tp == PTP_TP_IPv4) ? NX_UDP_PACKET : NX_PHYSICAL_HEADER;
+    if (nx_packet_allocate(pool, &packet, alloc_type, NX_NO_WAIT) != NX_SUCCESS) {
         /* No timestamp callback will ever come for this uid. flexPTP ages the message out of
            its buffer on TTL, so the slot is not leaked -- but the Sync cycle is lost, which is
            worth saying rather than dropping silently. */
@@ -263,6 +373,21 @@ void ptp_nsd_transmit_msg(RawPtpMessage *pMsg, uint32_t uid) {
     packet->nx_packet_interface_capability_flag |= NX_INTERFACE_CAPABILITY_PTP_TIMESTAMP;
     eth_drv_request_tx_timestamp(packet, uid);
     s_tx_requested++;
+
+    if (s_tp == PTP_TP_802_3) {
+        /* Raw 802.3. nx_link_ethernet_packet_send() builds the Ethernet header itself and
+           issues NX_LINK_RAW_PACKET_SEND, which the driver passes through untouched -- so the
+           capability flag set above still reaches it and the timestamp is still requested.
+           This is the whole gPTP path, and it is four lines. */
+        ULONG msw = 0, lsw = 0;
+        l2_group_address(&msw, &lsw);
+        if (nx_link_ethernet_packet_send(ip, 0, packet, msw, lsw,
+                                         NX_LINK_ETHERNET_PTP) != NX_SUCCESS) {
+            eth_drv_cancel_tx_timestamp(packet);
+            nx_packet_release(packet);
+        }
+        return;
+    }
 
     NXD_ADDRESS dest;
     dest.nxd_ip_version = NX_IP_VERSION_V4;

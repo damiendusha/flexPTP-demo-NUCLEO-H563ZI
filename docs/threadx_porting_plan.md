@@ -92,7 +92,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending · ⏸️ optional/deferred
 | **S5d** | DHCP client | ✅ 192.168.2.191, 6/6 vs baseline | 0.5 d | ✅ **done** |
 | **S5e** | *Tier 3:* real ThreadX (`ports/linux`) + real NetX Duo + RAM driver on the host | ⬜ host only | 1–2 d | ⬜ pending |
 | **S6** | NSD: UDP/IPv4 E2E + TX-timestamp deferral fix | ✅ 9/9 vs baseline, `\|offset\| ≤ 3301 ns` | 2–3 d | ✅ **done** |
-| **S7** | 802.3 transport, P2P, all three profile presets | ✅ each preset against `ptp4l` | 1–2 d | ⬜ pending |
+| **S7** | 802.3 transport, P2P, all three profile presets | 🔄 TX + switching verified; **RX needs a gPTP/P2P master** | 1–2 d | 🔄 **blocked on host** |
 | **S8** | Cleanup, docs rewrite, CI update, final review | ✅ full regression suite vs S0 baseline | 1.5–2 d | ⬜ pending |
 | **B1** | *Bonus:* unit-test the F42 TX-ring ordering logic | ⏸️ | 0.5 d | ⏸️ optional |
 
@@ -838,6 +838,48 @@ P2P and L2 multicast join.
 **Hardware verification:** each of `default`, `defp2p` and `gPTP` reaching sync, with the host
 matched to each. `gPTP` needs a direct cable — see [ptp_profiles.md](ptp_profiles.md) and the
 switch caveat in the README.
+
+#### Progress — 15 Aug 2026 — **implemented, verification part-blocked**
+
+The 802.3 transport is written and its transmit half is verified on hardware. The receive half
+cannot be verified on this bench without the host master reconfigured, which needs root.
+
+**Verified.** After `ptp profile preset gPTP`, the frame the board puts on the wire is correct
+in every field:
+
+```
+tx last: cmd=29, 68 bytes
+  01 80 c2 00 00 0e | 56 00 1e 00 04 51 | 88 f7 | 12 02 00 36 ...
+  peer-delay L2 MAC   our MAC             0x88F7   sdoId 1, v2, PDelay_Req, len 54
+```
+
+`cmd=29` is `NX_LINK_RAW_PACKET_SEND`, i.e. it went through `nx_link_ethernet_packet_send()`;
+the destination is the 802.1D reserved peer-delay address; and `tx-requested 6` shows transmit
+timestamps still being requested on the L2 path, because the capability flag survives the raw
+send unchanged.
+
+Also verified, and the part most likely to break: **profile switching tears down and rebuilds
+the NSD correctly.** `default` → `gPTP` → `default` returns to `SLAVE`, which exercises socket
+close, L2 callback removal, L2 group leave, and re-creation of all of it.
+
+The 802.3 receive path is four lines because NetX Duo hands the timestamp to the callback as an
+argument. lwIP needed `LWIP_HOOK_UNKNOWN_ETH_PROTOCOL`, a hand-rolled EtherType and
+destination-MAC comparison, and two injected `pbuf` fields to carry the timestamp. This is the
+clearest single instance of the feasibility study's second finding paying off.
+
+**Not verified, and why.** The host counted zero frames from the board during the gPTP window,
+which is consistent with its NIC filtering an L2 group nothing has subscribed to rather than
+with a fault — but it is not proof of transmission either, and it says nothing about receive.
+Closing this needs, on the host:
+
+```bash
+sudo ptp4l -i enp5s0 -S -m -f /etc/linuxptp/gPTP.cfg          # for gPTP
+sudo ptp4l -i enp5s0 -S -m --serverOnly=1 -P 0                # for defp2p (P2P delay)
+```
+
+Until then `default` remains the only preset proven end to end — which is also the one the
+board boots into and the only one the pre-port firmware ever had verified
+([host_ptp_setup.md](host_ptp_setup.md) records gPTP as "not yet exercised end to end").
 
 ---
 
