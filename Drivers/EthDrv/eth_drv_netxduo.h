@@ -28,4 +28,8 @@ void eth_drv_cancel_tx_timestamp(NX_PACKET *packet);
 /** Print driver state and counters. Bring-up and S6 diagnostic, reachable as `ethinfo`. */
 void eth_drv_report(void);
 
+/* The same driver counters as `key=value` lines, for tools/hil/. The prose form above is for
+   humans and its layout is free to change; these key names are a contract (GI-02). */
+void eth_drv_stats_kv(void);
+
 #endif /* DRIVERS_ETHDRV_ETH_DRV_NETXDUO_H */

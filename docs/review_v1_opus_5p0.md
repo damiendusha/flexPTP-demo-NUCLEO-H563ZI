@@ -1466,6 +1466,24 @@ that silently stops asserting is the failure mode this project cares most about.
 A `--json` (or a second, terse `ethinfo raw`) emitting `key=value` lines would let the checks parse
 something with a contract. The prose output stays for humans.
 
+> **✅ ADDRESSED** — a new `ethstat` command emitting `key=value` between `BEGIN ethstat` and
+> `END ethstat`, and a `read_stats()` helper in `checks.py` that parses it. The prose `ethinfo`
+> stays for humans and its layout is explicitly free to change; the key names are the contract.
+> The driver's `key=value` dump is deliberately a *separate function* from its prose one, for
+> the same reason.
+>
+> It paid for itself immediately: a new **`counters`** check asserts that all ten drop and
+> refusal counters read zero — `rx.ts_deferred`, `rx.ts_stray`, `nsd.runt`, `nsd.chained`,
+> `ptpts.dropped`, and the driver's five. Every one of them exists because its absence is
+> invisible, and until now none was ever *asserted*, only printed.
+>
+> **And the change caught itself.** Adding a command made `cli` fail with
+> `expected 24 registered commands, got 25` — that check asserts the exact count on purpose,
+> because a command silently failing to register is a real failure mode. Updated to 25, along
+> with the README's captured listing.
+>
+> Hardware `S8` is now **13/13**.
+
 ### GI-03 — add static analysis to CI
 
 **Priority: Low**
@@ -1617,7 +1635,7 @@ how, and for the evidence.
 | [DS-05](#ds-05--the-host-suites-runtime-is-quoted-as-three-different-numbers) | ✅ P3 | Self-consistency | Suite runtime quoted as 0.04 s, 0.06 s and 0.2 s; measured 0.16 s | four documents | The 0.04 s figure underpins the "250× headroom" arithmetic for `TIMEOUT 10` (really ~60×) |
 | [DS-06](#ds-06--the-review-archives-readme-stops-at-f7x) | ✅ P3 | Self-consistency | "every finding (F1–F7x)"; the log reaches F80 | `docs/reviews/README.md:8` | |
 | [GI-01](#gi-01--let-the-hil-runner-prove-which-firmware-it-is-testing) | ✅ P2 | Improvement | HIL cannot prove which image it tested; the control is a README warning | `tools/hil/run.py` | Print a build identity, compare against the ELF, fail on mismatch — the same transformation `build.sh` applied to the patch hazard |
-| [GI-02](#gi-02--give-ethinfo-and-osinfo-a-machine-readable-mode) | P3 | Improvement | HIL regex-parses human prose; a `MSG()` edit can silently disable a check | `checks.py`, `eth_drv_report()` | `checks.py:256` already records one silent miscount |
+| [GI-02](#gi-02--give-ethinfo-and-osinfo-a-machine-readable-mode) | ✅ P3 | Improvement | HIL regex-parses human prose; a `MSG()` edit can silently disable a check | `checks.py`, `eth_drv_report()` | `checks.py:256` already records one silent miscount |
 | [GI-03](#gi-03--add-static-analysis-to-ci) | ✅ P3 | Improvement | No static analysis; `compile_commands.json` already available | `ci.yml` | Would likely have caught NX-05 and NX-08 |
 | [GI-04](#gi-04--two-pyc-files-are-committed) | ✅ P3 | Hygiene | Two `__pycache__/*.pyc` tracked; `.gitignore` lacks the pattern | `tools/hil/__pycache__/` | Also missing a trailing newline |
 | [GI-05](#gi-05--the-release-optimisation-level-analysis-deserves-a-re-run) | ✅ P3 | Stale data | The `-Og`/`-O2`/`-Os` figures predate the port (167 KB quoted; image is now 206 344 B) | `CMakeLists.txt:150-180` | Conclusion likely unchanged; the numbers describe a different firmware |

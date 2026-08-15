@@ -827,3 +827,24 @@ void eth_drv_report(void) {
         }
     }
 }
+
+/* The driver's counters as `key=value`, for tools/hil/.
+ *
+ * Deliberately duplicated rather than shared with eth_drv_report(): the prose form is laid out
+ * for a human reading a console and its layout must stay free to change, while these key names
+ * are a contract with the harness. Keeping them in one function would make every cosmetic edit
+ * a potential silent breakage of a hardware check -- which is the finding this answers
+ * (GI-02). */
+void eth_drv_stats_kv(void) {
+    MSG("drv.enabled=%u\n", (unsigned)drv_enabled);
+    MSG("drv.link_up=%u\n", (unsigned)drv_link.up);
+    MSG("drv.link_speed=%u\n", (unsigned)drv_link.speed);
+    MSG("drv.rx_frames=%u\n", (unsigned)drv_rx_frames);
+    MSG("drv.rx_drop_nopacket=%u\n", (unsigned)drv_rx_dropped_nopacket);
+    MSG("drv.rx_drop_size=%u\n", (unsigned)drv_rx_dropped_size);
+    MSG("drv.rx_drop_queue=%u\n", (unsigned)drv_rx_dropped_queue);
+    MSG("drv.tx_frames=%u\n", (unsigned)drv_tx_frames);
+    MSG("drv.tx_drop_linkdown=%u\n", (unsigned)drv_tx_dropped_linkdown);
+    MSG("drv.tx_drop_mac=%u\n", (unsigned)drv_tx_dropped_mac);
+    MSG("drv.tx_timestamped=%u\n", (unsigned)drv_tx_timestamped);
+}

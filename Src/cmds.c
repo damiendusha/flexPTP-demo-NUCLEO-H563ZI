@@ -269,6 +269,70 @@ static void ptp_core_report(void) {
         (unsigned)flexptp_uev_count(PTP_UEV_QUEUE_ERROR));
 }
 
+/* A terse, stable, machine-readable dump of the same figures `ethinfo` prints as prose.
+ *
+ * WHY BOTH
+ *
+ * tools/hil/ regex-parses the human output, and checks.py already records what that costs:
+ * "An earlier version used \\S+ and silently miscounted". Every edit to a MSG() format string
+ * is a potential silent breakage of a hardware check -- and a check that quietly stops
+ * asserting is the failure mode this project spends the most effort avoiding (finding GI-02).
+ *
+ * So the prose stays for humans and this exists for the harness: one `key=value` per line, no
+ * colour, no alignment, no prose. The contract is the key names.
+ */
+CMD_FUNCTION(eth_stats) {
+    MSG("BEGIN ethstat\n");
+
+#ifdef ETH_NETXDUO
+    {
+        uint32_t deferred = 0, stray = 0;
+        ETHHW_GetRxCtxCounters(&deferred, &stray);
+        MSG("rx.ts_deferred=%u\n", (unsigned)deferred);
+        MSG("rx.ts_stray=%u\n", (unsigned)stray);
+    }
+    {
+        uint32_t notify = 0, packets = 0, enqueued = 0, tx = 0;
+        ptp_nsd_stats(&notify, &packets, &enqueued, &tx);
+        MSG("nsd.notify=%u\n", (unsigned)notify);
+        MSG("nsd.packets=%u\n", (unsigned)packets);
+        MSG("nsd.enqueued=%u\n", (unsigned)enqueued);
+        MSG("nsd.tx_requested=%u\n", (unsigned)tx);
+    }
+    {
+        uint32_t runts = 0, chained = 0;
+        ptp_nsd_reject_stats(&runts, &chained);
+        MSG("nsd.runt=%u\n", (unsigned)runts);
+        MSG("nsd.chained=%u\n", (unsigned)chained);
+    }
+    {
+        uint32_t posted = 0, delivered = 0, dropped = 0;
+        ptp_tx_timestamp_stats(&posted, &delivered, &dropped);
+        MSG("ptpts.posted=%u\n", (unsigned)posted);
+        MSG("ptpts.delivered=%u\n", (unsigned)delivered);
+        MSG("ptpts.dropped=%u\n", (unsigned)dropped);
+    }
+    eth_drv_stats_kv();
+#endif
+
+    {
+        uint32_t peak = 0, size = 0;
+        extern void sysmem_heap_usage(uint32_t *, uint32_t *);
+        sysmem_heap_usage(&peak, &size);
+        MSG("heap.peak=%u\n", (unsigned)peak);
+        MSG("heap.size=%u\n", (unsigned)size);
+    }
+
+    MSG("ptp.running=%u\n", (unsigned)(is_flexPTP_operating() ? 1U : 0U));
+    if (is_flexPTP_operating()) {
+        MSG("ptp.bmca=%u\n", (unsigned)gPtpCoreState.bmca.state);
+        MSG("ptp.ticks=%u\n", (unsigned)ptp_get_tick());
+    }
+
+    MSG("END ethstat\n");
+    return 0;
+}
+
 CMD_FUNCTION(eth_info) {
     /* Three layers, composed here because this is the only place entitled to see all three:
        the driver's counters, the network-stack driver's, and flexPTP's core state. */
@@ -307,4 +371,5 @@ void cmd_init() {
     cli_register_command("osinfo \t\t\tPrint OS-related information", 1, 0, os_info);
     cli_register_command("flexptp \t\t\tStart flexPTP daemon", 1, 0, start_flexptp);
     cli_register_command("ethinfo \t\t\tPrint Ethernet driver state and counters", 1, 0, eth_info);
+    cli_register_command("ethstat \t\t\tPrint the same counters as key=value, for tooling", 1, 0, eth_stats);
 }

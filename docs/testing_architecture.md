@@ -181,7 +181,7 @@ changed for the hazard to come back.
 ## Tier 3 — hardware in the loop
 
 `tools/hil/` drives the board's serial CLI from the host over pyserial, with OpenOCD for flash
-and reset. Twelve named checks, grouped into per-stage sets so that a partially-ported firmware
+and reset. Thirteen named checks, grouped into per-stage sets so that a partially-ported firmware
 can still be tested against the subset that is meaningful at that point.
 
 | Check | Asserts |
@@ -198,6 +198,7 @@ can still be tested against the subset that is meaningful at that point.
 | `ptp_start` | Addend programmed to the computed nominal |
 | `ptp_ts` | T2 and T3 both advancing over 20 samples |
 | `ptp_sync` | Reaches `SLAVE`, offset bounded over 30 samples |
+| `counters` | Every drop and refusal counter reads zero — read from `ethstat`, not parsed out of prose (**GI-02**) |
 
 Exit status: `0` all passed · `1` failed or regressed · `2` could not reach the board · `3`
 passed but incomplete.

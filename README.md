@@ -147,7 +147,7 @@ The first run downloads GoogleTest via `FetchContent`, so it needs network once.
 
 ### Hardware in the loop — board required
 
-Drives the board's serial CLI from the host, with OpenOCD for flash and reset. Twelve checks,
+Drives the board's serial CLI from the host, with OpenOCD for flash and reset. Thirteen checks,
 from PHY identification through DHCP and ping to a bounded PTP offset in `SLAVE`.
 
 ```bash
@@ -354,11 +354,12 @@ In this project the memory-heavy `printf()` is replaced by the more embedded-opt
 The software offers you with the following multitude, most flexPTP-related of commands:
 
 ```
-?                                                  Print this help (24/64)
+?                                                  Print this help (25/64)
 hist                                               Print command history
 osinfo                                             Print OS-related information
 flexptp                                            Start flexPTP daemon
 ethinfo                                            Print Ethernet driver state and counters
+ethstat                                            Print the same counters as key=value, for tooling
 ptp reset                                          Reset PTP subsystem
 ptp servo offset [offset_ns]                       Set or query clock offset
 ptp log {def|corr|ts|info|locked|bmca} {on|off}    Turn on or off logging
@@ -382,12 +383,17 @@ ptp servo sg [var|default]                         Set or get sigma_gamma^2 (s^2
 ptp servo stm [var|default]                        Set or get sigma_theta_m^2 (s^2)
 ```
 
-Listed in the order the firmware emits them, captured from the running board. The `(24/64)`
+Listed in the order the firmware emits them, captured from the running board. The `(25/64)`
 on the first line is the CLI's own registered/available slot count.
 
 `ethinfo` is this project's own, added by the NetX Duo port. It prints the driver's state and
 its receive/transmit counters, and it is how four of the five defects in that port were
 actually diagnosed — counters, not code-reading.
+
+`ethstat` prints the same figures as `key=value` lines between `BEGIN ethstat`/`END ethstat`.
+It exists for `tools/hil/`, which used to regex-parse the prose form — and had already silently
+miscounted once doing so. The prose is for humans and its layout is free to change; the key
+names are the contract.
 
 > [!TIP]
 > The above hint can be listed by typing '?'.

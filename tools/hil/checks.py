@@ -80,10 +80,11 @@ ADDEND_TOLERANCE = 0.01
 # The CLI's registered command count once flexPTP has registered its own.
 #
 # 23 in the pre-port firmware: 4 application commands plus flexPTP's 19. S5b added `ethinfo`,
-# a driver-state and counter dump, making 24. Asserted exactly rather than as a minimum,
+# a driver-state and counter dump, making 24; the review's GI-02 added `ethstat`, the same
+# counters as machine-readable key=value, making 25. Asserted exactly rather than as a minimum,
 # because a command silently failing to register is a real failure mode -- that is what the
 # check is for -- so a deliberate addition is expected to move this number.
-EXPECTED_CMD_COUNT = 24
+EXPECTED_CMD_COUNT = 25
 
 
 # --------------------------------------------------------------------------
@@ -264,6 +265,62 @@ def check_irq_prio(board: Board, ctx: Context) -> CheckResult:
 
     return CheckResult("irq_prio", Status.PASS,
                        f"{len(EXPECTED_IRQ_PRIORITIES)} priorities as documented", data)
+
+
+def read_stats(board: Board) -> dict:
+    """The board's counters, from `ethstat`, as {key: int}.
+
+    `ethinfo` is prose laid out for a human and this harness used to regex it -- which cost a
+    silent miscount once already, recorded in check_threads() below. Every edit to a MSG()
+    format string was a potential silent breakage of a check, and a check that quietly stops
+    asserting is worse than no check (finding GI-02).
+
+    `ethstat` emits one `key=value` per line between BEGIN/END markers. The key names are the
+    contract; the prose is free to change.
+
+    Returns {} if the firmware predates the command, so a caller can SKIP rather than fail.
+    """
+    out = board.cmd("ethstat", quiet=1.2, timeout=10)
+    if "BEGIN ethstat" not in out or "END ethstat" not in out:
+        return {}
+
+    body = out.split("BEGIN ethstat", 1)[1].split("END ethstat", 1)[0]
+    stats = {}
+    for m in re.finditer(r"^\s*([a-z_]+\.[a-z_]+)=(\d+)\s*$", body, re.M):
+        stats[m.group(1)] = int(m.group(2))
+    return stats
+
+
+def check_counters(board: Board, ctx: Context) -> CheckResult:
+    """No counter that should be zero is non-zero.
+
+    Every one of these is a drop or a refusal the firmware instruments precisely because its
+    absence is invisible. They are all expected to read zero on a healthy bench, and asserting
+    that is nearly free once the values are machine-readable.
+
+    Deliberately NOT asserting that the positive counters are positive: the other checks do
+    that where it means something (ptp_ts asserts T2/T3 advance, ping asserts loss), and a
+    stage that has not started flexPTP would fail a blanket "> 0" for no reason.
+    """
+    stats = read_stats(board)
+    if not stats:
+        return CheckResult("counters", Status.SKIP,
+                           "firmware has no `ethstat` command (added after S8)")
+
+    must_be_zero = [
+        "rx.ts_deferred", "rx.ts_stray",
+        "nsd.runt", "nsd.chained",
+        "ptpts.dropped",
+        "drv.rx_drop_nopacket", "drv.rx_drop_size", "drv.rx_drop_queue",
+        "drv.tx_drop_linkdown", "drv.tx_drop_mac",
+    ]
+    bad = [f"{k}={stats[k]}" for k in must_be_zero if stats.get(k, 0) != 0]
+    if bad:
+        return CheckResult("counters", Status.FAIL, ", ".join(bad), {"stats": stats})
+
+    checked = [k for k in must_be_zero if k in stats]
+    return CheckResult("counters", Status.PASS,
+                       f"{len(checked)} drop/refusal counters all zero", {"stats": stats})
 
 
 def check_build_id(board: Board, ctx: Context) -> CheckResult:
@@ -717,6 +774,7 @@ ALL_CHECKS = {
     "ping": check_ping,
     "ptp_ts": check_ptp_ts,
     "ptp_sync": check_ptp_sync,
+    "counters": check_counters,
 }
 
 # Which checks are meaningful at each stage of the ThreadX port. Ordering matters: `dhcp`
@@ -736,7 +794,7 @@ STAGES = {
     "S5b": ["build_id", "boot", "cli", "osinfo", "threads"],
     "S5c": ["build_id", "boot", "cli", "osinfo", "threads", "dhcp", "ping"],
     "S5d": ["build_id", "boot", "cli", "osinfo", "threads", "dhcp", "ping"],
-    "S6": ["build_id", "boot", "cli", "osinfo", "threads", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync"],
-    "S7": ["build_id", "boot", "cli", "osinfo", "threads", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync"],
+    "S6": ["build_id", "boot", "cli", "osinfo", "threads", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync", "counters"],
+    "S7": ["build_id", "boot", "cli", "osinfo", "threads", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync", "counters"],
     "S8": list(ALL_CHECKS),
 }
