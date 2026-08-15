@@ -407,6 +407,11 @@ Two smaller asymmetries on the same function, worth fixing together:
 - `s_rx_notify`/`s_rx_packets` are incremented before the chain test, so `ethinfo`'s
   `packets` and `enqueued` diverge with no counter explaining the gap.
 
+> **✅ ADDRESSED** — the length is checked before the subtraction (NetX Duo's
+> `_nx_link_ethernet_packet_received()` genuinely does not check it), a chained 802.3 packet is
+> now reported like the UDP path's, and both refusals are counted and printed by `ethinfo` as
+> `nsd rejected: N runt, N chained`. Both read zero on hardware.
+
 ### NX-06 — the receive-queue drop path is the only uninstrumented one
 
 **Priority: Medium** · `Drivers/EthDrv/eth_drv_netxduo.c:687-696`
@@ -449,6 +454,10 @@ evt.data.rx.size = (bd->desc.DES3) & 0x3FFF;
 and it is easy to mistake for the *transmit* case immediately below, where `& 0x3FFF` on TDES2's
 `B1L` **is** correct. Use the named mask on both sides so the difference is visible.
 
+> **✅ ADDRESSED** — the receive side uses `ETH_DMARXNDESCWBF_PL`. The transmit side keeps
+> `0x3FFF` because TDES2's `B1L` really is 14 bits; the comment now says so, which is the part
+> that makes the difference visible rather than invisible.
+
 ### NX-08 — receive queue leaked if the receive thread fails to start
 
 **Priority: Low** · `Drivers/EthDrv/eth_drv_netxduo.c:356-373`
@@ -457,6 +466,9 @@ and it is easy to mistake for the *transmit* case immediately below, where `& 0x
 both succeed. A repeat `NX_LINK_INITIALIZE` therefore allocates a second queue from the byte pool
 and orphans the first — the leak the surrounding `static bool rx_started` guard exists to prevent.
 Guard the queue creation on `rx_msg_q == NULL` as well.
+
+> **✅ ADDRESSED** — the queue creation is guarded on `rx_msg_q == NULL` as well as on
+> `rx_started`.
 
 ### NX-09 — `ptp pps 0` reports "off" but may leave the output running at 1 Hz
 
@@ -480,6 +492,12 @@ believes the interface is down. Harmless in this firmware — nothing ever disab
 but it is the kind of asymmetry that becomes a bug the first time somebody adds a link-flap
 recovery path. Either stop the receiver or say in the comment that disable is deliberately
 transmit-only.
+
+> **✅ ADDRESSED** — documented rather than changed, which is the option the finding offered and
+> the right one here: stopping the engines means draining the rings and handling a restart, and
+> NetX Duo only issues `NX_LINK_DISABLE` from `nx_ip_interface_detach()` and `nx_ip_delete()`,
+> neither of which this application calls. The comment now says it is transmit-only, why, and
+> that it is the function to grow if a link-flap recovery path is ever added.
 
 ---
 
@@ -1408,12 +1426,12 @@ how, and for the evidence.
 | [NX-02](#nx-02--partial-failure-in-ptp_nsd_init-leaks-created-sockets) | ✅ **P1** | Defect | Partial failure in `ptp_nsd_init()` leaks created UDP sockets; `s_tp`/`s_dm` left stale | `nsd_netxduo.c:265-293` | Debug → PTP permanently dead (`NX_PTR_ERROR`). Release → `nx_ip_udp_created_sockets_ptr` list corruption, because `NX_DISABLE_ERROR_CHECKING` removes the guard |
 | [NX-03](#nx-03--the-newlib-heap-and-the-threadx-byte-pools-are-not-disjoint) | ✅ **P1** | Defect | `_sbrk` can allocate into the ThreadX byte pools after 2 560 bytes; the linker script claims the two are disjoint | `sysmem.c:56-72`, `.ld:200-211` | `atof`→`strtod`→`_Balloc`→`_malloc_r` all linked; reachable from `ptp pps` and the servo CLI. One-line fix: bound against `__RAM_segment_used_end__` |
 | [NX-04](#nx-04--systick-and-svcall-run-at-priorities-the-documentation-does-not-state) | ✅ P2 | Defect/Doc | SysTick runs at priority 4 (not 15) and SVCall at 15 (not 0); changed silently from the FreeRTOS build | `tx_initialize_low_level.S:119-128` | SysTick now preempts ETH. Not unsafe (PRIMASK critical sections) but undocumented; the file's own comment contradicts its code |
-| [NX-05](#nx-05--unchecked-length-arithmetic-on-the-8023-receive-path) | P3 | Defect | `nx_packet_length - header_size` can underflow; chained L2 packet dropped silently | `nsd_netxduo.c:197-206` | Contained by flexPTP's `MIN(len, 128)` clamp — verified in `task_ptp.c:486`. NetX Duo does **not** validate the length itself |
+| [NX-05](#nx-05--unchecked-length-arithmetic-on-the-8023-receive-path) | ✅ P3 | Defect | `nx_packet_length - header_size` can underflow; chained L2 packet dropped silently | `nsd_netxduo.c:197-206` | Contained by flexPTP's `MIN(len, 128)` clamp — verified in `task_ptp.c:486`. NetX Duo does **not** validate the length itself |
 | [NX-06](#nx-06--the-receive-queue-drop-path-is-the-only-uninstrumented-one) | ✅ P2 | Gap | `ETHHW_ReadCallback` drops events on a full queue with no counter | `eth_drv_netxduo.c:687-696` | Already documented as the drop path that bites under load (`architecture.md:335`). Two-line fix in a driver built around counters |
-| [NX-07](#nx-07--rx-packet-length-is-masked-to-14-bits-but-the-field-is-15) | P3 | Latent | RDES3 length masked `0x3FFF`; `ETH_DMARXNDESCWBF_PL` is `0x7FFF` | `mac_drv.c:466` | Unreachable at MTU 1500. The adjacent TX `& 0x3FFF` **is** correct, which makes the difference easy to miss |
-| [NX-08](#nx-08--receive-queue-leaked-if-the-receive-thread-fails-to-start) | P3 | Defect | RX queue re-created and leaked if `osThreadNew` failed on a previous `NX_LINK_INITIALIZE` | `eth_drv_netxduo.c:356-373` | Defeats the `rx_started` guard it sits inside |
+| [NX-07](#nx-07--rx-packet-length-is-masked-to-14-bits-but-the-field-is-15) | ✅ P3 | Latent | RDES3 length masked `0x3FFF`; `ETH_DMARXNDESCWBF_PL` is `0x7FFF` | `mac_drv.c:466` | Unreachable at MTU 1500. The adjacent TX `& 0x3FFF` **is** correct, which makes the difference easy to miss |
+| [NX-08](#nx-08--receive-queue-leaked-if-the-receive-thread-fails-to-start) | ✅ P3 | Defect | RX queue re-created and leaked if `osThreadNew` failed on a previous `NX_LINK_INITIALIZE` | `eth_drv_netxduo.c:356-373` | Defeats the `rx_started` guard it sits inside |
 | [NX-09](#nx-09--ptp-pps-0-reports-off-but-may-leave-the-output-running-at-1-hz) | P3 | Suspect | `ptp pps 0` writes `PPSCTRL=0`, likely 1 Hz rather than off, while reporting "turned off" | `ptp_port_stm32h563.c:35-40,88-92` | **Needs bench confirmation** — scope on PG8. Not asserted; RM0481 not available to this review |
-| [NX-10](#nx-10--nx_link_disable-does-not-stop-the-mac) | P3 | Gap | `NX_LINK_DISABLE` leaves `RE`/`TE`/`SR`/`ST` set | `eth_drv_netxduo.c:403-406` | Unreachable today; becomes a bug with any link-flap recovery |
+| [NX-10](#nx-10--nx_link_disable-does-not-stop-the-mac) | ✅ P3 | Gap | `NX_LINK_DISABLE` leaves `RE`/`TE`/`SR`/`ST` set | `eth_drv_netxduo.c:403-406` | Unreachable today; becomes a bug with any link-flap recovery |
 | [AR-01](#ar-01--every-frame-is-copied-twice-on-transmit-and-once-on-receive) | Opp (M) | Arch | Two copies per TX frame, one per RX; NetX Duo's zero-copy is unused | driver + `mac_drv.c` | 48 × 1 528 B = 73 KB of SRAM3 exists only to be copied out of and into. Crosses the `mac_drv.c` boundary this port kept unchanged |
 | [AR-02](#ar-02--the-pending-timestamp-registry-could-key-on-the-message-instead-of-the-pointer) | Opp (M) | Arch | TX-timestamp registry keys on a recycled pointer; keying on `(msgType, sequenceId, portIdentity)` removes the ABA hazard structurally | `ptp_tx_registry.cpp` | Current design is correct and well-tested; recorded because it rests on three invariants a future drop path could break |
 | [AR-03](#ar-03--diagnostics-reach-across-layers-through-function-local-extern-declarations) | P3 | Arch | Four unheadered `extern` prototypes inside `eth_drv_report()` | `eth_drv_netxduo.c:729-759` | Signature-drift exposure — the F48 class. A small registration table fixes it without inverting the dependency |

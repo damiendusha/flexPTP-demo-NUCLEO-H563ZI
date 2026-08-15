@@ -498,7 +498,12 @@ void ETHHW_ProcessRx(ETH_TypeDef *eth) {
         ETHHW_EventDesc evt;
         memset(&evt, 0, sizeof(evt));
         evt.type = ETHHW_EVT_RX_READ;
-        evt.data.rx.size = (bd->desc.DES3) & 0x3FFF;
+        /* ETH_DMARXNDESCWBF_PL is 15 bits (0x7FFF), not 14. The literal 0x3FFF that used to be
+           here truncated a frame of 16 384 bytes or more -- unreachable at this MTU and buffer
+           size, but the adjacent TRANSMIT path uses 0x3FFF correctly, because TDES2's B1L
+           really is 14 bits, and having the two spelled the same made the difference invisible.
+           Named masks on both sides now (NX-07). */
+        evt.data.rx.size = (uint16_t)((bd->desc.DES3) & ETH_DMARXNDESCWBF_PL);
         evt.data.rx.payload = (void *)bd->ext.bufAddr;
         evt.bd = bd;
 

@@ -358,7 +358,12 @@ static void drv_initialize(NX_IP_DRIVER *request) {
        leak both it and its stack out of the byte pool. */
     static bool rx_started = false;
     if (!rx_started) {
-        rx_msg_q = osMessageQueueNew(RX_MSG_Q_LEN, sizeof(ETHHW_EventDesc), NULL);
+        /* Guarded separately from rx_started: if the queue was created and only the thread
+           failed, a second NX_LINK_INITIALIZE would allocate another queue from the byte pool
+           and orphan the first -- the leak this rx_started guard exists to prevent (NX-08). */
+        if (rx_msg_q == NULL) {
+            rx_msg_q = osMessageQueueNew(RX_MSG_Q_LEN, sizeof(ETHHW_EventDesc), NULL);
+        }
 
         osThreadAttr_t rx_attr;
         memset(&rx_attr, 0, sizeof(rx_attr));
@@ -404,6 +409,17 @@ static void drv_enable(NX_IP_DRIVER *request) {
 }
 
 static void drv_disable(NX_IP_DRIVER *request) {
+    /* Transmit-only, deliberately, and worth saying because the asymmetry is not obvious.
+     *
+     * drv_send() refuses once this clears, so nothing further goes out. The MAC's receiver and
+     * both DMA engines are left running: stopping them means draining the rings and handling a
+     * restart, and nothing in this firmware ever disables the interface -- NetX Duo issues
+     * NX_LINK_DISABLE only from nx_ip_interface_detach() and nx_ip_delete(), neither of which
+     * this application calls.
+     *
+     * If a link-flap recovery path is ever added, this is the function that has to grow: frames
+     * currently keep arriving and being handed to a stack that believes the interface is
+     * down (NX-10). */
     drv_enabled = false;
     request->nx_ip_driver_status = NX_SUCCESS;
 }
@@ -756,12 +772,18 @@ void eth_drv_report(void) {
         /* Declared here rather than in a header: this is a bring-up diagnostic and the NSD is
            a layer above the driver, so a permanent dependency the other way would be wrong. */
         extern void ptp_nsd_stats(uint32_t *, uint32_t *, uint32_t *, uint32_t *);
+        extern void ptp_nsd_reject_stats(uint32_t *, uint32_t *);
         extern void ptp_tx_timestamp_stats(uint32_t *, uint32_t *, uint32_t *);
         uint32_t n = 0, p = 0, e = 0, t = 0, posted = 0, delivered = 0, dropped = 0;
         ptp_nsd_stats(&n, &p, &e, &t);
         ptp_tx_timestamp_stats(&posted, &delivered, &dropped);
         MSG("  nsd: notify %u, packets %u, enqueued %u, tx-requested %u\n",
             (unsigned)n, (unsigned)p, (unsigned)e, (unsigned)t);
+        {
+            uint32_t runts = 0, chained = 0;
+            ptp_nsd_reject_stats(&runts, &chained);
+            MSG("  nsd rejected: %u runt, %u chained\n", (unsigned)runts, (unsigned)chained);
+        }
         MSG("  ptp ts: posted %u, delivered %u, dropped %u\n",
             (unsigned)posted, (unsigned)delivered, (unsigned)dropped);
 

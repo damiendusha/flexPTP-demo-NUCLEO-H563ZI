@@ -51,6 +51,9 @@ static bool s_lifecycle_ready;
 /* Bring-up counters. The question "is the callback firing at all?" has three different
    answers with three different causes, and none is visible from the console otherwise. */
 static uint32_t s_rx_notify, s_rx_packets, s_rx_enqueued, s_tx_requested;
+/* Frames the 802.3 path refused: shorter than the Ethernet header NetX Duo says it parsed, and
+   chained ones. Both expected to stay at zero; both used to be invisible. */
+static uint32_t s_rx_runts, s_rx_chained;
 static uint8_t s_rx_last[16];
 static uint32_t s_rx_last_len;
 static uint32_t s_rx_type[16];   /* histogram by PTP messageType (low nibble of byte 0) */
@@ -69,6 +72,11 @@ void ptp_nsd_stats(uint32_t *notify, uint32_t *packets, uint32_t *enqueued, uint
     if (packets) { *packets = s_rx_packets; }
     if (enqueued) { *enqueued = s_rx_enqueued; }
     if (tx) { *tx = s_tx_requested; }
+}
+
+void ptp_nsd_reject_stats(uint32_t *runts, uint32_t *chained) {
+    if (runts) { *runts = s_rx_runts; }
+    if (chained) { *chained = s_rx_chained; }
 }
 
 /* --- Timestamp extraction --------------------------------------------------------------- */
@@ -204,9 +212,29 @@ static UINT ptp_l2_receive(NX_IP *ip_ptr, UINT interface_index, NX_PACKET *packe
 
     /* header_size is the Ethernet header NetX Duo has already parsed but NOT stripped -- it
        leaves prepend_ptr at the start of the frame for a raw receiver. flexPTP wants the PTP
-       message, so skip it. */
+       message, so skip it.
+       
+       Checked, because NetX Duo does not: _nx_link_ethernet_packet_received() parses the
+       header and dispatches without ever comparing nx_packet_length against header_size, so a
+       runt would make this subtraction underflow to ~4 G. flexPTP clamps with
+       MIN(len, MAX_PTP_MSG_SIZE) so the blast radius is a garbage 128-byte message rather than
+       an overflow -- but that clamp is in an unpinned submodule, and the UDP path in this same
+       file checks its preconditions and says why. (NX-05) */
+    if (packet_ptr->nx_packet_length < header_size) {
+        s_rx_runts++;
+        nx_packet_release(packet_ptr);
+        return NX_SUCCESS;
+    }
+
     UCHAR *ptp = packet_ptr->nx_packet_prepend_ptr + header_size;
     ULONG length = packet_ptr->nx_packet_length - header_size;
+
+    if (packet_ptr->nx_packet_next != NX_NULL) {
+        /* Reported, as the UDP path does. It was silent here, so `packets` and `enqueued`
+           could diverge with nothing to say why. */
+        s_rx_chained++;
+        MSG("PTP: chained 802.3 receive packet (%u bytes) discarded\n", (unsigned)length);
+    }
 
     if (packet_ptr->nx_packet_next == NX_NULL) {
         s_rx_type[ptp[0] & 0x0FU]++;
