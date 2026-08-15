@@ -80,6 +80,20 @@ again. That is finding F71, and it is precisely the case where a naively written
 have been wrong in the same way the code was. `RestoringWritesTheTailPointerToRestartTheEngine`
 asserts the driver performs the write; it cannot prove the engine restarts.
 
+## The NSD logic units
+
+`Src/flexptp_nsd/ptp_{tx_registry,ts_codec,endpoint}` were extracted from `eth_drv_netxduo.c`
+and `nsd_netxduo.c` so they could be tested. They are C++ with `extern "C"` boundaries, per the
+rules in `Src/cpp_support.cpp`, and they deliberately depend on **nothing** — no ThreadX, no
+NetX Duo, not even the fakes in `host/`. The registry keys on `const void *` rather than
+`NX_PACKET *` for exactly that reason.
+
+| Unit | The property that matters |
+|---|---|
+| `ptp_tx_registry` | **The ABA hazard.** NetX Duo recycles packets, so `take` clears the slot and the NSD cancels on send failure. Without both, a recycled packet inherits a stale uid and the servo is fed a real timestamp under the wrong message — silently, and only on colliding cycles |
+| `ptp_ts_codec` | The 12-byte headroom precondition. Below it the three ULONGs were never written, so what is there is payload; returning zeroed-and-false beats a plausible wrong time (the F59 lesson) |
+| `ptp_endpoint` | Five cases of transport × delay mechanism. A wrong destination presents as "no response received", not as a routing bug |
+
 ## These tests are known to detect the bugs they name
 
 Characterisation tests that cannot fail are worse than no tests. Both findings pinned here
@@ -92,10 +106,23 @@ restored and verified byte-identical:
 | Remove the `DMACRDTPR` write from `ETHHW_RestoreRXDesc` (**F71**) | `RxRing.RestoringWritesTheTailPointerToRestartTheEngine` **fails** |
 | Hoist `found` out of `ETHHW_ProcessTx`'s retry loop (**F57**) | six `TxRing` tests **time out** — see below |
 | Widen the ordering delta to `int32_t` (the wrap bug) | `TxRing.DispatchesInOrderAcrossTheSixteenBitCounterWrap` **fails** |
+| `ptp_tx_registry_take()` reads instead of clearing (**the ABA hazard**) | **5 tests fail** |
+| `ptp_tx_registry_cancel()` does nothing (the send-failure leak) | 1 test fails |
+| Drop the codec's headroom precondition | 1 test fails |
+| Endpoint teardown stops zeroing | 1 test fails |
+| Widen the RFC 1112 mask from 23 to 24 bits | 1 test fails — **but only after the test was fixed; see below** |
 
 Do the same for any new characterisation test: break the thing, watch it go red, put it back.
 
-Two things this exercise taught, both of which changed the code above:
+**One test was vacuous and mutation testing is what exposed it.** The RFC 1112 mask check
+originally asserted `mac[3] & 0x80 == 0` on the resolved endpoint for 224.0.1.129 — whose third
+octet is `0x00`, so it passed whether the mask was `0x7F` or `0xFF`. It was true by accident,
+not because the code was right. The mask is now exercised through
+`ptp_endpoint_ipv4_group_mac()` with 239.129.1.1, whose third octet is `0x81` and therefore
+actually puts the bit in play. That function is public purely so the test can reach it, and the
+header says so.
+
+Three things this exercise taught, all of which changed the code above:
 
 - **F57 presents as a hang, not a wrong value.** With the per-pass count hoisted, `found`
   never reaches zero and the drain loop spins forever. Without a timeout the suite wedges and

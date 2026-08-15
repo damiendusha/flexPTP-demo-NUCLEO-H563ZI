@@ -33,6 +33,7 @@
 
 #include "mac_drv.h"
 #include "phy_drv/phy_common.h"
+#include "flexptp_nsd/ptp_tx_registry.h"
 #include "flexptp_nsd/ptp_tx_timestamp.h"
 #include "standard_output/standard_output.h"
 
@@ -416,53 +417,22 @@ static void drv_get_status(NX_IP_DRIVER *request) {
  *
  * Four entries is ample -- flexPTP has at most a Sync and a Delay_Req outstanding -- and a
  * linear scan of four is cheaper than anything cleverer. */
-#define TX_TS_PENDING_MAX (4)
-
-typedef struct {
-    NX_PACKET *packet; /* NX_NULL when the slot is free */
-    uint32_t uid;
-} TxTsPending;
-
-static TxTsPending tx_ts_pending[TX_TS_PENDING_MAX];
+/* The table itself is Src/flexptp_nsd/ptp_tx_registry.{h,cpp}, extracted so the pointer-reuse
+ * hazard described above can be tested. Its rules -- take rather than read, overwrite a
+ * duplicate key, refuse when full -- are pinned by test/test_ptp_tx_registry.cpp. */
+static PtpTxRegistry tx_ts_pending;
 
 void eth_drv_request_tx_timestamp(NX_PACKET *packet, uint32_t uid) {
-    if (packet == NX_NULL) {
-        return;
+    if (!ptp_tx_registry_add(&tx_ts_pending, packet, uid)) {
+        /* Full. The message still goes out, just unstamped -- flexPTP times that Delay_Req out
+           rather than mispairing it. Reported because a full table means timestamps are not
+           being consumed, which is a fault upstream of here. */
+        MSG("ETH: transmit-timestamp table full; uid %u will not be stamped\n", (unsigned)uid);
     }
-
-    for (unsigned i = 0; i < TX_TS_PENDING_MAX; i++) {
-        if (tx_ts_pending[i].packet == NX_NULL) {
-            tx_ts_pending[i].packet = packet;
-            tx_ts_pending[i].uid = uid;
-            return;
-        }
-    }
-
-    /* Full. The message still goes out, just without a transmit timestamp -- flexPTP will
-       time that Delay_Req out rather than mispair it. Reported because a full table means
-       timestamps are not being consumed, which is a real fault upstream of here. */
-    MSG("ETH: transmit-timestamp table full; uid %u will not be stamped\n", (unsigned)uid);
 }
 
 void eth_drv_cancel_tx_timestamp(NX_PACKET *packet) {
-    for (unsigned i = 0; i < TX_TS_PENDING_MAX; i++) {
-        if (tx_ts_pending[i].packet == packet) {
-            tx_ts_pending[i].packet = NX_NULL;
-            return;
-        }
-    }
-}
-
-/** Consume the record for `packet`, if any. Returns true and writes the uid when found. */
-static bool tx_ts_take(NX_PACKET *packet, uint32_t *uid) {
-    for (unsigned i = 0; i < TX_TS_PENDING_MAX; i++) {
-        if (tx_ts_pending[i].packet == packet) {
-            *uid = tx_ts_pending[i].uid;
-            tx_ts_pending[i].packet = NX_NULL; /* cleared before the send, never after */
-            return true;
-        }
-    }
-    return false;
+    ptp_tx_registry_cancel(&tx_ts_pending, packet);
 }
 
 /* --- Transmit -------------------------------------------------------------------------------- */
@@ -591,7 +561,7 @@ static void drv_send(NX_IP_DRIVER *request) {
     uint32_t ts_uid = 0;
 
     if ((packet->nx_packet_interface_capability_flag & NX_INTERFACE_CAPABILITY_PTP_TIMESTAMP) &&
-        tx_ts_take(packet, &ts_uid)) {
+        ptp_tx_registry_take(&tx_ts_pending, packet, &ts_uid)) {
         memset(&ts_arg, 0, sizeof(ts_arg));
         /* The MAC driver stores both as uint32_t in the descriptor extension; on this 32-bit
            target that is lossless for a function pointer and for the uid alike. */

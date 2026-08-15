@@ -104,6 +104,27 @@ function(add_host_test name)
     gtest_discover_tests(${name} PROPERTIES TIMEOUT 10)
 endfunction()
 
+# The NSD/driver logic units. They depend on nothing but stdint, which is the whole point of
+# extracting them -- no ThreadX, no NetX Duo, no fakes.
+add_library(ptp_units STATIC
+    ${REPO_ROOT}/Src/flexptp_nsd/ptp_tx_registry.cpp
+    ${REPO_ROOT}/Src/flexptp_nsd/ptp_ts_codec.cpp
+    ${REPO_ROOT}/Src/flexptp_nsd/ptp_endpoint.cpp
+)
+target_include_directories(ptp_units PUBLIC ${REPO_ROOT}/Src/flexptp_nsd)
+target_compile_options(ptp_units PRIVATE -Wall -Wextra)
+
+function(add_unit_test name)
+    add_executable(${name} ${name}.cpp)
+    target_link_libraries(${name} PRIVATE ptp_units GTest::gtest_main)
+    target_compile_options(${name} PRIVATE -Wall -Wextra)
+    gtest_discover_tests(${name} PROPERTIES TIMEOUT 10)
+endfunction()
+
+add_unit_test(test_ptp_tx_registry)
+add_unit_test(test_ptp_ts_codec)
+add_unit_test(test_ptp_endpoint)
+
 add_host_test(test_host_harness)
 add_host_test(test_rx_ring)
 add_host_test(test_tx_ring)

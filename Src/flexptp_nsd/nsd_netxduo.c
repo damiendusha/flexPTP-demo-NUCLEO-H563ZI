@@ -21,6 +21,8 @@
 
 #include "Drivers/EthDrv/eth_drv_netxduo.h"
 #include "ethernet/ethernet_netxduo.h"
+#include "ptp_endpoint.h"
+#include "ptp_ts_codec.h"
 #include "ptp_tx_timestamp.h"
 #include "standard_output/standard_output.h"
 
@@ -83,9 +85,32 @@ void ptp_nsd_stats(uint32_t *notify, uint32_t *packets, uint32_t *enqueued, uint
  * TimestampI is 32-bit seconds too.
  */
 static void extract_rx_timestamp(NX_PACKET *packet, uint32_t *ts_s, uint32_t *ts_ns) {
-    const ULONG *stamp = (const ULONG *)(const void *)packet->nx_packet_data_start;
-    *ts_ns = (uint32_t)stamp[0];
-    *ts_s = (uint32_t)stamp[1];
+    /* The headroom the driver guarantees: it copies the frame at data_start + 2, so
+       prepend_ptr - data_start is 2 + 14 = 16 by the time UDP has stripped its header and
+       more besides. Passing the real distance rather than a constant means the codec's
+       precondition is checked against what actually happened, not what was intended. */
+    const uint32_t headroom =
+        (uint32_t)(packet->nx_packet_prepend_ptr - packet->nx_packet_data_start);
+
+    PtpTsCodecResult ts;
+    if (ptp_ts_codec_extract(packet->nx_packet_data_start, headroom, &ts)) {
+        *ts_s = ts.sec;
+        *ts_ns = ts.nanosec;
+    } else {
+        *ts_s = 0;
+        *ts_ns = 0;
+    }
+}
+
+/* flexPTP's enums to the endpoint unit's. One call site, so the mapping stays visible. */
+static void resolve_endpoint(PtpEndpoint *out) {
+    PtpEndpointTransport tp = PTP_EP_TRANSPORT_NONE;
+    if (s_tp == PTP_TP_IPv4) {
+        tp = PTP_EP_TRANSPORT_IPV4;
+    } else if (s_tp == PTP_TP_802_3) {
+        tp = PTP_EP_TRANSPORT_802_3;
+    }
+    ptp_endpoint_resolve(tp, (s_dm == PTP_DM_E2E) ? PTP_EP_DELAY_E2E : PTP_EP_DELAY_P2P, out);
 }
 
 /* --- Receive ------------------------------------------------------------------------------ */
@@ -188,9 +213,11 @@ static UINT ptp_l2_receive(NX_IP *ip_ptr, UINT interface_index, NX_PACKET *packe
    for peer delay -- the latter being the address ordinary bridges must not forward, which is
    why gPTP needs a direct cable (see docs/ptp_profiles.md). */
 static void l2_group_address(ULONG *msw, ULONG *lsw) {
-    const uint8_t *mac = (s_dm == PTP_DM_E2E) ? PTP_ETHERNET_PRIMARY : PTP_ETHERNET_PEER_DELAY;
-    *msw = ((ULONG)mac[0] << 8) | mac[1];
-    *lsw = ((ULONG)mac[2] << 24) | ((ULONG)mac[3] << 16) | ((ULONG)mac[4] << 8) | mac[5];
+    PtpEndpoint ep;
+    resolve_endpoint(&ep);
+    *msw = ((ULONG)ep.mac[0] << 8) | ep.mac[1];
+    *lsw = ((ULONG)ep.mac[2] << 24) | ((ULONG)ep.mac[3] << 16) |
+           ((ULONG)ep.mac[4] << 8) | ep.mac[5];
 }
 
 /* --- Driver interface ----------------------------------------------------------------------- */
@@ -301,11 +328,12 @@ void ptp_nsd_igmp_join_leave(bool join) {
     /* One group, chosen by delay mechanism, exactly as nsd_lwip.c did: 224.0.1.129 for E2E,
        224.0.0.107 for peer delay. PTP_IGMP_* are the ip4_addr structs from
        Inc/flexptp_options.h; NetX Duo wants a host-order ULONG. */
-    ULONG group = (s_dm == PTP_DM_E2E) ? PTP_IGMP_PRIMARY.addr : PTP_IGMP_PEER_DELAY.addr;
-
-    /* The constants are stored little-endian (0x810100E0 == 224.0.1.129), matching what
-       flexPTP's own lwIP branch uses. NetX Duo's IP_ADDRESS() form is big-endian, so swap. */
-    group = __builtin_bswap32(group);
+    /* The endpoint unit returns host byte order, which is what NetX Duo's IP_ADDRESS() form
+       is -- so no swap here, unlike the flexPTP constants it replaced (those are stored
+       little-endian, 0x810100E0 for 224.0.1.129, matching flexPTP's own lwIP branch). */
+    PtpEndpoint ep;
+    resolve_endpoint(&ep);
+    ULONG group = ep.ipv4_group;
 
     if (join) {
         if (nx_igmp_multicast_join(ip, group) != NX_SUCCESS) {
@@ -389,17 +417,18 @@ void ptp_nsd_transmit_msg(RawPtpMessage *pMsg, uint32_t uid) {
         return;
     }
 
+    PtpEndpoint ep;
+    resolve_endpoint(&ep);
+
     NXD_ADDRESS dest;
     dest.nxd_ip_version = NX_IP_VERSION_V4;
-    dest.nxd_ip_address.v4 =
-        __builtin_bswap32((s_dm == PTP_DM_E2E) ? PTP_IGMP_PRIMARY.addr
-                                               : PTP_IGMP_PEER_DELAY.addr);
+    dest.nxd_ip_address.v4 = ep.ipv4_group;
 
     /* Event messages are timestamped and go to port 319; general messages to 320. flexPTP
        classifies them for us in tx_mc. */
     NX_UDP_SOCKET *socket =
         (pMsg->tx_mc == PTP_MC_EVENT) ? &s_event_socket : &s_general_socket;
-    UINT port = (pMsg->tx_mc == PTP_MC_EVENT) ? PTP_PORT_EVENT : PTP_PORT_GENERAL;
+    UINT port = ptp_endpoint_port(pMsg->tx_mc == PTP_MC_EVENT);
 
     if (nxd_udp_socket_send(socket, packet, &dest, port) != NX_SUCCESS) {
         /* The driver must be told to forget the pending record, or the next packet allocated
