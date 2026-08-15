@@ -424,6 +424,18 @@ than not, but this one is a two-line fix (`static ULONG drv_rx_dropped_queue;` p
 `eth_drv_report()`) in a driver whose entire diagnostic philosophy is that counters are how the
 port's defects were found. Leaving it is inconsistent with the rest of the file.
 
+> **✅ ADDRESSED** — `eth_drv_netxduo.c`; `ethinfo` now reads
+> `rx: N delivered, N dropped (no packet), N dropped (size), N dropped (queue full)`.
+>
+> **And it still does not fire.** 70 600 UDP frames of 1 400 B in 8 s, 69 595 delivered by the
+> driver, 0 queue drops — `rx_thread` keeps up with the DMA at line rate. (The ~1 000 missing
+> were lost host-side; NetX Duo's own counters agree: `udp: rx 69 240, dropped 68 943` for a
+> closed port.)
+>
+> So the honest position has changed from "one silent drop path" to "three instrumented drop
+> paths, none of which has ever incremented" — which is better, but is not the same as proven,
+> and `testing_architecture.md`'s known-gaps section now says so.
+
 ### NX-07 — RX packet length is masked to 14 bits, but the field is 15
 
 **Priority: Low** · `Drivers/EthDrv/mac_drv.c:466`
@@ -1288,7 +1300,7 @@ how, and for the evidence.
 | [NX-03](#nx-03--the-newlib-heap-and-the-threadx-byte-pools-are-not-disjoint) | ✅ **P1** | Defect | `_sbrk` can allocate into the ThreadX byte pools after 2 560 bytes; the linker script claims the two are disjoint | `sysmem.c:56-72`, `.ld:200-211` | `atof`→`strtod`→`_Balloc`→`_malloc_r` all linked; reachable from `ptp pps` and the servo CLI. One-line fix: bound against `__RAM_segment_used_end__` |
 | [NX-04](#nx-04--systick-and-svcall-run-at-priorities-the-documentation-does-not-state) | ✅ P2 | Defect/Doc | SysTick runs at priority 4 (not 15) and SVCall at 15 (not 0); changed silently from the FreeRTOS build | `tx_initialize_low_level.S:119-128` | SysTick now preempts ETH. Not unsafe (PRIMASK critical sections) but undocumented; the file's own comment contradicts its code |
 | [NX-05](#nx-05--unchecked-length-arithmetic-on-the-8023-receive-path) | P3 | Defect | `nx_packet_length - header_size` can underflow; chained L2 packet dropped silently | `nsd_netxduo.c:197-206` | Contained by flexPTP's `MIN(len, 128)` clamp — verified in `task_ptp.c:486`. NetX Duo does **not** validate the length itself |
-| [NX-06](#nx-06--the-receive-queue-drop-path-is-the-only-uninstrumented-one) | P2 | Gap | `ETHHW_ReadCallback` drops events on a full queue with no counter | `eth_drv_netxduo.c:687-696` | Already documented as the drop path that bites under load (`architecture.md:335`). Two-line fix in a driver built around counters |
+| [NX-06](#nx-06--the-receive-queue-drop-path-is-the-only-uninstrumented-one) | ✅ P2 | Gap | `ETHHW_ReadCallback` drops events on a full queue with no counter | `eth_drv_netxduo.c:687-696` | Already documented as the drop path that bites under load (`architecture.md:335`). Two-line fix in a driver built around counters |
 | [NX-07](#nx-07--rx-packet-length-is-masked-to-14-bits-but-the-field-is-15) | P3 | Latent | RDES3 length masked `0x3FFF`; `ETH_DMARXNDESCWBF_PL` is `0x7FFF` | `mac_drv.c:466` | Unreachable at MTU 1500. The adjacent TX `& 0x3FFF` **is** correct, which makes the difference easy to miss |
 | [NX-08](#nx-08--receive-queue-leaked-if-the-receive-thread-fails-to-start) | P3 | Defect | RX queue re-created and leaked if `osThreadNew` failed on a previous `NX_LINK_INITIALIZE` | `eth_drv_netxduo.c:356-373` | Defeats the `rx_started` guard it sits inside |
 | [NX-09](#nx-09--ptp-pps-0-reports-off-but-may-leave-the-output-running-at-1-hz) | P3 | Suspect | `ptp pps 0` writes `PPSCTRL=0`, likely 1 Hz rather than off, while reporting "turned off" | `ptp_port_stm32h563.c:35-40,88-92` | **Needs bench confirmation** — scope on PG8. Not asserted; RM0481 not available to this review |

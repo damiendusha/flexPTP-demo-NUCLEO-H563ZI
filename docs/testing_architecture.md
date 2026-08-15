@@ -302,12 +302,13 @@ accident.
 
 - **Memory ordering is not modelled.** `__DSB`/`__DMB` are no-ops in the host shim.
 
-- **`drv_rx_dropped_nopacket` is instrumented but unexercised.** The counter was added after an
-  external review found it declared, printed and never incremented. Attempts to make it fire —
-  53 000 UDP frames at line rate, then again with the packet pool cut from 8 to 2 — produced
-  zero drops. The packet pool is not the bottleneck; the rx message queue is, and
-  `ETHHW_ReadCallback()` drops events on a full queue *silently and without a counter*. That is
-  the drop path that actually bites under load and it remains uninstrumented.
+- **All three receive drop counters are instrumented and none has ever fired.** The pool path
+  (`drv_rx_dropped_nopacket`) survived 53 000 UDP frames at line rate and again with the pool
+  cut from 8 to 2. The queue path was instrumented under NX-06 and then given the same
+  treatment: 70 600 frames of 1 400 B in 8 s, 69 595 delivered, **0 dropped**. So the receive
+  path has no *silent* drop left in it — but equally, none of the three counters has been
+  proven to count, and a counter that has never incremented is a counter whose increment has
+  never been tested.
 
 - **The `ETHHW_Init()` GPIO/RCC/NVIC preamble has no seam.** It is the one unparameterised block
   in `mac_drv.c` (roughly lines 51–111). Tier 2 of the original plan would have added one; it

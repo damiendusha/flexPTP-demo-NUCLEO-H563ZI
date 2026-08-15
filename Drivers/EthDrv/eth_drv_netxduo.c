@@ -85,6 +85,8 @@ static LinkState drv_link = {false, false, 0, false};
 
 /* Defined with eth_drv_report() at the end of the file. */
 static ULONG drv_rx_frames, drv_rx_dropped_nopacket, drv_rx_dropped_size;
+/* Written from the ETH ISR, read from a thread. See ETHHW_ReadCallback(). */
+static volatile ULONG drv_rx_dropped_queue;
 static ULONG drv_tx_frames, drv_tx_dropped_linkdown, drv_tx_dropped_mac;
 static ULONG drv_tx_last_len, drv_tx_last_cmd;
 static ULONG drv_tx_timestamped;
@@ -690,6 +692,18 @@ int ETHHW_ReadCallback(ETHHW_EventDesc *evt) {
     }
 
     if (osMessageQueuePut(rx_msg_q, evt, 0, 0) != osOK) {
+        /* Counted, and this is the drop path that actually bites.
+         *
+         * docs/architecture.md has the measurements: the packet pool never starves -- 53 000
+         * frames at line rate with the pool cut from 8 to 2 produced zero drops, because
+         * rx_thread allocates, copies and releases within one queue entry. The queue is the
+         * limit, and until now it dropped silently, which left `ethinfo` reporting a receive
+         * path with no losses at all while the one place losses can occur said nothing.
+         *
+         * The frame is dropped here, not deferred: returning ETHHW_RET_RX_PROCESSED tells
+         * ETHHW_ProcessRx() to restore the descriptors immediately, because holding them for a
+         * frame nobody will collect is how the ring runs dry (F71). */
+        drv_rx_dropped_queue++;
         return ETHHW_RET_RX_PROCESSED;
     }
     return 0;
@@ -720,8 +734,9 @@ void eth_drv_report(void) {
         drv_link.up ? "UP" : "DOWN", drv_link.speed, drv_link.duplex ? "full" : "half");
     MSG("  nx_interface_link_up=%u\n",
         (drv_interface != NX_NULL) ? (unsigned)drv_interface->nx_interface_link_up : 0U);
-    MSG("  rx: %u delivered, %u dropped (no packet), %u dropped (size)\n",
-        (unsigned)drv_rx_frames, (unsigned)drv_rx_dropped_nopacket, (unsigned)drv_rx_dropped_size);
+    MSG("  rx: %u delivered, %u dropped (no packet), %u dropped (size), %u dropped (queue full)\n",
+        (unsigned)drv_rx_frames, (unsigned)drv_rx_dropped_nopacket, (unsigned)drv_rx_dropped_size,
+        (unsigned)drv_rx_dropped_queue);
 
     /* Both expected to stay at zero. `deferred` counts frames whose context descriptor the
        DMA had not written yet -- retried rather than stamped with whatever the slot held

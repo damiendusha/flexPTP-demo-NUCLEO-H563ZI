@@ -332,14 +332,17 @@ The pool never starves because `rx_thread` allocates, copies and releases within
 entry, so only one or two packets are ever outstanding from the driver's side. Cutting the
 pool to a quarter of its size changed nothing.
 
-What that leaves is `ETHHW_ReadCallback()`, which drops the event when `rx_msg_q` is full —
-**silently, and without a counter**. That is the drop path that would actually bite under
-sustained overload, and it is the one place in the receive path with no instrumentation.
-`drv_rx_dropped_nopacket` was added after an external review found it declared, printed and
-never incremented; it is correct now, but the experiments above could not make it fire.
+What that leaves is `ETHHW_ReadCallback()`, which drops the event when `rx_msg_q` is full.
+**That path is now counted too** (`rx: … N dropped (queue full)`), so the receive path has no
+silent drop left in it.
 
-So: `NX_PACKET_POOL_PACKET_COUNT` is deliberately left at 8, and if drops ever do appear the
-first thing to instrument is the queue, not the pool.
+Measured after instrumenting it: **70 600 UDP frames of 1 400 B in 8 s**, 69 595 delivered,
+**0 queue drops** — `rx_thread` at ThreadX 24 keeps up with the DMA at line rate. So all three
+receive drop counters are now instrumented and all three are unexercised, which is the honest
+state: the receive path has no *observed* bottleneck, and if one ever appears it will say which
+of the three it is instead of leaving the reader to guess.
+
+`NX_PACKET_POOL_PACKET_COUNT` is deliberately left at 8.
 
 ---
 
