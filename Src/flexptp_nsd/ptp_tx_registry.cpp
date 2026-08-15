@@ -22,13 +22,31 @@ void ptp_tx_registry_reset(PtpTxRegistry *reg) {
     for (unsigned i = 0; i < PTP_TX_REGISTRY_CAPACITY; i++) {
         reg->entries[i].key = nullptr;
         reg->entries[i].uid = 0;
+        reg->entries[i].age = 0;
     }
     reg->overflows = 0;
+    reg->registrations = 0;
+    reg->stale = 0;
 }
 
 bool ptp_tx_registry_add(PtpTxRegistry *reg, const void *key, uint32_t uid) {
     if (key == nullptr) {
         return false;
+    }
+
+    reg->registrations++;
+
+    /* Evict anything that cannot still be in flight.
+     *
+     * Not a correctness mechanism -- the three rules in the header are -- but a bound on how
+     * long a violation of them stays invisible, and the counter that says one happened. See
+     * PTP_TX_REGISTRY_MAX_AGE. */
+    for (unsigned i = 0; i < PTP_TX_REGISTRY_CAPACITY; i++) {
+        PtpTxRegistryEntry *e = &reg->entries[i];
+        if ((e->key != nullptr) && ((reg->registrations - e->age) > PTP_TX_REGISTRY_MAX_AGE)) {
+            e->key = nullptr;
+            reg->stale++;
+        }
     }
 
     /* Overwrite an existing entry for the same address rather than adding a second. Two live
@@ -45,6 +63,7 @@ bool ptp_tx_registry_add(PtpTxRegistry *reg, const void *key, uint32_t uid) {
 
     slot->key = key;
     slot->uid = uid;
+    slot->age = reg->registrations;
     return true;
 }
 

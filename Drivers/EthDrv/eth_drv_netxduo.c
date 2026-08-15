@@ -784,7 +784,9 @@ void eth_drv_report(void) {
     MSG("  tx: %u sent, %u dropped (link down), %u dropped (MAC busy)\n",
         (unsigned)drv_tx_frames, (unsigned)drv_tx_dropped_linkdown, (unsigned)drv_tx_dropped_mac);
 
-    MSG("  tx timestamped: %u requested\n", (unsigned)drv_tx_timestamped);
+    MSG("  tx timestamped: %u requested, %u pending, %u overflow, %u stale\n",
+        (unsigned)drv_tx_timestamped, ptp_tx_registry_count(&tx_ts_pending),
+        (unsigned)tx_ts_pending.overflows, (unsigned)tx_ts_pending.stale);
     MSG("  tx last: cmd=%u, %u bytes\n    ", (unsigned)drv_tx_last_cmd, (unsigned)drv_tx_last_len);
     for (unsigned i = 0; i < sizeof(drv_tx_last_head); i++) {
         MSG("%x ", (unsigned)drv_tx_last_head[i]);
@@ -847,4 +849,7 @@ void eth_drv_stats_kv(void) {
     MSG("drv.tx_drop_linkdown=%u\n", (unsigned)drv_tx_dropped_linkdown);
     MSG("drv.tx_drop_mac=%u\n", (unsigned)drv_tx_dropped_mac);
     MSG("drv.tx_timestamped=%u\n", (unsigned)drv_tx_timestamped);
+    MSG("txreg.pending=%u\n", ptp_tx_registry_count(&tx_ts_pending));
+    MSG("txreg.overflows=%u\n", (unsigned)tx_ts_pending.overflows);
+    MSG("txreg.stale=%u\n", (unsigned)tx_ts_pending.stale);
 }

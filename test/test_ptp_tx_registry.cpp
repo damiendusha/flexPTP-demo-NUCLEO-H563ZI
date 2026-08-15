@@ -157,3 +157,55 @@ TEST_F(TxRegistry, IgnoresANullKey) {
     ptp_tx_registry_cancel(&reg_, nullptr);
     EXPECT_EQ(ptp_tx_registry_count(&reg_), 0u);
 }
+
+/* --- the stale-entry bound (AR-02) -------------------------------------------------------- */
+
+TEST_F(TxRegistry, AnEntryNobodyClaimsIsEventuallyEvictedAndCounted) {
+    /* The registry's pointer key is safe because of three rules -- take rather than read,
+     * cancel on send failure, cancel on every drop path -- and nothing enforces them. The
+     * third is a claim about every `return` in drv_send(), and a newly added one that forgot
+     * would strand an entry. A stranded entry is not inert: the next NX_PACKET allocated at
+     * that address inherits its uid and the servo is handed a real timestamp under the wrong
+     * message.
+     *
+     * This does not remove that hazard. It bounds how long a violation stays invisible: an
+     * entry that has watched PTP_TX_REGISTRY_MAX_AGE later registrations go past cannot still
+     * be waiting for its own transmit. */
+    int abandoned = 0;
+    ASSERT_TRUE(ptp_tx_registry_add(&reg_, &abandoned, 0xABCDu));
+    EXPECT_EQ(reg_.stale, 0u);
+
+    /* Ordinary traffic, each message correctly taken. */
+    int packet = 0;
+    for (int i = 0; i < PTP_TX_REGISTRY_MAX_AGE + 1; i++) {
+        uint32_t uid = 0;
+        ASSERT_TRUE(ptp_tx_registry_add(&reg_, &packet, static_cast<uint32_t>(i)));
+        ASSERT_TRUE(ptp_tx_registry_take(&reg_, &packet, &uid));
+        EXPECT_EQ(uid, static_cast<uint32_t>(i));
+    }
+
+    EXPECT_EQ(reg_.stale, 1u) << "the abandoned entry was never noticed";
+
+    uint32_t uid = 0;
+    EXPECT_FALSE(ptp_tx_registry_take(&reg_, &abandoned, &uid))
+        << "an entry old enough to be abandoned was still claimable";
+}
+
+TEST_F(TxRegistry, AnEntryInNormalUseIsNeverEvicted) {
+    /* The other half, and the one that decides whether the bound is safe: a message that is
+       simply waiting its turn behind another must survive. flexPTP has at most a Sync and a
+       Delay_Req outstanding, so a handful of registrations is the realistic overlap. */
+    int sync = 0, delay_req = 0;
+    ASSERT_TRUE(ptp_tx_registry_add(&reg_, &sync, 1));
+
+    for (int i = 0; i < 4; i++) {
+        uint32_t uid = 0;
+        ASSERT_TRUE(ptp_tx_registry_add(&reg_, &delay_req, 100));
+        ASSERT_TRUE(ptp_tx_registry_take(&reg_, &delay_req, &uid));
+    }
+
+    uint32_t uid = 0;
+    EXPECT_TRUE(ptp_tx_registry_take(&reg_, &sync, &uid)) << "a live entry was evicted";
+    EXPECT_EQ(uid, 1u);
+    EXPECT_EQ(reg_.stale, 0u);
+}

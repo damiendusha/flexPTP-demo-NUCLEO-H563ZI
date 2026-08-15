@@ -313,6 +313,9 @@ def check_counters(board: Board, ctx: Context) -> CheckResult:
         "ptpts.dropped",
         "drv.rx_drop_nopacket", "drv.rx_drop_size", "drv.rx_drop_queue",
         "drv.tx_drop_linkdown", "drv.tx_drop_mac",
+        # A non-zero `stale` means one of the three rules that make the transmit-timestamp
+        # registry's pointer key safe has a hole in it -- see PTP_TX_REGISTRY_MAX_AGE (AR-02).
+        "txreg.overflows", "txreg.stale",
     ]
     bad = [f"{k}={stats[k]}" for k in must_be_zero if stats.get(k, 0) != 0]
     if bad:

@@ -561,6 +561,30 @@ Not a recommendation to change working, well-tested code. Recorded because the t
 invariant is the most fragile thing in the port — it is one forgotten `cancel()` on a future drop
 path away from a wrong `t3` — and a future maintainer should know the alternative was considered.
 
+> **✅ ADDRESSED — the hazard is bounded and counted, and the design is unchanged.**
+>
+> Rekeying on `(messageType, sequenceId, sourcePortIdentity)` was not done. It would trade a
+> correct, twelve-test design for a frame-layout dependency the current one deliberately avoids,
+> to fix a hazard that has never fired. My own advice on the CX items applies here: pulled by a
+> need, not pushed.
+>
+> What *was* done is smaller and answers the actual worry. The finding's own words are that the
+> invariant is "one forgotten `cancel()` on a future drop path away from a wrong `t3`" —
+> i.e. the risk is that a violation is **invisible**. So the registry now ages entries: one that
+> has watched `PTP_TX_REGISTRY_MAX_AGE` (16) later registrations go past cannot still be waiting
+> for its own transmit — flexPTP has at most two messages outstanding — so it is evicted and
+> counted in `stale`. `ethinfo` and `ethstat` report it, and the HIL `counters` check asserts it
+> is zero.
+>
+> **This is not a correctness mechanism and the header says so**: the three rules still are. It
+> converts "a future `return` strands an entry and the servo is silently misfed" into "a future
+> `return` strands an entry and the next hardware run fails on a non-zero counter".
+>
+> **Evidence.** Two new tests, and the mutation had to fail in *both* directions to be worth
+> having: removing the eviction fails 1, and evicting at `MAX_AGE` 1 fails 3 — so the bound is
+> pinned as neither absent nor over-eager. Host suite 97/97; hardware `S8` **13/13** with
+> `counters` now checking 12 values.
+
 ### AR-03 — diagnostics reach across layers through function-local `extern` declarations
 
 **Priority: Low** · `Drivers/EthDrv/eth_drv_netxduo.c:729-759`
@@ -1608,7 +1632,7 @@ how, and for the evidence.
 | [NX-09](#nx-09--ptp-pps-0-reports-off-but-may-leave-the-output-running-at-1-hz) | ✅ P3 | **Confirmed** | `ptp pps 0` writes `PPSCTRL=0`, likely 1 Hz rather than off, while reporting "turned off" | `ptp_port_stm32h563.c:35-40,88-92` | **Needs bench confirmation** — scope on PG8. Not asserted; RM0481 not available to this review |
 | [NX-10](#nx-10--nx_link_disable-does-not-stop-the-mac) | ✅ P3 | Gap | `NX_LINK_DISABLE` leaves `RE`/`TE`/`SR`/`ST` set | `eth_drv_netxduo.c:403-406` | Unreachable today; becomes a bug with any link-flap recovery |
 | [AR-01](#ar-01--every-frame-is-copied-twice-on-transmit-and-once-on-receive) | Opp (M) | Arch | Two copies per TX frame, one per RX; NetX Duo's zero-copy is unused | driver + `mac_drv.c` | 48 × 1 528 B = 73 KB of SRAM3 exists only to be copied out of and into. Crosses the `mac_drv.c` boundary this port kept unchanged |
-| [AR-02](#ar-02--the-pending-timestamp-registry-could-key-on-the-message-instead-of-the-pointer) | Opp (M) | Arch | TX-timestamp registry keys on a recycled pointer; keying on `(msgType, sequenceId, portIdentity)` removes the ABA hazard structurally | `ptp_tx_registry.cpp` | Current design is correct and well-tested; recorded because it rests on three invariants a future drop path could break |
+| [AR-02](#ar-02--the-pending-timestamp-registry-could-key-on-the-message-instead-of-the-pointer) | ✅ Opp (M) | Arch | TX-timestamp registry keys on a recycled pointer; keying on `(msgType, sequenceId, portIdentity)` removes the ABA hazard structurally | `ptp_tx_registry.cpp` | Current design is correct and well-tested; recorded because it rests on three invariants a future drop path could break |
 | [AR-03](#ar-03--diagnostics-reach-across-layers-through-function-local-extern-declarations) | ✅ P3 | Arch | Four unheadered `extern` prototypes inside `eth_drv_report()` | `eth_drv_netxduo.c:729-759` | Signature-drift exposure — the F48 class. A small registration table fixes it without inverting the dependency |
 | [AR-04](#ar-04--debug-and-release-differ-in-more-than-optimisation-level) | ✅ P2 | Arch/Doc | Release changes NetX Duo API semantics and drops the software stack check | `nx_user.h:91-103`, `tx_user.h:73-75` | Turns NX-02 from an error code into list corruption. No document states the delta |
 | [AR-05](#ar-05--the-eth_stack-switch-is-advertised-as-easier-than-it-is) | ✅ P3 | Doc/Arch | README calls the EtherLib switch easy; design_doc says the files have never been compiled | `README.md:263-271` | Align the two; see TS-08 |

@@ -247,6 +247,8 @@ reintroduced, the suite re-run, the source restored and verified byte-identical.
 | `ptp_tx_registry_take()` reads instead of clearing | 5 tests fail |
 | `ptp_tx_registry_cancel()` does nothing | 1 test fails |
 | Drop the codec's headroom precondition | 1 test fails |
+| Remove the registry's stale-entry eviction (**AR-02**) | 1 test fails |
+| Evict at `MAX_AGE` 1 instead of 16 | 3 tests fail — the bound has to be wrong in *both* directions to be worth having |
 | Swap the msw/lsw halves of the destination MAC (**TS-04**) | 1 `EthFramer` test fails |
 | Off-by-one in the saturating chain append | 2 `EthFramer` tests fail |
 | Transpose the ARP and RARP EtherTypes | 1 `EthFramer` test fails |
