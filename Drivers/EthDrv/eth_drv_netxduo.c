@@ -747,10 +747,16 @@ void eth_drv_report(void) {
         extern void ptp_nsd_rx_types(uint32_t *);
         uint32_t types[16];
         ptp_nsd_rx_types(types);
-        /* PTP messageType: 0 Sync, 1 Delay_Req, 8 Follow_Up, 9 Delay_Resp, 11 Announce. */
+        /* All the types that actually occur, E2E and P2P.
+         *
+         * The peer-delay trio was missing from an earlier version of this line, which made a
+         * gPTP link look completely dead -- "sync 0 ... ann 0" -- while 368 PDelay frames were
+         * being received and answered perfectly. Print what arrives, not what you expect. */
         MSG("  nsd rx types: sync %u delreq %u fup %u delresp %u ann %u\n",
             (unsigned)types[0], (unsigned)types[1], (unsigned)types[8],
             (unsigned)types[9], (unsigned)types[11]);
+        MSG("                pdelreq %u pdelresp %u pdelrespfup %u\n",
+            (unsigned)types[2], (unsigned)types[3], (unsigned)types[10]);
 
         extern void ptp_nsd_last_rx(uint8_t *, uint32_t *);
         uint8_t head[16];

@@ -95,6 +95,48 @@ the one that matters**: if it is `0.0000` on every line while the offset drifts,
 not running — the clock is free-running and PTP is doing nothing, however healthy the state
 machine looks. That was [F59](port_review.md#f59--one-duplicated-sync-cycle-latches-the-servo-into-nan-for-ever-resolved).
 
+## gPTP and software timestamping do not mix
+
+**Read this before spending time on the `gPTP` route with `-S`.** It cannot reach `SLAVE`, and
+the reason is a threshold in the standard rather than anything wrong with either end.
+
+802.1AS only declares a port `asCapable` once the measured neighbour propagation delay is at or
+below `neighborPropDelayThresh`, which linuxptp's `gPTP.cfg` sets to **800 ns**. A port that is
+not `asCapable` sends **no Announce and no Sync at all** — it will still answer peer-delay
+requests perfectly, which is exactly what makes this confusing.
+
+With `-S`, the host's timestamps are taken in software and include kernel stack latency, so the
+*measured* propagation delay on a direct 100 Mbit cable comes out around **8–9 µs** instead of
+the real ~100–200 ns. Ten times over the threshold, every time.
+
+Measured on this bench, with the board in `gPTP` against
+`ptp4l -i enp5s0 -S -m -f /etc/linuxptp/gPTP.cfg`:
+
+```
+nsd rx types: sync 0 delreq 0 fup 0 delresp 0 ann 0
+              pdelreq 22 pdelresp 16 pdelrespfup 16
+```
+
+The peer-delay exchange runs in both directions and settles at ~8.7 µs; not one Announce or
+Sync ever arrives. The board, hearing no Announce, correctly elects itself and reports
+`LISTENING -> PRE_MASTER -> MASTER`. Both ends are behaving exactly as specified.
+
+Two ways forward:
+
+```bash
+# Raise the threshold to admit software timestamping. Diagnostic only -- it disables the
+# check that gPTP uses to reject links too slow to synchronise over.
+sudo ptp4l -i enp5s0 -S -m -f /etc/linuxptp/gPTP.cfg --neighborPropDelayThresh 100000
+```
+
+or use a NIC with a PTP hardware clock (`ethtool -T <iface>`), which is the honest fix and also
+removes the tens-of-microseconds floor from the `default` profile's numbers.
+
+> Note the asymmetry this creates in what can be claimed. The `default` profile is proven end to
+> end here. `gPTP` has its transmit path, its receive path and its peer-delay state machine all
+> proven — but its *Announce/Sync* half cannot be exercised on a software-timestamping host at
+> the default threshold.
+
 ## Alternative: the gPTP profile
 
 The host **must** match these:

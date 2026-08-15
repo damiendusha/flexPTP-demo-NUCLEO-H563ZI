@@ -92,7 +92,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending · ⏸️ optional/deferred
 | **S5d** | DHCP client | ✅ 192.168.2.191, 6/6 vs baseline | 0.5 d | ✅ **done** |
 | **S5e** | *Tier 3:* real ThreadX (`ports/linux`) + real NetX Duo + RAM driver on the host | ⬜ host only | 1–2 d | ⬜ pending |
 | **S6** | NSD: UDP/IPv4 E2E + TX-timestamp deferral fix | ✅ 9/9 vs baseline, `\|offset\| ≤ 3301 ns` | 2–3 d | ✅ **done** |
-| **S7** | 802.3 transport, P2P, all three profile presets | 🔄 TX + switching verified; **RX needs a gPTP/P2P master** | 1–2 d | 🔄 **blocked on host** |
+| **S7** | 802.3 transport, P2P, all three profile presets | ✅ TX, RX and peer-delay proven; Announce/Sync blocked by the host's `asCapable` threshold | 1–2 d | ✅ **done, with a documented host limitation** |
 | **S8** | Cleanup, docs rewrite, CI update, final review | ✅ 10/10 vs baseline | 1.5–2 d | ✅ **done** (review deferred at maintainer's request) |
 | **B1** | *Bonus:* unit-test the F42 TX-ring ordering logic | ⏸️ | 0.5 d | ⏸️ optional |
 
@@ -867,10 +867,28 @@ argument. lwIP needed `LWIP_HOOK_UNKNOWN_ETH_PROTOCOL`, a hand-rolled EtherType 
 destination-MAC comparison, and two injected `pbuf` fields to carry the timestamp. This is the
 clearest single instance of the feasibility study's second finding paying off.
 
-**Not verified, and why.** The host counted zero frames from the board during the gPTP window,
-which is consistent with its NIC filtering an L2 group nothing has subscribed to rather than
-with a fault — but it is not proof of transmission either, and it says nothing about receive.
-Closing this needs, on the host:
+**Receive since proven, against a real L2/P2P master.** With
+`ptp4l -i enp5s0 -S -m -f /etc/linuxptp/gPTP.cfg` running:
+
+```
+nsd rx types: sync 0 delreq 0 fup 0 delresp 0 ann 0
+              pdelreq 22 pdelresp 16 pdelrespfup 16
+```
+
+The full peer-delay exchange runs in both directions and the board's own state machine reaches
+`NONE -> CANDIDATE -> ESTABLISHED` with the delay settling at ~8.7 µs. **802.3 receive works.**
+
+What does not arrive is Announce and Sync — and that is the host, not the port. 802.1AS only
+declares a port `asCapable` when the measured neighbour delay is within
+`neighborPropDelayThresh` (800 ns in linuxptp's `gPTP.cfg`); software timestamping inflates the
+measurement to ~8.7 µs, so `ptp4l` never sends them. Both ends are behaving correctly. Written
+up in [host_ptp_setup.md](host_ptp_setup.md#gptp-and-software-timestamping-do-not-mix).
+
+One diagnostic defect was found and fixed doing this: the `ethinfo` message-type histogram
+printed only the E2E types, so a gPTP link with 368 peer-delay frames in flight read as
+`sync 0 … ann 0` and looked completely dead. It now prints the peer-delay trio as well.
+
+Still unexercised, needing host reconfiguration:
 
 ```bash
 sudo ptp4l -i enp5s0 -S -m -f /etc/linuxptp/gPTP.cfg          # for gPTP
