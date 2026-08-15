@@ -1058,6 +1058,10 @@ The same section should mention `NX_DISABLE_ERROR_CHECKING` in Release
 ([AR-04](#ar-04--debug-and-release-differ-in-more-than-optimisation-level)), which is a larger
 behavioural difference than the stack check.
 
+> **✅ ADDRESSED** — the sentence now says "**in Debug only**", and notes that the registration
+> in `main()` is unconditional while the checking is not. The larger differences are collected
+> in the new *Debug and Release differ in more than optimisation level* section above it.
+
 ### DC-03 — `ethernet_netxduo.c` still describes the S4 stub driver, and contradicts itself 55 lines later
 
 **Priority: Low** · `Src/ethernet/ethernet_netxduo.c:8-9` vs `:62-63`
@@ -1318,7 +1322,7 @@ how, and for the evidence.
 | [AR-01](#ar-01--every-frame-is-copied-twice-on-transmit-and-once-on-receive) | Opp (M) | Arch | Two copies per TX frame, one per RX; NetX Duo's zero-copy is unused | driver + `mac_drv.c` | 48 × 1 528 B = 73 KB of SRAM3 exists only to be copied out of and into. Crosses the `mac_drv.c` boundary this port kept unchanged |
 | [AR-02](#ar-02--the-pending-timestamp-registry-could-key-on-the-message-instead-of-the-pointer) | Opp (M) | Arch | TX-timestamp registry keys on a recycled pointer; keying on `(msgType, sequenceId, portIdentity)` removes the ABA hazard structurally | `ptp_tx_registry.cpp` | Current design is correct and well-tested; recorded because it rests on three invariants a future drop path could break |
 | [AR-03](#ar-03--diagnostics-reach-across-layers-through-function-local-extern-declarations) | P3 | Arch | Four unheadered `extern` prototypes inside `eth_drv_report()` | `eth_drv_netxduo.c:729-759` | Signature-drift exposure — the F48 class. A small registration table fixes it without inverting the dependency |
-| [AR-04](#ar-04--debug-and-release-differ-in-more-than-optimisation-level) | P2 | Arch/Doc | Release changes NetX Duo API semantics and drops the software stack check | `nx_user.h:91-103`, `tx_user.h:73-75` | Turns NX-02 from an error code into list corruption. No document states the delta |
+| [AR-04](#ar-04--debug-and-release-differ-in-more-than-optimisation-level) | ✅ P2 | Arch/Doc | Release changes NetX Duo API semantics and drops the software stack check | `nx_user.h:91-103`, `tx_user.h:73-75` | Turns NX-02 from an error code into list corruption. No document states the delta |
 | [AR-05](#ar-05--the-eth_stack-switch-is-advertised-as-easier-than-it-is) | P3 | Doc/Arch | README calls the EtherLib switch easy; design_doc says the files have never been compiled | `README.md:263-271` | Align the two; see TS-08 |
 | [AR-06](#ar-06--no-watchdog-and-every-failure-path-halts-forever) | P3 | Decision | No IWDG; all failure paths halt | `main.c`, `serial_io.c` | Defensible for a bench demo — but undocumented as a choice |
 | [AR-07](#ar-07--equal-priority-scheduling-semantics-changed-with-the-kernel) | P3 | Doc | Equal-priority round-robin quantum changed 1 ms → 4 ms with the kernel swap | `cmsis_os2.c:116,923` | Checked expecting starvation; there is none. `RTOS2_DEFAULT_TIME_SLICE` is overridable |
@@ -1340,7 +1344,7 @@ how, and for the evidence.
 | [CX-06](#cx-06--linkstate-as-a-pure-transition-function) | Opp (L) | C++ | `LinkDecision next(prev, phy_status)` | `eth_drv_netxduo.c:220-269` | Pins the first-poll `DOWN` suppression rule |
 | [CX-07](#cx-07--make-the-c-rules-enforced-rather-than-documented) | Opp (L) | C++ | Assert in CI that the image has no `operator new` / `__cxa_throw` | `cpp_support.cpp:22-30` | Makes the no-allocation rule observable, as `cpp_ctor` does for static init. Cannot assert "no `malloc`" — see NX-03 |
 | [DC-01](#dc-01--the-interrupt-priority-table-is-wrong-in-two-rows) | ✅ P2 | Doc | Interrupt table: SVC and SysTick priorities both wrong | `architecture.md:352,354` | Consequence of NX-04 |
-| [DC-02](#dc-02--release-drops-two-checks-the-architecture-document-presents-as-unconditional) | P2 | Doc | `TX_ENABLE_STACK_CHECKING` presented as unconditional; it is Debug-only | `architecture.md:369-372` | Should also state `NX_DISABLE_ERROR_CHECKING` in Release |
+| [DC-02](#dc-02--release-drops-two-checks-the-architecture-document-presents-as-unconditional) | ✅ P2 | Doc | `TX_ENABLE_STACK_CHECKING` presented as unconditional; it is Debug-only | `architecture.md:369-372` | Should also state `NX_DISABLE_ERROR_CHECKING` in Release |
 | [DC-03](#dc-03--ethernet_netxduoc-still-describes-the-s4-stub-driver-and-contradicts-itself-55-lines-later) | P3 | Doc | File header describes a stub driver and a `nx_driver_stub()` that does not exist | `ethernet_netxduo.c:8-9` | Contradicted by line 63 of the same file |
 | [DC-04](#dc-04--mainc-says-the-ethernet-driver-is-still-a-stub) | P3 | Doc | "The Ethernet driver … is still a stub until S5a" | `main.c:187-190` | In the file most likely to be read first |
 | [DC-05](#dc-05--the-drivers-default-case-describes-features-it-now-handles-explicitly) | P3 | Doc | `default:` comment says multicast/deferred "arrive in S5c"; both have `case` labels above | `eth_drv_netxduo.c:667-671` | |

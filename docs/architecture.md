@@ -392,15 +392,34 @@ hardware** (`UFSR.STKOF`) on the offending push. This was equally true under Fre
 the same reason — it is a property of the architecture, not of the kernel.
 
 The software check is therefore the backstop, not the primary: `TX_ENABLE_STACK_CHECKING` is
-defined in `Inc/tx_user.h` and `app_stack_error_handler()` is registered with
-`tx_thread_stack_error_notify()` in `main()`, but it only catches what the hardware cannot —
-a stack overrun *and then unwound* before the next context switch. In the ordinary case
-`UsageFault_Handler` gets there first. Measured:
+defined in `Inc/tx_user.h` **in Debug only**, and `app_stack_error_handler()` is registered with
+`tx_thread_stack_error_notify()` in `main()` unconditionally. It only catches what the hardware
+cannot — a stack overrun *and then unwound* before the next context switch. In the ordinary case
+`UsageFault_Handler` gets there first, in both configurations. Measured:
 
 | Failure | Reported |
 |---|---|
 | Task stack overflow | `CFSR` = `0x00100000` → *UFSR.STKOF — stack overflow (PSPLIM)* |
 | Call through a NULL pointer | `CFSR` = `0x00000100`, `PC` = `0x00000000` → *BFSR.IBUSERR* |
+
+### Debug and Release differ in more than optimisation level
+
+Three switches are conditional on `DEBUG`, each individually reasoned where it is defined, and
+worth collecting in one place because together they mean the two images do not behave
+identically at the API boundary:
+
+| Switch | Debug | Release | Consequence |
+|---|---|---|---|
+| `TX_ENABLE_STACK_CHECKING` (`tx_user.h`) | on | **off** | Release has no software stack check. The PSPLIM hardware trap is unaffected and is the primary mechanism in both |
+| `NX_DISABLE_ERROR_CHECKING` (`nx_user.h`) | off | **on** | Release calls NetX Duo's `_nx_*` internals directly. A misuse that returns `NX_PTR_ERROR` in Debug is undefined behaviour in Release — this is what turned [NX-02](review_v1_opus_5p0.md) from a diagnosable error into a corrupted socket list |
+| `NX_ENABLE_PACKET_DEBUG_INFO` (`nx_user.h`) | on | off | 12 bytes per `NX_PACKET`; owner/file/line for a packet that never came back |
+
+`TX_DISABLE_ERROR_CHECKING` is **not** defined in either: ST's CMSIS-RTOS2 wrapper `#error`s on
+it, because it translates ThreadX's return codes into `osStatus_t`.
+
+Both configurations are hardware-tested, and the HIL suite runs against either. The point of
+the table is that "Release is Debug with optimisation" is not true here, and the difference is
+on the error paths — which are the paths least likely to be exercised before they matter.
 
 ### Interrupt priorities: the FreeRTOS constraint no longer applies
 
