@@ -647,6 +647,26 @@ and command matching where one command is a prefix of another (`ptp servo st` vs
 The dependency to break is the `cmsis_os2.h` mutex and `MSG()`; see
 [CX-03](#cx-03--tokenizer-and-commandtable).
 
+> **✅ ADDRESSED** — `test/test_cli.cpp` + `test/cli_uut.c`, 15 cases. Every case listed above.
+>
+> **No extraction was needed.** `cli_uut.c` includes `cli.c` verbatim — the `mac_drv_uut.c`
+> idiom this repo already uses — so the mutex, the FIFO and the thread API stay real and only
+> the console is faked. One forwarding wrapper reaches `tokenize_cli_line()`, which is a
+> file-static; everything else the tests drive is already public interface, which is where a
+> test should be looking anyway. That makes [CX-03](#cx-03--tokenizer-and-commandtable)
+> optional rather than a prerequisite.
+>
+> Two limitations stated in the file: the formatter is `vsnprintf`, not embfmt, so an embfmt
+> defect cannot masquerade as a CLI failure; and a one-byte `.bss` overrun does not reliably
+> crash, so the buffer test asserts the observable consequence rather than the overrun.
+>
+> **Evidence.** Three mutations, all caught: `strncpy` without the terminator (N12) fails 1,
+> shrinking the line buffer by one (N8) fails 1, and prefix-matching instead of whole-token
+> matching fails 1. **One of my own tests was wrong first** — the full-length-line case built
+> its line from 47 short tokens, so tokenising stopped at `MAX_TOKEN_N` long before the buffer
+> was full and it asserted nothing about the buffer. It now hits both limits at once: 8 tokens
+> × 23 characters + 7 separators = exactly 191. Host suite 86/86.
+
 ### TS-03 — the DMA model cannot express a late context descriptor
 
 **Priority: High** · `test/eth_model.cpp:100-119`
@@ -1281,7 +1301,7 @@ how, and for the evidence.
 | [AR-06](#ar-06--no-watchdog-and-every-failure-path-halts-forever) | P3 | Decision | No IWDG; all failure paths halt | `main.c`, `serial_io.c` | Defensible for a bench demo — but undocumented as a choice |
 | [AR-07](#ar-07--equal-priority-scheduling-semantics-changed-with-the-kernel) | P3 | Doc | Equal-priority round-robin quantum changed 1 ms → 4 ms with the kernel swap | `cmsis_os2.c:116,923` | Checked expecting starvation; there is none. `RTOS2_DEFAULT_TIME_SLICE` is overridable |
 | [TS-01](#ts-01--blocking_fifoc-has-no-automated-coverage-at-all) | ✅ **P1** | Test gap | `blocking_fifo.c` untested despite carrying F67 (N1, N7) and wrap-dependent arithmetic | `blocking_fifo.c` | Cheapest high-value test in the tree — the real-ThreadX host target already exists |
-| [TS-02](#ts-02--the-cli-tokenizer-has-no-automated-coverage) | **P1** | Test gap | CLI tokenizer untested despite F74 (N8, N12: one-byte overflow, shared `strtok` state) | `cli.c:82-200` | Include the `ptp servo st` / `ptp servo stm` prefix-matching case |
+| [TS-02](#ts-02--the-cli-tokenizer-has-no-automated-coverage) | ✅ **P1** | Test gap | CLI tokenizer untested despite F74 (N8, N12: one-byte overflow, shared `strtok` state) | `cli.c:82-200` | Include the `ptp servo st` / `ptp servo stm` prefix-matching case |
 | [TS-03](#ts-03--the-dma-model-cannot-express-a-late-context-descriptor) | ✅ **P1** | Test gap | DMA model always writes a complete context descriptor, so NX-01 is unreachable | `eth_model.cpp:100-119` | Add `deliver_frame_ts_pending()` / `_no_ctxt()`. Write the tests **before** the NX-01 fix so it is mutation-verified |
 | [TS-04](#ts-04--drv_sends-framing-logic-is-untested) | P2 | Test gap | `drv_send()` untested — the function with the port's highest defect density | `eth_drv_netxduo.c:469-616` | Most important property: **every** drop path cancels the pending timestamp |
 | [TS-05](#ts-05--the-hil-threads-check-does-not-assert-the-priorities-that-matter) | P2 | Test gap | HIL `threads` check omits `eth ip` (16), `rx` (24), `ptpts` (24) and their presence | `checks.py:280-295` | `architecture.md` presents that table as the spec; four dictionary entries close it |

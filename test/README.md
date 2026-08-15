@@ -147,6 +147,9 @@ restored and verified byte-identical:
 | `ptp_tx_registry_cancel()` does nothing (the send-failure leak) | 1 test fails |
 | Drop the codec's headroom precondition | 1 test fails |
 | Derive FIFO occupancy from the two indices (**F67/N1**) | 4 `Fifo` tests fail, one by timing out |
+| `strncpy` without the terminator (**F74/N12**) | 1 `Cli` test fails |
+| Shrink the CLI line-copy buffer by one (**F74/N8**) | 1 `Cli` test fails |
+| Match CLI commands on a prefix | 1 `Cli` test fails |
 | Mark the NSD sockets created only once the whole sequence succeeded (**NX-02**) | 3 tests fail |
 | Leave the transport set across an NSD teardown (**NX-02**) | 4 tests fail |
 | Drop the context descriptor's `OWN` check (**NX-01**) | 2 `RxRing` tests fail |

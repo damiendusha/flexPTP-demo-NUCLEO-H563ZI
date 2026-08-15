@@ -113,11 +113,12 @@ reason.
 Before this extraction the network-stack driver had **zero** automated coverage. That is what
 the exercise bought, more than any individual assertion.
 
-### The console FIFO
+### The console FIFO and the CLI
 
 | Binary | Cases | The property that matters |
 |---|---|---|
 | `test_blocking_fifo` | 13 | **F67 (N1, N7).** Occupancy is a *modular difference of two free-running totals*, not a comparison of two indices — so a FIFO filled exactly reads as full rather than empty, and the arithmetic survives the 2³² wrap. Neither is eyeballable, and neither had any coverage |
+| `test_cli` | 15 | **F74 (N8, N12).** A token of exactly `MAX_TOK_LEN` is terminated; a full-length line does not overrun its copy buffer by one byte. Both are memory-safety failures rather than wrong answers, which is the class that survives eyeballing. Plus the command table: `ptp servo st` and `ptp servo stm` are *both* registered on the real board, and a prefix-matching mistake dispatches the wrong Kalman parameter with no diagnostic |
 
 It links the **real kernel** rather than a fake, for the reason tier 2 does: the FIFO *is*
 semaphores and a critical section, so a fake of either would be a fake of the thing under test.
@@ -231,6 +232,9 @@ reintroduced, the suite re-run, the source restored and verified byte-identical.
 | `ptp_tx_registry_cancel()` does nothing | 1 test fails |
 | Drop the codec's headroom precondition | 1 test fails |
 | Derive FIFO occupancy from the two indices (**F67/N1**) | 4 `Fifo` tests fail — one of them by *timing out*, because a full FIFO reporting empty stalls the blocking push |
+| `strncpy` without the terminator (**F74/N12**) | 1 `Cli` test fails |
+| Shrink the CLI line-copy buffer by one (**F74/N8**) | 1 `Cli` test fails |
+| Match commands on a prefix rather than the whole token | 1 `Cli` test fails |
 | Endpoint teardown stops zeroing | 1 test fails |
 | Widen the RFC 1112 mask from 23 to 24 bits | 1 test fails — *but only after the test was fixed* |
 | Assert the timer-thread blocking put SUCCEEDS (**F80** inverted) | `RtosContext.BlockingEnqueueFromATimerCallbackIsRejected` fails, reporting −2 vs 0 |

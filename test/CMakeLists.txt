@@ -222,6 +222,21 @@ if (EXISTS ${THREADX_DIR}/common/inc/tx_api.h)
     add_test(NAME BlockingFifo COMMAND test_blocking_fifo)
     set_tests_properties(BlockingFifo PROPERTIES TIMEOUT 30)
 
+    # The CLI tokenizer and command table (TS-02). The mutex, the FIFO and the thread API are
+    # the real ones -- only the console is faked, in cli_uut.c, which also exposes the
+    # file-statics by including cli.c verbatim.
+    add_executable(test_cli test_cli.cpp cli_uut.c
+                   ${REPO_ROOT}/Modules/blocking_io/blocking_fifo.c)
+    target_include_directories(test_cli PRIVATE
+        ${REPO_ROOT}/Src
+        ${REPO_ROOT}/Modules
+        ${REPO_ROOT}/Modules/blocking_io
+        ${CMAKE_CURRENT_LIST_DIR}/host)
+    target_link_libraries(test_cli PRIVATE host_cmsis_rtos GTest::gtest)
+    target_compile_options(test_cli PRIVATE -Wall -Wextra -Wno-unused-parameter)
+    add_test(NAME Cli COMMAND test_cli)
+    set_tests_properties(Cli PROPERTIES TIMEOUT 30)
+
     add_executable(test_rtos_context test_rtos_context.cpp)
     target_link_libraries(test_rtos_context PRIVATE host_cmsis_rtos GTest::gtest)
     target_compile_options(test_rtos_context PRIVATE -Wall -Wextra)
