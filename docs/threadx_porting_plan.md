@@ -909,8 +909,25 @@ level-5 rule disappears). Update the README's software-structure section and the
 the mixed-licence note. Update `.github/workflows/ci.yml`. Record the port in a new
 `docs/reviews/` entry if a review produced findings.
 
-**Hardware verification:** the full regression suite against `baseline.json`, from a clean clone,
-on both Debug and Release.
+**Hardware verification:** the full regression suite against `baseline.json`, on both Debug and
+Release.
+
+#### Progress — 15 Aug 2026 — **DONE, both configurations**
+
+| Build | FLASH | SRAM1 | Suite |
+|---|---|---|---|
+| Debug | 205 736 B (9.81%) | 80 864 B (30.85%) | **10/10**, offset ≤ 15.8 µs |
+| Release | 147 352 B (7.03%) | 80 648 B (30.76%) | **10/10**, offset ≤ 11.4 µs |
+
+**Release was run on hardware, not just built.** That is not ceremony: two of this project's
+findings were Release-only — F70, a bounded wait the optimiser deleted above `-Og`, and F62, an
+optimisation-dependent HardFault — and neither would have shown in a Debug image. It is also the
+one class of defect the host test suite is structurally blind to.
+
+Against the FreeRTOS/lwIP baseline: 217 160 B FLASH and 133 168 B SRAM1. Both configurations are
+smaller, and the offsets sit either side of the baseline's 11.8 µs, which is the expected
+result — the timestamps come from the same hardware through an unchanged `mac_drv.c`, so the
+figure is the host's software-timestamping floor rather than the board's accuracy.
 
 ---
 
