@@ -151,6 +151,15 @@ add_library(eth_framer STATIC ${REPO_ROOT}/Drivers/EthDrv/eth_framer.cpp)
 target_include_directories(eth_framer PUBLIC ${REPO_ROOT}/Drivers/EthDrv)
 target_compile_options(eth_framer PRIVATE -Wall -Wextra ${FIRST_PARTY_ANALYSIS})
 
+add_library(eth_link_state STATIC ${REPO_ROOT}/Drivers/EthDrv/eth_link_state.cpp)
+target_include_directories(eth_link_state PUBLIC ${REPO_ROOT}/Drivers/EthDrv)
+target_compile_options(eth_link_state PRIVATE -Wall -Wextra ${FIRST_PARTY_ANALYSIS})
+
+add_executable(test_eth_link_state test_eth_link_state.cpp)
+target_link_libraries(test_eth_link_state PRIVATE eth_link_state GTest::gtest_main)
+target_compile_options(test_eth_link_state PRIVATE -Wall -Wextra)
+gtest_discover_tests(test_eth_link_state PROPERTIES TIMEOUT 10)
+
 add_executable(test_eth_framer test_eth_framer.cpp)
 target_link_libraries(test_eth_framer PRIVATE eth_framer GTest::gtest_main)
 target_compile_options(test_eth_framer PRIVATE -Wall -Wextra)

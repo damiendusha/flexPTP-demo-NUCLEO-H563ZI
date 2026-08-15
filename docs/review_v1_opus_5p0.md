@@ -1166,6 +1166,18 @@ after it, push speed/duplex into the MAC only on `UP` — is four lines of polic
 returning `{new_state, announce, program_mac}`, the first-poll suppression rule (which exists so a
 normal boot does not look like a cable fault) becomes a three-case test.
 
+> **✅ ADDRESSED** — `Drivers/EthDrv/eth_link_state.{h,cpp}` + 7 tests, built almost exactly as
+> sketched: `eth_link_state_update(EthLinkState *, EthPhyStatus) -> EthLinkAction` with
+> `{announce_up, announce_down, program_mac, publish_to_stack}`. `phy_thread()` now only carries
+> the decision out.
+>
+> `publish_to_stack` is the fourth flag the sketch did not have, and it earns its place: it is
+> the `nx_interface_link_up` write, and setting that only on `UP` is the bring-up defect where
+> the board reported "ETH LINK: UP", received frames happily and transmitted absolutely nothing.
+>
+> **Evidence.** Two mutations: announcing `DOWN` on the first poll fails 1, and publishing to
+> the stack only on `UP` fails 2. Host suite 104/104; hardware `S8` **13/13**.
+
 ### CX-07 — make the C++ rules enforced rather than documented
 
 **Priority: Opportunity (Low)** · `Src/cpp_support.cpp:22-30`
@@ -1653,7 +1665,7 @@ how, and for the evidence.
 | [CX-03](#cx-03--tokenizer-and-commandtable) | Opp (M) | C++ | `Tokenizer` over `string_view` + `CommandTable` | `cli.c` → C++ | Makes the F74/N8 shared-state defect unrepresentable rather than fixed. Pairs with TS-02 |
 | [CX-04](#cx-04--nsdlifecycle-over-an-injected-stack-interface) | ✅ Opp (M) | C++ | `NsdLifecycle` over a five-call stack interface | `nsd_netxduo.c` → C++ | Makes NX-02 a red test before a fix. Cold path, so dispatch cost is irrelevant |
 | [CX-05](#cx-05--ethernetframer) | ✅ Opp (M) | C++ | `EthernetFramer`: ethertype selection, header write, chain flatten | `eth_drv_netxduo.c` → C++ | Twelve hand-written byte shifts become one expected-array test. Pairs with TS-04 |
-| [CX-06](#cx-06--linkstate-as-a-pure-transition-function) | Opp (L) | C++ | `LinkDecision next(prev, phy_status)` | `eth_drv_netxduo.c:220-269` | Pins the first-poll `DOWN` suppression rule |
+| [CX-06](#cx-06--linkstate-as-a-pure-transition-function) | ✅ Opp (L) | C++ | `LinkDecision next(prev, phy_status)` | `eth_drv_netxduo.c:220-269` | Pins the first-poll `DOWN` suppression rule |
 | [CX-07](#cx-07--make-the-c-rules-enforced-rather-than-documented) | ✅ Opp (L) | C++ | Assert in CI that the image has no `operator new` / `__cxa_throw` | `cpp_support.cpp:22-30` | Makes the no-allocation rule observable, as `cpp_ctor` does for static init. Cannot assert "no `malloc`" — see NX-03 |
 | [DC-01](#dc-01--the-interrupt-priority-table-is-wrong-in-two-rows) | ✅ P2 | Doc | Interrupt table: SVC and SysTick priorities both wrong | `architecture.md:352,354` | Consequence of NX-04 |
 | [DC-02](#dc-02--release-drops-two-checks-the-architecture-document-presents-as-unconditional) | ✅ P2 | Doc | `TX_ENABLE_STACK_CHECKING` presented as unconditional; it is Debug-only | `architecture.md:369-372` | Should also state `NX_DISABLE_ERROR_CHECKING` in Release |

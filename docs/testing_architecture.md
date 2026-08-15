@@ -83,6 +83,7 @@ produce ARM objects.
 |---|---|---|
 | `test_rx_ring` | 13 | Receive descriptor state machine: re-delivery (**F61**), the RBU tail-pointer restart (**F71**), copy-pointer advance (**F58**), and the data/context descriptor pairing rules (**NX-01**) |
 | `test_tx_ring` | 10 | Transmit completion ordering, including across the 16-bit counter wrap; dropped-vs-sent accounting (**F75**); the per-pass count reset (**F57**) |
+| `test_eth_link_state` | 7 | The PHY transition rules (**CX-06**), including the one whose whole purpose is to make a normal boot look normal: the first poll must not announce `DOWN`, because auto-negotiation has not finished and reporting it makes every healthy boot look like a cable fault |
 | `test_eth_framer` | 9 | The framing decisions lifted out of `drv_send()` (**TS-04**): EtherType mapping, the msw/lsw address split, and the saturating chain append. A mistake in any of them produces a frame that is perfectly formed and wrong — measured during bring-up as "tx: 16 sent, 0 dropped" against a host that received nothing |
 | `test_host_harness` | 6 | The harness itself — 32-bit arena and function-pointer round-trips. These fail *first* and say why, because if they regress the driver tests corrupt memory rather than failing cleanly |
 
@@ -248,6 +249,8 @@ reintroduced, the suite re-run, the source restored and verified byte-identical.
 | `ptp_tx_registry_cancel()` does nothing | 1 test fails |
 | Drop the codec's headroom precondition | 1 test fails |
 | Remove the registry's stale-entry eviction (**AR-02**) | 1 test fails |
+| Announce `DOWN` on the first PHY poll (**CX-06**) | 1 `LinkState` test fails |
+| Publish the link to the stack only on `UP` | 2 `LinkState` tests fail |
 | Evict at `MAX_AGE` 1 instead of 16 | 3 tests fail — the bound has to be wrong in *both* directions to be worth having |
 | Swap the msw/lsw halves of the destination MAC (**TS-04**) | 1 `EthFramer` test fails |
 | Off-by-one in the saturating chain append | 2 `EthFramer` tests fail |

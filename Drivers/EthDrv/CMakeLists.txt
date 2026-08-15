@@ -15,6 +15,8 @@ elseif(ETH_STACK STREQUAL "NETXDUO")
         # C++ per the rules in Src/cpp_support.cpp; depends on nothing but stdint.
         eth_framer.cpp
         eth_framer.h
+        eth_link_state.cpp
+        eth_link_state.h
     )
 elseif(ETH_STACK STREQUAL "NONE")
     # S3-S5 of the ThreadX port: eth_drv_lwip.c was removed with lwIP and eth_drv_netxduo.c

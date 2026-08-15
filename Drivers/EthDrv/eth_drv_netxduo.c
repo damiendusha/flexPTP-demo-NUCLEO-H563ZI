@@ -32,6 +32,7 @@
 #include "nx_link.h"
 
 #include "eth_framer.h"
+#include "eth_link_state.h"
 #include "mac_drv.h"
 #include "phy_drv/phy_common.h"
 #include "flexptp_nsd/ptp_tx_registry.h"
@@ -71,18 +72,13 @@ _Static_assert(offsetof(ETHStateAndDescLayout, DMARxDscrTab) == sizeof(ETHHW_Sta
 
 /* Carried over from the deleted eth_drv_lwip.h, where lwIP kept it behind netif->state. NetX
    Duo has no equivalent per-interface user pointer that the console code needs, so it is
-   simply a file-static here -- there is exactly one Ethernet interface on this part. */
-typedef struct {
-    bool init;   /* has the link state ever been read? */
-    bool up;
-    uint16_t speed;  /* Mbps */
-    bool duplex;     /* true = full */
-} LinkState;
+   simply a file-static here -- there is exactly one Ethernet interface on this part.
 
+   The type and the transition rules live in eth_link_state.h, host-tested (CX-06). */
 static NX_IP *drv_ip;
 static NX_INTERFACE *drv_interface;
 static bool drv_enabled;
-static LinkState drv_link = {false, false, 0, false};
+static EthLinkState drv_link = {false, false, 0, false};
 
 /* Defined with eth_drv_report() at the end of the file. */
 static ULONG drv_rx_frames, drv_rx_dropped_nopacket, drv_rx_dropped_size;
@@ -244,42 +240,32 @@ static void phy_thread(void *arg) {
         phy_refresh_link_status();
         const PHY_LinkStatus *status = phy_get_link_status();
 
-        if ((drv_link.up != status->up) || (!drv_link.init)) {
-            bool first_poll = !drv_link.init;
-            drv_link.up = status->up;
-            drv_link.init = true;
+        /* The decision is eth_link_state.cpp's; this loop only carries it out. In particular
+           the "do not announce DOWN on the first poll" rule is host-tested there, because a
+           rule whose whole purpose is to make a normal boot look normal is one that gets
+           optimised away by someone who never saw the noisy version. */
+        const EthPhyStatus now = {status->up,
+                                  (status->speed == PHY_LS_100Mbps),
+                                  (status->type == PHY_LT_FULL_DUPLEX)};
+        const EthLinkAction action = eth_link_state_update(&drv_link, now);
 
-            /* Tell NetX Duo, not just ourselves.
-             *
-             * nx_interface_link_up is what the IP thread consults before handing anything to
-             * the driver -- an interface it believes is down is simply never sent on. Setting
-             * it once at NX_LINK_INITIALIZE and leaving it produced a board that reported
-             * "ETH LINK: UP" on the console, received frames happily, and transmitted
-             * absolutely nothing: DHCP never completed and the host counted zero frames
-             * arriving in twelve seconds. NX_LINK_GET_STATUS is not enough on its own --
-             * NetX Duo only asks when the application asks it to. */
-            if (drv_interface != NX_NULL) {
-                drv_interface->nx_interface_link_up = drv_link.up ? NX_TRUE : NX_FALSE;
-            }
+        /* nx_interface_link_up is what the IP thread consults before handing anything to the
+           driver -- an interface it believes is down is simply never sent on. Setting it once
+           at NX_LINK_INITIALIZE and leaving it produced a board that reported "ETH LINK: UP",
+           received frames happily, and transmitted absolutely nothing. */
+        if (action.publish_to_stack && (drv_interface != NX_NULL)) {
+            drv_interface->nx_interface_link_up = drv_link.up ? NX_TRUE : NX_FALSE;
+        }
 
-            /* Do not announce "DOWN" on the very first poll. At that point auto-negotiation
-               has simply not finished yet, and reporting it makes a normal boot look like a
-               cable fault -- the lwIP driver printed only the UP that followed. Genuine
-               transitions after the first poll are always reported. */
-            if (first_poll && !drv_link.up) {
-                /* nothing to say yet */
-            } else if (drv_link.up) {
-                bool fe = (status->speed == PHY_LS_100Mbps);
-                bool duplex = (status->type == PHY_LT_FULL_DUPLEX);
-                ETHHW_SetLinkProperties(ETH, fe, duplex);
-                drv_link.speed = fe ? 100U : 10U;
-                drv_link.duplex = duplex;
+        if (action.program_mac) {
+            ETHHW_SetLinkProperties(ETH, now.fast_ethernet, now.full_duplex);
+        }
 
-                MSG("ETH LINK: " ANSI_COLOR_BGREEN "UP " ANSI_COLOR_RESET "(%u Mbps, %s duplex)\n",
-                    drv_link.speed, duplex ? "FULL" : "HALF");
-            } else {
-                MSG("ETH LINK: " ANSI_COLOR_BRED "DOWN" ANSI_COLOR_RESET "\n");
-            }
+        if (action.announce_up) {
+            MSG("ETH LINK: " ANSI_COLOR_BGREEN "UP " ANSI_COLOR_RESET "(%u Mbps, %s duplex)\n",
+                drv_link.speed, drv_link.duplex ? "FULL" : "HALF");
+        } else if (action.announce_down) {
+            MSG("ETH LINK: " ANSI_COLOR_BRED "DOWN" ANSI_COLOR_RESET "\n");
         }
 
         ETHHW_ReportDmaError();
