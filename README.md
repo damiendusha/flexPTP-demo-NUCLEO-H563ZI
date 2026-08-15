@@ -194,11 +194,13 @@ The project relies on the following large software building blocks:
 - the [embfmt](https://gitea.epagris.com/epagris/embfmt) a printf()-like formatted printer implementation for embedded systems.
 
 > [!TIP]
-> The project can either use LwIP or EtherLib Ethernet stacks. This can be easily changed by setting the `ETH_STACK` CMake variable in the top `CMakeLists.txt`:
+> The project can either use NetX Duo or EtherLib Ethernet stacks. This can be easily changed by setting the `ETH_STACK` CMake variable in the top `CMakeLists.txt`:
 > ```
->set(ETH_STACK "LWIP") # select "LWIP" or "ETHERLIB"
+>set(ETH_STACK "NETXDUO") # select "NETXDUO" or "ETHERLIB"
 >```
-> Only the LwIP path is exercised on this port; EtherLib is not compiled. See [`docs/design_doc.md`](docs/design_doc.md) for what porting it would involve.
+> Only the NetX Duo path is exercised on this port; EtherLib is not compiled. See [`docs/design_doc.md`](docs/design_doc.md) for what porting it would involve.
+>
+> `ETH_STACK="LWIP"` is a hard build error: lwIP was removed in S3 of the ThreadX port. The submodule is still pinned, so a pre-S3 commit builds it.
 
 The project is organized the following way:
 

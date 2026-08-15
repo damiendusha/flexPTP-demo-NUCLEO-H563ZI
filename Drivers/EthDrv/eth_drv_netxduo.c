@@ -188,6 +188,15 @@ static void rx_thread(void *arg) {
                     (unsigned)size, (unsigned)capacity);
                 nx_packet_release(packet);
             }
+        } else {
+            /* No packet to put the frame in. Either the pool is empty, or a receive interrupt
+               arrived before NX_LINK_INITIALIZE set drv_ip.
+
+               Counted, not silent: this is precisely the number Inc/nx_user.h points at when it
+               says to raise NX_PACKET_POOL_PACKET_COUNT if receive drops appear. Without the
+               increment `ethinfo` reports "0 dropped (no packet)" however hard the pool is being
+               starved, which sends you looking at the cable instead of the pool. */
+            drv_rx_dropped_nopacket++;
         }
 
         /* Return both descriptors to the DMA. Unconditional: a frame dropped for want of a
@@ -411,9 +420,17 @@ static void drv_get_status(NX_IP_DRIVER *request) {
  *
  * Keying on a pointer has one hazard worth naming: NetX Duo recycles packets, so a stale entry
  * whose packet has been freed and reallocated would hand the servo a completely wrong uid --
- * silently, and only for the Delay_Req cycles unlucky enough to collide. Two things prevent
- * that: the entry is cleared the moment the driver consumes it, and the NSD cancels the record
- * explicitly if the send fails. Both paths are exercised; neither is optional.
+ * silently, and only for the Delay_Req cycles unlucky enough to collide. Three things prevent
+ * that, and none of them is optional:
+ *
+ *   - the entry is cleared the moment the driver consumes it;
+ *   - the NSD cancels the record if its send call reports failure;
+ *   - drv_send() cancels it on every path that drops the packet itself.
+ *
+ * The third is not redundant with the second. drv_send()'s link-down path returns NX_SUCCESS on
+ * purpose, so the NSD sees no failure to react to; and NetX Duo does not reliably propagate
+ * nx_ip_driver_status back through nxd_udp_socket_send() anyway, so the other drop paths cannot
+ * count on being noticed upstream either. Whoever frees the packet withdraws the record.
  *
  * Four entries is ample -- flexPTP has at most a Sync and a Delay_Req outstanding -- and a
  * linear scan of four is cheaper than anything cleverer. */
@@ -460,8 +477,14 @@ static void drv_send(NX_IP_DRIVER *request) {
     if (!drv_link.up || !drv_enabled) {
         /* Dropping while the link is down is correct and must still release the packet: a
            pool of 8 disappears in seconds otherwise, and the symptom would be a hang rather
-           than an unplugged cable. */
+           than an unplugged cable.
+
+           The status stays NX_SUCCESS deliberately (see above), which is exactly why the
+           pending record has to be withdrawn HERE: the NSD only cancels when its send call
+           reports failure, so a link flap during PTP transmission would otherwise strand four
+           entries and fill the table. */
         drv_tx_dropped_linkdown++;
+        eth_drv_cancel_tx_timestamp(packet);
         nx_packet_transmit_release(packet);
         request->nx_ip_driver_packet = NX_NULL;
         request->nx_ip_driver_status = NX_SUCCESS;
@@ -488,6 +511,7 @@ static void drv_send(NX_IP_DRIVER *request) {
         if ((ULONG)(packet->nx_packet_prepend_ptr - packet->nx_packet_data_start) <
             NX_LINK_ETHERNET_HEADER_SIZE) {
             MSG("ETH: no room for the Ethernet header; frame dropped\n");
+            eth_drv_cancel_tx_timestamp(packet);
             nx_packet_transmit_release(packet);
             request->nx_ip_driver_packet = NX_NULL;
             request->nx_ip_driver_status = NX_UNDERFLOW;
@@ -522,6 +546,7 @@ static void drv_send(NX_IP_DRIVER *request) {
     if (packet->nx_packet_length > ETH_BUFFER_SIZE) {
         MSG("ETH: TX frame of %u bytes exceeds the %u-byte buffer; dropped\n",
             (unsigned)packet->nx_packet_length, (unsigned)ETH_BUFFER_SIZE);
+        eth_drv_cancel_tx_timestamp(packet);
         nx_packet_transmit_release(packet);
         request->nx_ip_driver_packet = NX_NULL;
         request->nx_ip_driver_status = NX_INVALID_PACKET;

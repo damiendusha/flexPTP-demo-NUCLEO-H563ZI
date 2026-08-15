@@ -158,8 +158,8 @@ void init_osc_and_clk() {
 void print_welcome_message() {
     MSGraw("\033[2J\033[H");
     MSG(ANSI_COLOR_BGREEN "Hi!" ANSI_COLOR_BYELLOW " This is a flexPTP demo for the STMicroelectronics NUCLEO-H563ZI (STM32H563) board.\n\n"
-                          "The application is built on FreeRTOS, flexPTP is currently compiled against %s and uses the supplied example %s Network Stack Driver. "
-                          "In this demo, the underlying Ethernet stack can be either lwip or EtherLib, the 'ETH_STACK' CMake variable (in the main CMakeLists.txt file) determines which one will be used. "
+                          "The application is built on Eclipse ThreadX, flexPTP is currently compiled against %s and uses the supplied example %s Network Stack Driver. "
+                          "In this demo, the underlying Ethernet stack can be either NetX Duo or EtherLib, the 'ETH_STACK' CMake variable (in the main CMakeLists.txt file) determines which one will be used. "
                           "The STM32H5xx PTP hardware module driver is supplied by this project. This flexPTP instance features a full CLI control interface, the help can be listed by typing '?' once the flexPTP has loaded. "
                           "The initial PTP preset that loads upon flexPTP initialization is the 'default' (plain IEEE 1588) profile: UDP/IPv4 transport with E2E delay measurement. "
                           "It is the preset that works across ordinary switches, and a stock 'ptp4l' with no config file matches it. The 'gPTP' (802.1AS) preset is also available "
