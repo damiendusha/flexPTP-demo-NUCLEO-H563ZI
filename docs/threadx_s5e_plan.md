@@ -122,9 +122,47 @@ and the same pair for the paths `ptp_tx_timestamp.c` guards.
 
 ---
 
+### Option C — the NSD's own logic, on the existing harness
+
+**This was in the S6 plan and never got built.** S6 shipped in C and was verified on hardware
+only, so the three units it named have no automated coverage at all — and neither does anything
+else in `Src/flexptp_nsd/`. The 25 tests in `test/` cover `mac_drv.c` and nothing above it.
+
+| Unit | Why it is worth a test |
+|---|---|
+| **the pending-timestamp table** (`tx_ts_pending` in `eth_drv_netxduo.c`) | **The ABA hazard.** NetX Duo recycles packets, so a stale entry hands the servo a *wrong* uid — silently, intermittently, and only on the Delay_Req cycles unlucky enough to collide. Two things prevent it: the entry is taken rather than read, and the NSD cancels on send failure. Neither is tested, and neither is the sort of thing a bench proves |
+| **the RX timestamp codec** | The 12-byte `nx_packet_data_start` convention, plus the head-room precondition. The F48 class exactly |
+| **the endpoint decision table** | Transport × delay mechanism → destination address, port, EtherType, multicast group. Five cases including teardown; a wrong destination presents as "no response received" |
+
+Needs **no new infrastructure**: no ThreadX, no NetX Duo, no RAM driver. The fakes in
+`test/host/` already cover what these touch. **Estimate: ~1 day.**
+
+## How the three compose
+
+They are not alternatives. **B is literally A's first two steps** — A1 and B1 are the same
+spike, and A2 is B2 plus NetX Duo — so doing B first makes A cheaper later rather than
+duplicating it. C is independent of both and shares the existing harness.
+
+What each *uniquely* covers, once the others are done:
+
+| | Unique remainder |
+|---|---|
+| **B** | The "blocking call from a context that may not block" class — the only one of the five defects a host test would have caught, and the one that cost a bench session |
+| **C** | NSD and driver *logic*: the ABA hazard, the codec precondition, the endpoint table |
+| **A** | Real socket lifecycle, packet-pool exhaustion, chained receive packets, and board-free end-to-end regression |
+
+The honest consequence: **after B and C, A's marginal value is much smaller than its standalone
+value**, because B has taken the biggest prize and C the second. A's remainder is error paths
+that are awkward on hardware — real, but the narrowest of the three.
+
 ## Recommendation
 
-**Do Option B. Leave Option A undone unless something forces it.**
+**Do C, then B. Leave A until a trigger fires.** Roughly 2.5 days for both, against 3–5 for A
+alone.
+
+C first, because it is the cheapest, needs nothing new, and closes a gap that should not have
+been left open — the S6 plan called for exactly these tests and the stage shipped without them.
+Then B, because it guards the one class this port keeps getting wrong.
 
 The reasoning is the table at the top. Option A's unique reach over the existing suites is
 narrow — the driver-level defects are invisible to it by construction, and the hardware suite
@@ -132,9 +170,12 @@ already proves the happy path end to end, twice, on both build configurations. W
 error-path coverage and board-free regression, which are real but not worth 3–5 days on a demo
 project that has a working bench.
 
-Option B is a fifth of the cost and covers the one class this port demonstrably keeps getting
-wrong — including on a future flexPTP or ThreadX bump, which is exactly when nobody will be
-watching for it.
+B is a fifth of A's cost and covers the one class this port demonstrably keeps getting wrong —
+including on a future flexPTP or ThreadX bump, which is exactly when nobody will be watching.
+
+**Is A worth doing as well?** Eventually, and it composes cleanly — nothing in B or C is thrown
+away. But it should be pulled by a need rather than pushed by completeness, because after B and
+C its remainder is narrow and its maintenance surface is the largest of the three.
 
 **What would change the recommendation:** if this port ever loses reliable access to the board,
 or if the middleware submodules start being bumped routinely, Option A's board-free regression
