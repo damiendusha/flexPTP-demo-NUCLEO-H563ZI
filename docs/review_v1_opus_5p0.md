@@ -286,6 +286,42 @@ That makes the linker script's claim true rather than aspirational, and turns a 
 into `ENOMEM`. It also means `_Min_Heap_Size` finally does something, closing the loose end the
 script itself flags as finding H-5.
 
+> **✅ ADDRESSED** — `Src/sysmem.c`, `Src/sysmem_bounds.h`, `stm32h563zitx_FLASH.ld`,
+> `Src/cmds.c`.
+>
+> **The overlap was not latent — it was in use.** Applying the bound alone, before sizing the
+> heap, wedged the console thread after seven CLI commands while the rest of the firmware ran
+> on. That is the proof the old code was allocating past 2 560 bytes in normal operation: those
+> bytes were coming out of the ThreadX byte pools. Confirmed by A/B — the pre-fix firmware
+> survives 42 commands, the bounded-but-unsized one dies after 7.
+>
+> Three changes, in the order the evidence demanded:
+>
+> 1. **The bound** is `__RAM_segment_used_end__`, extracted into `sysmem_bounds_next()` in a
+>    header so it can be tested without a target. Corrected figures: `_end` = `0x200131F0`,
+>    the limit = `0x20013BF0`, the old ceiling = `0x2003F800` — an overlap of **179 216 bytes**,
+>    not the ~103 KB estimated in the finding above.
+> 2. **`_Min_Heap_Size` 0x200 → 0x2000**, sized from a measurement rather than a guess. With a
+>    deliberately oversized heap and `osinfo` reporting the high-water mark: 0 bytes at boot,
+>    0 after seven servo/PPS commands with flexPTP stopped, **3 600 bytes** once flexPTP is
+>    running, and still 3 600 after 130 commands. The window is now 10 240 B — 2.8× the peak.
+>    *(My guess in the finding above was that `atof()` was the allocator. It is not: those
+>    commands allocate nothing with flexPTP stopped. Recorded because it was a plausible
+>    wrong answer.)*
+> 3. **Exhaustion reports and halts** instead of returning `ENOMEM`. newlib's `_Balloc()` does
+>    not check its allocation, so the observed failure is a console that stops answering while
+>    everything else runs — the exact "board goes quiet" mode F51/F53/F68 are about. A halt
+>    that names the constant to raise is worth more than a silent wedge.
+>
+> **Evidence.** 11 host tests (`SysmemBounds`), two mutations: widening the limit fails 3, and
+> writing the growth check the natural `heap_end + incr > limit` way fails 1 — **that second
+> test had to be added, because the first version of the mutation survived.** On this target
+> `ptrdiff_t` is 32-bit and the heap sits low, so the two formulations agree everywhere the
+> board can reach; the discriminating case places the window near the top of the address space.
+> The comment now says which of the two facts it is claiming. Host suite 84/84. Hardware `S8`
+> **10/10**, `|offset| ≤ 11 358 ns`, the wedge repro passes 42 commands, and `osinfo` reports
+> `C heap: 3600 of 10240 bytes used (peak)`.
+
 ### NX-04 — SysTick and SVCall run at priorities the documentation does not state
 
 **Priority: Medium** · `Startup/tx_initialize_low_level.S:119-128`
@@ -1173,7 +1209,7 @@ how, and for the evidence.
 |---|---|---|---|---|---|
 | [NX-01](#nx-01--the-receive-timestamp-is-read-from-a-context-descriptor-that-may-not-have-been-written) | ✅ **P1** | Defect | RX timestamp read from a context descriptor without checking `OWN` or `CTXT` | `mac_drv.c:471-483` | ST's HAL checks both and retries (`stm32h5xx_hal_eth.c:1130-1148`). Yields a plausible wrong `t2`, and can deliver a context descriptor upward as a frame. Invisible to the host suite — see TS-03 |
 | [NX-02](#nx-02--partial-failure-in-ptp_nsd_init-leaks-created-sockets) | ✅ **P1** | Defect | Partial failure in `ptp_nsd_init()` leaks created UDP sockets; `s_tp`/`s_dm` left stale | `nsd_netxduo.c:265-293` | Debug → PTP permanently dead (`NX_PTR_ERROR`). Release → `nx_ip_udp_created_sockets_ptr` list corruption, because `NX_DISABLE_ERROR_CHECKING` removes the guard |
-| [NX-03](#nx-03--the-newlib-heap-and-the-threadx-byte-pools-are-not-disjoint) | **P1** | Defect | `_sbrk` can allocate into the ThreadX byte pools after 2 560 bytes; the linker script claims the two are disjoint | `sysmem.c:56-72`, `.ld:200-211` | `atof`→`strtod`→`_Balloc`→`_malloc_r` all linked; reachable from `ptp pps` and the servo CLI. One-line fix: bound against `__RAM_segment_used_end__` |
+| [NX-03](#nx-03--the-newlib-heap-and-the-threadx-byte-pools-are-not-disjoint) | ✅ **P1** | Defect | `_sbrk` can allocate into the ThreadX byte pools after 2 560 bytes; the linker script claims the two are disjoint | `sysmem.c:56-72`, `.ld:200-211` | `atof`→`strtod`→`_Balloc`→`_malloc_r` all linked; reachable from `ptp pps` and the servo CLI. One-line fix: bound against `__RAM_segment_used_end__` |
 | [NX-04](#nx-04--systick-and-svcall-run-at-priorities-the-documentation-does-not-state) | P2 | Defect/Doc | SysTick runs at priority 4 (not 15) and SVCall at 15 (not 0); changed silently from the FreeRTOS build | `tx_initialize_low_level.S:119-128` | SysTick now preempts ETH. Not unsafe (PRIMASK critical sections) but undocumented; the file's own comment contradicts its code |
 | [NX-05](#nx-05--unchecked-length-arithmetic-on-the-8023-receive-path) | P3 | Defect | `nx_packet_length - header_size` can underflow; chained L2 packet dropped silently | `nsd_netxduo.c:197-206` | Contained by flexPTP's `MIN(len, 128)` clamp — verified in `task_ptp.c:486`. NetX Duo does **not** validate the length itself |
 | [NX-06](#nx-06--the-receive-queue-drop-path-is-the-only-uninstrumented-one) | P2 | Gap | `ETHHW_ReadCallback` drops events on a full queue with no counter | `eth_drv_netxduo.c:687-696` | Already documented as the drop path that bites under load (`architecture.md:335`). Two-line fix in a driver built around counters |

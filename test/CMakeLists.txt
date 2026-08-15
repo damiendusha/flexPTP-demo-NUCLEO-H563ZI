@@ -127,6 +127,15 @@ add_unit_test(test_ptp_ts_codec)
 add_unit_test(test_ptp_endpoint)
 add_unit_test(test_ptp_nsd_lifecycle)
 
+# Header-only, so it needs no library -- just Src/ on the include path, which HOST_INCLUDES
+# already provides via ptp_units' PUBLIC directories? It does not: ptp_units exports only
+# Src/flexptp_nsd. Point at Src/ explicitly.
+add_executable(test_sysmem_bounds test_sysmem_bounds.cpp)
+target_include_directories(test_sysmem_bounds PRIVATE ${REPO_ROOT}/Src)
+target_link_libraries(test_sysmem_bounds PRIVATE GTest::gtest_main)
+target_compile_options(test_sysmem_bounds PRIVATE -Wall -Wextra)
+gtest_discover_tests(test_sysmem_bounds PROPERTIES TIMEOUT 10)
+
 add_host_test(test_host_harness)
 add_host_test(test_rx_ring)
 add_host_test(test_tx_ring)

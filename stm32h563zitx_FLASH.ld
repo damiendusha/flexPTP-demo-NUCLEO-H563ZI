@@ -35,13 +35,31 @@ ENTRY(Reset_Handler)
 _estack = ORIGIN(SRAM1) + LENGTH(SRAM1);    /* end of SRAM1 */
 /* Generate a link error if heap and stack don't fit into RAM.
  *
- * _Min_Stack_Size is load-bearing: _sbrk() in Src/sysmem.c bounds the newlib heap against
- * _estack - _Min_Stack_Size, so it is what keeps malloc() out of the MSP stack.
+ * BOTH are load-bearing now, which they were not before (findings NX-03 and H-5).
  *
- * _Min_Heap_Size is NOT. It reserves space in ._user_heap_stack below, which moves `end`, but
- * _sbrk() never consults it -- nothing enforces a minimum heap. It is documentation, and the
- * reservation is the only reason it has any effect at all (finding H-5). */
-_Min_Heap_Size = 0x200;      /* required amount of heap  */
+ * _Min_Stack_Size reserves the MSP stack at the top of SRAM1.
+ *
+ * _Min_Heap_Size used to be documentation: it reserved space here, which moved `_end`, but
+ * _sbrk() never consulted it and bounded itself against the MSP stack instead -- 181 776 bytes
+ * above `_end`, straight through the ThreadX byte pools. Src/sysmem.c now bounds the heap at
+ * __RAM_segment_used_end__, so this reservation IS the heap and its size is a real limit.
+ *
+ * WHICH MEANS IT HAD TO BE SIZED, not left at ST's template value. Measured on hardware with
+ * a deliberately oversized heap and `osinfo` reporting the high-water mark:
+ *
+ *     at boot .............................. 0 bytes
+ *     7 servo/PPS commands, flexPTP stopped . 0 bytes
+ *     the same commands with flexPTP running . 3 600 bytes
+ *     130 commands ......................... 3 600 bytes  (stable; newlib recycles)
+ *
+ * So the requirement is ~3.6 KB, it appears only once flexPTP is running, and it does not
+ * grow. 0x2000 gives the window 10 240 bytes -- 2.8x the measured peak.
+ *
+ * The old 0x200 was not merely small, it was FICTION: the 3 600 bytes were being allocated
+ * regardless, out of the ThreadX byte pools. Capping the heap at the old figure is what
+ * demonstrated it -- the console thread wedged after seven commands, because newlib's strtod
+ * does not tolerate an allocation failure. See the note in Src/sysmem.c. */
+_Min_Heap_Size = 0x2000;     /* 8 KB; measured peak is 3 600 B -- see above */
 _Min_Stack_Size = 0x800; /* required amount of stack */
 
 /* Specify the memory areas */
@@ -200,9 +218,21 @@ SECTIONS
    * failure rather than anything subtle.
    *
    * It must come AFTER ._user_heap_stack, for the same reason the FreeRTOS heap had to come
-   * before it: _sbrk() hands out everything between `_end` and `_estack - _Min_Stack_Size`,
-   * so a byte pool placed inside that window would be handed to malloc() as well. Sitting
-   * above the reservation keeps the two allocators disjoint.
+   * before it: everything between `_end` and whatever ceiling _sbrk() enforces is memory
+   * malloc() may hand out, so a byte pool inside that window is a byte pool malloc() can
+   * scribble on.
+   *
+   * ORDER IS NECESSARY AND IT IS NOT SUFFICIENT (finding NX-03). This comment used to end
+   * "sitting above the reservation keeps the two allocators disjoint", which did not follow:
+   * _sbrk() bounded itself against `_estack - _Min_Stack_Size`, 179 216 bytes above here, so
+   * the ordering bought 2 560 bytes of separation and no more. Measured on the linked image,
+   * _end = 0x200131F0, this symbol = 0x20013BF0, that old ceiling = 0x2003F800 -- and the
+   * heap's measured peak is 3 600 bytes, so it was over the line in normal operation, not
+   * hypothetically.
+   *
+   * Src/sysmem.c now bounds itself against THIS symbol, which is what makes the sentence
+   * true. Both allocators still have to be told where the line is; the linker script only
+   * draws it.
    *
    * Defined unconditionally, so the symbol exists while FreeRTOS is still the kernel (S2)
    * and nothing has to change here when ThreadX takes over (S3).

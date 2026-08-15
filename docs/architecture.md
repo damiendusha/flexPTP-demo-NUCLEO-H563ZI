@@ -534,8 +534,8 @@ Regions from `stm32h563zitx_FLASH.ld`; usage from the current Debug build.
 
 | Region | Base | Size | Contents | Used |
 |---|---|---|---|---|
-| FLASH | `0x08000000` | 2 MB | `.isr_vector`, `.text`, `.rodata`, `.data` LMA | 206 344 B (9.84%) |
-| SRAM1 | `0x20000000` | 256 KB | `.data`, `.bss`, main stack, C heap, **ThreadX byte pools** | 80 864 B (30.85%) |
+| FLASH | `0x08000000` | 2 MB | `.isr_vector`, `.text`, `.rodata`, `.data` LMA | 207 864 B (9.91%) |
+| SRAM1 | `0x20000000` | 256 KB | `.data`, `.bss`, main stack, C heap, **ThreadX byte pools** | 88 584 B (33.79%) |
 | SRAM2 | `0x20040000` | 64 KB | *(unallocated — deliberate spare capacity)* | 0 B |
 | SRAM3 | `0x20050000` | 320 KB | Ethernet DMA descriptors + buffers, **NetX Duo packet pool and IP thread stack** | 89 704 B (27.38%) |
 
@@ -547,10 +547,27 @@ moved to SRAM3 alongside the DMA buffers it feeds.
 - Ethernet DMA buffers live in SRAM3: 48 descriptors plus 48 × 1528 B of frame buffers.
 - **`__RAM_segment_used_end__`** is PROVIDEd immediately after the heap/stack reservation and is
   where ThreadX starts. Everything above it becomes `_tx_initialize_unused_memory`, from which
-  the CMSIS-RTOS2 wrapper carves its two byte pools. It must come **after** `._user_heap_stack`
-  for the same reason the FreeRTOS heap had to come before it: `_sbrk()` hands out everything
-  between `_end` and the stack reservation, so a byte pool inside that window would also be
-  handed to `malloc()`.
+  the CMSIS-RTOS2 wrapper carves its two byte pools.
+- **There are three allocators in SRAM1, not two**, and until finding NX-03 the newlib heap
+  overlapped the other two. `_sbrk()` bounded itself against `_estack - _Min_Stack_Size`, on
+  ST's template assumption that the heap and the MSP stack are the only things growing towards
+  each other — 181 776 bytes above `_end`, of which only the first 2 560 were the heap's. The
+  rest was the byte pools. It now bounds itself at `__RAM_segment_used_end__`, which is what
+  makes the ordering above actually mean something.
+
+  | Allocator | Region | Size | Reported by |
+  |---|---|---|---|
+  | newlib heap (`malloc`) | `_end` → `__RAM_segment_used_end__` | 10 240 B | `osinfo`, high-water mark |
+  | ThreadX stack pool | above `__RAM_segment_used_end__` | 24 KB | `osinfo` |
+  | ThreadX object pool | after it | 8 KB | `osinfo` |
+  | MSP stack | grows down from `_estack` | 2 KB reserved | — |
+
+  **The heap is sized from measurement**: the high-water mark is 3 600 bytes, it appears when
+  flexPTP starts, and it does not grow over hundreds of CLI commands. Those 3 600 bytes were
+  previously taken out of the byte pools. Exhaustion **reports and halts** rather than
+  returning `ENOMEM`, because the only allocator here is newlib's float conversion and it does
+  not tolerate a failure — capping the heap at the old figure wedged the console thread after
+  seven commands while the rest of the firmware ran on.
 - **No cache maintenance is performed anywhere**, and none is needed: the H563's DCACHE is
   disabled out of reset and `HAL_Init()` does not enable it. Enabling DCACHE later would
   require making the SRAM3 Ethernet region non-cacheable or adding explicit maintenance.

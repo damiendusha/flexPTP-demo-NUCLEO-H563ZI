@@ -58,6 +58,17 @@ CMD_FUNCTION(os_info) {
     report_byte_pool("stacks", &StackBytePool);
     report_byte_pool("objects", &HeapBytePool);
 
+    /* The newlib heap is a third allocator and it used to be invisible. It is small, it is
+       hard-bounded against the byte pools above it (NX-03), and `atof()` in the servo and PPS
+       CLI commands is what puts anything in it -- so the peak is the number that says whether
+       the bound is comfortable or marginal. */
+    {
+        extern void sysmem_heap_usage(uint32_t *, uint32_t *);
+        uint32_t peak = 0, size = 0;
+        sysmem_heap_usage(&peak, &size);
+        MSG("  C heap: %u of %u bytes used (peak)\n", (unsigned)peak, (unsigned)size);
+    }
+
     /* Enumerate the threads.
      *
      * Worth having, and new in S3: the port changes both the priority scale and the thread
