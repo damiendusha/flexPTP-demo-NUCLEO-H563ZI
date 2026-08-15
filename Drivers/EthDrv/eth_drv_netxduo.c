@@ -118,6 +118,23 @@ static osMessageQueueId_t rx_msg_q;
  * assumed. */
 #define NX_LINK_TIMESTAMP_HEADROOM (3U * sizeof(ULONG))
 
+/* The 2-byte shim's whole contract, as a link-time assertion rather than a comment.
+ *
+ * rx_thread copies the frame at prepend_ptr + 2 so that the 14-byte Ethernet header leaves the
+ * IP header 4-byte aligned, AND so that the 12 bytes NetX Duo later writes over data_start
+ * land on header bytes it has already consumed. Both need 2 + 14 = 16 bytes of headroom, which
+ * is what NX_PHYSICAL_HEADER provides -- today.
+ *
+ * If a NetX Duo bump or an nx_user.h edit ever reduced it, nothing would fail to compile and
+ * nothing would say anything: every IPv4 packet would silently fail its header checksum while
+ * ARP, which has none, worked perfectly. That asymmetry cost a bench session to diagnose the
+ * first time (TS-10). */
+_Static_assert(NX_PHYSICAL_HEADER >= 16,
+               "the 2-byte alignment shim needs 16 bytes of headroom: 2 + 14, so the IP header "
+               "lands 4-byte aligned and NetX Duo's 12-byte receive timestamp fits below it. "
+               "See rx_thread(); reducing NX_PHYSICAL_HEADER silently breaks every IPv4 "
+               "checksum while leaving ARP working.");
+
 /**
  * Drains the RX ring into NetX Duo.
  *

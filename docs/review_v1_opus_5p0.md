@@ -923,6 +923,14 @@ _Static_assert(NX_PHYSICAL_HEADER >= 16,
                "header lands 4-byte aligned and NetX Duo's 12-byte timestamp fits below it");
 ```
 
+> **✅ ADDRESSED** — added, with the failure mode in the message so the person who hits it does
+> not have to rediscover it.
+>
+> **Evidence.** Mutation: defining `NX_PHYSICAL_HEADER` as 14 in `Inc/nx_user.h` — the realistic
+> way it would drop — now fails the build with
+> *"static assertion failed: the 2-byte alignment shim needs 16 bytes of headroom…"*. Before,
+> that edit compiled cleanly and broke every IPv4 checksum while ARP kept working.
+
 ---
 
 ## 4 — C++ extraction opportunities
@@ -1473,7 +1481,7 @@ how, and for the evidence.
 | [TS-07](#ts-07--no-test-of-the-nsd-lifecycle) | ✅ P2 | Test gap | No lifecycle test for `ptp_nsd_init` teardown / transport switch / re-init | `nsd_netxduo.c` | The state machine holding NX-02. Needs a fake, not a real `NX_IP` |
 | [TS-08](#ts-08--no-compile-only-gate-for-the-non-default-eth_stack-paths) | P3 | Test gap | `ETH_STACK=ETHERLIB` and `=NONE` are not built anywhere | `ci.yml` | Two matrix entries; also settles AR-05 |
 | [TS-09](#ts-09--the-isr-half-of-the-context-rule-is-reachable-on-the-host-after-all) | P3 | Opportunity | A settable host `__get_IPSR()` makes the ISR half of the context rule testable | `test/host/cmsis_compiler.h` | Pins the *wrapper's* rule, not the silicon's — document the narrower claim. Contradicts a "cannot" in two docs |
-| [TS-10](#ts-10--the-2-byte-alignment-contract-has-no-static-assert) | P3 | Test gap | No `_Static_assert` on `NX_PHYSICAL_HEADER >= 16` | `eth_drv_netxduo.c:148-167` | A NetX Duo bump would silently reintroduce "every IPv4 checksum fails while ARP works" |
+| [TS-10](#ts-10--the-2-byte-alignment-contract-has-no-static-assert) | ✅ P3 | Test gap | No `_Static_assert` on `NX_PHYSICAL_HEADER >= 16` | `eth_drv_netxduo.c:148-167` | A NetX Duo bump would silently reintroduce "every IPv4 checksum fails while ARP works" |
 | [CX-01](#cx-01--rxring--txring-as-typed-c-over-an-injected-descriptor-view) | Opp (H) | C++ | Extract the ring state machines; retires the `MAP_32BIT` arena, `-no-pie` and two harness tests | `mac_drv.c` → C++ | Enables ASan/UBSan. Breaks the "`mac_drv.c` unchanged" property — a real trade |
 | [CX-02](#cx-02--bytefifo-with-an-injected-critical-section-policy) | Opp (H) | C++ | `ByteFifo<Crit>` with an injectable critical section | `blocking_fifo.c` → C++ | An instrumented `Crit` makes the F67/N7 mid-push interleaving an actual test. Pairs with TS-01 |
 | [CX-03](#cx-03--tokenizer-and-commandtable) | Opp (M) | C++ | `Tokenizer` over `string_view` + `CommandTable` | `cli.c` → C++ | Makes the F74/N8 shared-state defect unrepresentable rather than fixed. Pairs with TS-02 |
