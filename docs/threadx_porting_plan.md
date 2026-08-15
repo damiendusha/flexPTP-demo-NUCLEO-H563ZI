@@ -10,8 +10,17 @@ Companion documents: [architecture.md](architecture.md) ·
 [implementation_plan.md](implementation_plan.md) (the original H743→H563 port, same format) ·
 [port_review.md](port_review.md)
 
-> **Status: S0–S6 done and green on hardware. S7 is next** — see the
-> [progress table](#progress-table), and the per-stage progress notes under each stage heading.
+> **Status: the port is complete.** Every stage S0–S8 is done and green on hardware
+> (8/8 HIL, board in `SLAVE`), plus two of the three optional S5e host-test tiers. The one
+> deliberate omission is S5e Option A — see [threadx_s5e_plan.md](threadx_s5e_plan.md).
+>
+> An independent multi-agent code review has since been run over the whole port and returned
+> three findings, all nits, all verified and fixed: stale FreeRTOS/lwIP text in the boot banner
+> and README, a receive counter that was declared and printed but never incremented, and a
+> transmit-timestamp registry entry orphaned by the link-down drop path.
+>
+> See the [progress table](#progress-table), and the per-stage progress notes under each stage
+> heading.
 >
 > `docs/threadx_s6_handoff.md` was a self-contained brief for picking up S6 with no prior
 > context. S6 is closed, and the brief ranked three candidate causes that all turned out to be
@@ -79,7 +88,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending · ⏸️ optional/deferred
 | **P0** | Feasibility study, supply-chain evidence gathering | — | — | ✅ done |
 | **P1** | Supply-chain decision (Eclipse + ST wrapper) | — | — | ✅ done |
 | **P2** | This execution plan | — | — | ✅ done |
-| **P3** | Plan approved by the maintainer | — | — | ⬜ **pending — blocks everything below** |
+| **P3** | Plan approved by the maintainer | — | — | ✅ done |
 | **S0** | Baseline capture + HIL harness (`tools/hil/`) | ✅ 8/8 green, twice | 1 d | ✅ **done** |
 | **S1** | C++ proof TU + host GTest tree (`test/`) | ✅ 9/9, `cpp_ctor: ok`, no regressions | 0.5–1 d | ✅ **done** |
 | **S1b** | Tier 1+2 host harness: real ST headers + descriptor-ring model; characterisation tests pinning current-driver behaviour | ⬜ host only | 1–1.5 d | ✅ **done — 25 tests, 0.06 s; F57/F61/F71 + wrap ordering all mutation-verified; no production change needed** |
@@ -90,10 +99,10 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending · ⏸️ optional/deferred
 | **S5b** | Driver: RX path → `nx_link_ethernet_packet_received()` | ✅ (with S5c) | 1 d | ✅ **done** |
 | **S5c** | Driver: TX path, multicast join/leave, deferred processing | ✅ ping 0% @ 1400 B, 0.337 ms | 1 d | ✅ **done** |
 | **S5d** | DHCP client | ✅ 192.168.2.191, 6/6 vs baseline | 0.5 d | ✅ **done** |
-| **S5e** | *Tier 3:* real ThreadX (`ports/linux`) + real NetX Duo + RAM driver on the host | ⬜ host only | 1–5 d | ⏸️ **not started — see [threadx_s5e_plan.md](threadx_s5e_plan.md)**, which recommends a cheaper variant |
+| **S5e** | *Tier 3:* host-test tiers — **B** real ThreadX (`ports/linux`) context rules, **C** extracted NSD logic units, **A** real NetX Duo + RAM driver | ✅ host only, 55 tests | 1–5 d | ✅ **B and C done; A deliberately not built** — see [threadx_s5e_plan.md](threadx_s5e_plan.md) |
 | **S6** | NSD: UDP/IPv4 E2E + TX-timestamp deferral fix | ✅ 9/9 vs baseline, `\|offset\| ≤ 3301 ns` | 2–3 d | ✅ **done** |
 | **S7** | 802.3 transport, P2P, all three profile presets | ✅ TX, RX and peer-delay proven; Announce/Sync blocked by the host's `asCapable` threshold | 1–2 d | ✅ **done, with a documented host limitation** |
-| **S8** | Cleanup, docs rewrite, CI update, final review | ✅ 10/10 vs baseline | 1.5–2 d | ✅ **done** (review deferred at maintainer's request) |
+| **S8** | Cleanup, docs rewrite, CI update, final review | ✅ 10/10 vs baseline | 1.5–2 d | ✅ **done.** Independent review since run: 3 findings, all nits, all fixed and re-verified 8/8 on hardware |
 | **B1** | *Bonus:* unit-test the F42 TX-ring ordering logic | ⏸️ | 0.5 d | ⏸️ optional |
 
 **Total: 14–20 working days.** Two days above the feasibility estimate, all of it the S1b/S5e

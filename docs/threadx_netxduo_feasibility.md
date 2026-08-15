@@ -3,6 +3,14 @@
 An assessment of what it would take to replace FreeRTOS with **Eclipse ThreadX** and lwIP with
 **NetX Duo**, keeping flexPTP, the H563 MAC driver and the CLI.
 
+> **Historical — written before the port, and the port has since been done.** This document is
+> kept as the reasoning that led to the decision, not as a description of the result. It is
+> written in the conditional throughout ("would need", "should cost"), and a few of its
+> predictions were wrong in instructive ways — most notably its reading of which
+> `NX_ENABLE_VLAN` behaviour was ST-specific, corrected in place mid-port. For what was
+> actually built see [architecture.md](architecture.md); for how it went see
+> [threadx_porting_plan.md](threadx_porting_plan.md).
+
 Companion documents: [architecture.md](architecture.md) (what exists today) ·
 [design_doc.md](design_doc.md) (porting decisions) ·
 [port_review.md](port_review.md) (findings)

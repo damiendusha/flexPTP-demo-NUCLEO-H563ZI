@@ -1,5 +1,30 @@
 # Port flexPTP Demo to NUCLEO-H563ZI — Implementation Plan
 
+> ## Historical — this plan is closed
+>
+> This is the plan for the **first** port: NUCLEO-H743ZI (Cortex-M7) → NUCLEO-H563ZI
+> (Cortex-M33). All twenty stages are complete, and it is kept as a record of what was
+> planned and what was found, not as a description of the current firmware.
+>
+> **The project has since been ported again.** FreeRTOS was replaced by Eclipse ThreadX and
+> lwIP by Eclipse NetX Duo, so anything below that names `FreeRTOSConfig.h`, `lwipopts.h`,
+> `eth_drv_lwip.c` or `Modules/lwip_port/` refers to files that **no longer exist**. Stage 9
+> in particular configures a kernel that is gone.
+>
+> | For | Read |
+> |---|---|
+> | The current firmware | [architecture.md](architecture.md) |
+> | The second port, stage by stage | [threadx_porting_plan.md](threadx_porting_plan.md) |
+> | Why ThreadX and NetX Duo | [threadx_netxduo_feasibility.md](threadx_netxduo_feasibility.md) |
+> | Design decisions that still hold | [design_doc.md](design_doc.md) |
+> | What changed after this plan closed | [the section at the end](#what-changed-after-this-plan-closed) |
+>
+> Statements of *present* state in this document — "the build is now clean", "the port works
+> end to end", the patch inventory, the CLI command count — were true when written and are
+> superseded. They are left as written for the same reason the
+> [Stage Log](design_doc.md#stage-log) is: rewriting a record to match a later state destroys
+> the one thing a record is for.
+
 > **Revision note.** Stages 5 onward were renumbered during plan review. Five stages were
 > added (build-config consolidation, build-system retarget, flexPTP hardware port, OpenOCD
 > provisioning, project metadata), and the build system was pulled forward so the project
@@ -841,3 +866,32 @@ every point tested. What remains unmeasured is **jitter**, which does need an in
 Previously recorded here as blocked on an oscilloscope. It was not: the pin can be sampled
 over SWD faster than the pulse it carries, and that is enough to establish presence, period
 and duty. Only jitter still needs an instrument.
+
+---
+
+## What changed after this plan closed
+
+Enough to make several statements above misleading if read as current. The body is left as
+written; this is the delta.
+
+| Then (this plan) | Now |
+|---|---|
+| FreeRTOS 11, `GCC_ARM_CM33_NTZ_NONSECURE`, `Inc/FreeRTOSConfig.h` | Eclipse ThreadX 6.5.1, `ports/cortex_m33/gnu`, `Inc/tx_user.h`. `TX_SINGLE_MODE_NON_SECURE`; the secure-stack sources are filtered out of the build |
+| lwIP, `Inc/lwipopts.h`, `Modules/lwip_port/`, `eth_drv_lwip.c` | Eclipse NetX Duo 6.5.1, `Inc/nx_user.h`, `eth_drv_netxduo.c`. All four of those paths are **deleted** |
+| flexPTP's bundled `nsd_lwip.c` | This project's own NSD under `Src/flexptp_nsd/`, supplied through `FLEXPTP_NSD_SRC` — flexPTP ships no NetX Duo driver |
+| Two submodule patches (F59, F60/F66) | **Four**: those two, plus a generic IGMP-address extension point and the F80 non-blocking heartbeat enqueue |
+| Timestamps carried by `LWIP_PBUF_CUSTOM_DATA` injection | `NX_LINK_TIME` through NetX Duo's own `nx_link` API. **`NX_ENABLE_VLAN` is mandatory** — the entire `nx_link` layer is behind it |
+| gPTP "deferred" | Implemented in S7. PTP over raw 802.3 and profile switching both work; the peer-delay exchange is proven on the wire. Reaching `SLAVE` under 802.1AS remains unverifiable here for the same PHC reason as `LOCKED` |
+| No automated tests | 55 `ctest` entries (59 GoogleTest cases) covering the driver rings, the NSD logic units and the ThreadX context rules, plus a 10-check hardware suite. See [testing_architecture.md](testing_architecture.md) |
+| 23 CLI commands | 24 |
+| 217 160 B FLASH, 133 168 B SRAM1 | 206 344 B FLASH, 80 864 B SRAM1, 89 704 B SRAM3 |
+
+Two things did **not** change, and both are load-bearing:
+
+- **`mac_drv.c` was not modified by the second port at all.** The register-level driver, the
+  descriptor state machine and every finding closed against it (F54, F57, F58, F61, F71, F75)
+  carry over untouched. It is the most expensive verified artefact in the repository and the
+  ThreadX plan explicitly refused to rewrite it.
+- **The clock tree, the PTP clock derivation and the RMII pin map** are properties of the
+  silicon, not the software. [ptp_clock.md](ptp_clock.md) and the corresponding
+  [design_doc.md](design_doc.md) sections remain current.

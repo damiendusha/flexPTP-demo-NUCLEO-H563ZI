@@ -4,9 +4,12 @@ How this firmware fits together: the module stack, the threads, the interrupts, 
 provenance of every third-party component.
 
 Companion documents: [design_doc.md](design_doc.md) (porting decisions) ·
+[testing_architecture.md](testing_architecture.md) (how it is tested, and what is not) ·
 [ptp_clock.md](ptp_clock.md) (PTP clock derivation) ·
+[ptp_profiles.md](ptp_profiles.md) (default vs gPTP presets) ·
 [port_review.md](port_review.md) (findings) ·
-[implementation_plan.md](implementation_plan.md) (staged work plan)
+[threadx_porting_plan.md](threadx_porting_plan.md) (the RTOS/stack port) ·
+[implementation_plan.md](implementation_plan.md) (the original silicon port — historical)
 
 ## Table of Contents
 
@@ -88,12 +91,12 @@ source. Two submodules are the exception, and both changes are **permanent bug f
 | **CMSIS Device STM32H5xx** | 1.7.0 | in-tree, `Drivers/CMSIS/Device` | **As-is.** From `STMicroelectronics/cmsis_device_h5` |
 | **CMSIS-RTOS2 API header** | ARM | in-tree, `Drivers/CMSIS/CMSIS_RTOS_V2/cmsis_os2.h` | **As-is.** The header is RTOS-agnostic and survived the kernel swap unchanged. ST's FreeRTOS-backed `cmsis_os2.c`, `freertos_os2.h` and `freertos_mpool.h` were removed with FreeRTOS in S3 |
 | **CMSIS-RTOS2 implementation** | [`stm32-mw-cmsis-rtos-tx`](https://github.com/STMicroelectronics/stm32-mw-cmsis-rtos-tx) `v1.4.1` | git submodule | **As-is**, and the one non-MIT component in the tree (SLA0044). No MIT equivalent exists — Eclipse ThreadX ships FreeRTOS, OSEK and POSIX layers but not CMSIS-RTOS2 |
-| **ThreadX** | [`eclipse-threadx/threadx`](https://github.com/eclipse-threadx/threadx) `v6.5.1.202602a_rel` | git submodule | **As-is** (MIT). Configured by `Inc/tx_user.h`. `tx_initialize_low_level.S` is **ours** — Eclipse keeps it in `example_build/` because it is board-specific; see `Startup/tx_initialize_low_level.S` for what changed and what was deliberately left out |
-| **NetX Duo** | [`eclipse-threadx/netxduo`](https://github.com/eclipse-threadx/netxduo) `v6.5.1.202602_rel` | git submodule | **As-is** (MIT). Configured by `Inc/nx_user.h`. Eclipse upstream rather than ST's fork, which is pinned at 6.4.0 and missing published CVE fixes on the IPv4/DHCP receive path this firmware runs — see [threadx_netxduo_feasibility.md](threadx_netxduo_feasibility.md#choosing-the-supply-chain). **`NX_ENABLE_VLAN` is mandatory**: the whole `nx_link` layer, which is the PTP timestamp path, is behind it |
+| **ThreadX** | [`eclipse-threadx/threadx`](https://github.com/eclipse-threadx/threadx) `44d7c95`, one commit past `v6.5.1.202602a_rel` (that commit is `SECURITY.md` only) | git submodule | **As-is** (MIT). Configured by `Inc/tx_user.h`. `tx_initialize_low_level.S` is **ours** — Eclipse keeps it in `example_build/` because it is board-specific; see `Startup/tx_initialize_low_level.S` for what changed and what was deliberately left out |
+| **NetX Duo** | [`eclipse-threadx/netxduo`](https://github.com/eclipse-threadx/netxduo) `473d192`, two commits past `v6.5.1.202602_rel` (both security-policy docs) | git submodule | **As-is** (MIT). Configured by `Inc/nx_user.h`. Eclipse upstream rather than ST's fork, which is pinned at 6.4.0 and missing published CVE fixes on the IPv4/DHCP receive path this firmware runs — see [threadx_netxduo_feasibility.md](threadx_netxduo_feasibility.md#choosing-the-supply-chain). **`NX_ENABLE_VLAN` is mandatory**: the whole `nx_link` layer, which is the PTP timestamp path, is behind it |
 | **lwIP** | — | **removed in S3** | Replaced by NetX Duo. The `LWIP_PBUF_CUSTOM_DATA` injection it needed is gone with it: NetX Duo carries timestamps in its own API |
 | **flexPTP** | `76aaf67` (`RC1.0-11`) | git submodule | **Patched — three files now.** A servo fix (F59, `0002-…`), a generic network-stack extension point (`0003-…`), and a non-blocking heartbeat enqueue ([F80](port_review.md#f80--flexptps-heartbeat-cannot-be-enqueued-from-threadxs-timer-thread-resolved), `0004-…`). Plus two external workarounds. (1) `__PRI64_PREFIX=__INT64` compile definition, because flexPTP uses a glibc-internal macro newlib lacks (F47). (2) The STM32H5 hardware port is supplied by this project, since flexPTP ships none |
 | **embfmt** | `670a349` | git submodule | **Patched.** Formatted-print backend for `MSG()`. `%ll` conversions were dropped entirely and NaN printed as `0.0000`; see [F60](port_review.md#f60--embfmt-drops-ll-conversions-and-renders-nan-as-00000-resolved) and `patches/embfmt/` |
-| **EtherLib** | `ec35be5` | git submodule | **Present but not compiled.** Alternative to lwIP, selectable via the `ETH_STACK` CMake variable |
+| **EtherLib** | `ec35be5` | git submodule | **Present but not compiled.** Alternative to NetX Duo, selectable via the `ETH_STACK` CMake variable. See [design_doc.md](design_doc.md#etherlib-porting-guide) |
 
 > **"CMSIS Core (M) 5.6" is not a stale version.** `5.6` is the **Core(M)** version from
 > `cmsis_version.h`, which is versioned separately from the CMSIS *pack*. CMSIS 5.9.0 — the
@@ -146,10 +149,13 @@ Project-owned code that would otherwise look like a third-party module:
 
 | Component | Location | Role |
 |---|---|---|
-| **EthDrv** | `Drivers/EthDrv/` | Register-level Ethernet MAC driver (`mac_drv.c`), PHY driver, and the lwIP/EtherLib glue |
-| **lwIP port** | `Modules/lwip_port/` | `sys_arch` layer mapping lwIP onto FreeRTOS |
+| **EthDrv** | `Drivers/EthDrv/` | Register-level Ethernet MAC driver (`mac_drv.c`), PHY driver, and the NetX Duo glue (`eth_drv_netxduo.c`) |
+| **flexPTP NSD** | `Src/flexptp_nsd/` | This project's network-stack driver for flexPTP, supplied through `FLEXPTP_NSD_SRC` rather than using flexPTP's bundled one. Three of its units are C++ and host-tested |
 | **blocking_io** | `Modules/blocking_io/` | Blocking FIFO behind the console |
 | **flexPTP HW port** | `Src/flexptp_port/` | STM32H563 hardware port for flexPTP (Stage 14) |
+
+`Modules/lwip_port/` — the `sys_arch` layer that mapped lwIP onto FreeRTOS — was deleted in S3
+along with both of the things it bridged.
 
 > **Submodule pins are all ahead of the NUCLEO-H743ZI reference project.** This is a
 > deliberate, documented decision — see [design_doc.md](design_doc.md#submodule-pinning).
@@ -165,27 +171,33 @@ Project-owned code that would otherwise look like a third-party module:
         └─────────────────────────────────────────────────────────┘
                 │                    │                    │
         ┌───────▼────────┐   ┌───────▼────────┐   ┌───────▼───────┐
-        │ standard_output│   │    flexPTP     │   │     lwIP      │
-        │  + blocking_io │   │  + Kalman servo│   │               │
+        │ standard_output│   │    flexPTP     │   │   NetX Duo    │
+        │  + blocking_io │   │  + Kalman servo│   │  (nx_link)    │
         └───────┬────────┘   └───┬────────┬───┘   └───────┬───────┘
                 │                │        │               │
-                │        ┌───────▼──┐  ┌──▼────────────┐  │
-                │        │ HW port  │  │ nsd_lwip.c    │  │  flexPTP ports
-                │        │ (H563)   │  │ (bundled)     │  │
-                │        └───────┬──┘  └──┬────────────┘  │
+                │        ┌───────▼──┐  ┌──▼─────────────┐ │
+                │        │ HW port  │  │ Src/flexptp_nsd│ │  flexPTP ports
+                │        │ (H563)   │  │ (THIS project) │ │
+                │        └───────┬──┘  └──┬─────────────┘ │
                 │                │        │               │
         ┌───────▼────────────────▼────────▼───────────────▼───────┐
-        │   EthDrv:  mac_drv.c  ·  phy_drv  ·  eth_drv_lwip.c     │  project drivers
+        │  EthDrv:  mac_drv.c · phy_drv · eth_drv_netxduo.c       │  project drivers
         └─────────────────────────┬───────────────────────────────┘
                                   │
         ┌─────────────────────────▼───────────────────────────────┐
-        │        STM32H5 HAL  ·  CMSIS-RTOS2  ·  FreeRTOS         │  vendor
+        │      STM32H5 HAL  ·  CMSIS-RTOS2  ·  Eclipse ThreadX    │  vendor
         └─────────────────────────┬───────────────────────────────┘
                                   │
         ┌─────────────────────────▼───────────────────────────────┐
         │              CMSIS Core  ·  STM32H563 hardware          │
         └─────────────────────────────────────────────────────────┘
 ```
+
+The NSD box is the one that moved. Under lwIP this project used flexPTP's **bundled**
+`nsd_lwip.c`; under NetX Duo it supplies its own through flexPTP's `FLEXPTP_NSD_SRC`
+extension point, because flexPTP ships no NetX Duo driver. That is why
+`Src/flexptp_nsd/` exists and why three of its units were extracted into testable,
+dependency-free C++ — see [testing_architecture.md](testing_architecture.md).
 
 Two boundaries are worth calling out:
 
@@ -299,18 +311,35 @@ Three numbers govern the receive path, and they are not interchangeable:
 |---|---|---|
 | `ETH_RX_DESC_CNT` | 24 | descriptors the MAC's DMA can fill before it stalls — a *latch*, not a pause: the engine raises `RBU`, suspends, and only a receive poll demand restarts it (F71) |
 | `RX_MSG_Q_LEN` | = `ETH_RX_DESC_CNT` | ISR → `rx_thread` queue depth |
-| `PBUF_POOL_SIZE` | 8 | frames lwIP can hold at once |
+| `NX_PACKET_POOL_PACKET_COUNT` | 8 | frames NetX Duo can hold at once |
 
 `RX_MSG_Q_LEN` is tied to the ring rather than set independently: `ETHHW_ProcessRx()` marks a
 descriptor `inFlight` before queueing it and does not revisit it until `rx_thread` restores
 it, so one descriptor can never contribute two entries. It was previously 32 — above that
 ceiling, so its top third was unreachable.
 
-**The throughput limit is `PBUF_POOL_SIZE`, not the queue.** A frame is dropped when
-`rx_thread` cannot allocate a pbuf, which happens well before the queue could fill. Measured
-adequate: 300 pings of 1400 bytes at 100, 250 and 500 packets/s all returned 0% loss, so the
-pool is deliberately left at 8. If receive drops ever appear under load, that is the number
-to raise.
+**The limit is the message queue, not the packet pool** — which is the opposite of what this
+section said under lwIP, and the opposite of what the packet-pool comment in `Inc/nx_user.h`
+implies. Measured:
+
+| Load | Result |
+|---|---|
+| 300 pings of 1400 B at 100 / 250 / 500 pkt/s | 0% loss |
+| 53 000 UDP frames of 1400 B in 6 s (line rate) | 52 141 delivered, **0 dropped** |
+| Same flood with the pool cut from 8 to **2** | **0 dropped** |
+
+The pool never starves because `rx_thread` allocates, copies and releases within one queue
+entry, so only one or two packets are ever outstanding from the driver's side. Cutting the
+pool to a quarter of its size changed nothing.
+
+What that leaves is `ETHHW_ReadCallback()`, which drops the event when `rx_msg_q` is full —
+**silently, and without a counter**. That is the drop path that would actually bite under
+sustained overload, and it is the one place in the receive path with no instrumentation.
+`drv_rx_dropped_nopacket` was added after an external review found it declared, printed and
+never incremented; it is correct now, but the experiments above could not make it fire.
+
+So: `NX_PACKET_POOL_PACKET_COUNT` is deliberately left at 8, and if drops ever do appear the
+first thing to instrument is the queue, not the pool.
 
 ---
 
@@ -320,10 +349,10 @@ to raise.
 
 | Interrupt | IRQn | Vector idx | Priority | Handler | Defined in |
 |---|---|---|---|---|---|
-| SVC | −5 | 11 | 0 | `SVC_Handler` | FreeRTOS `portasm.c` |
-| PendSV | −2 | 14 | 15 (set by port) | `PendSV_Handler` | FreeRTOS `portasm.c` |
-| SysTick | −1 | 15 | 15 (`TICK_INT_PRIORITY`) | `SysTick_Handler` | FreeRTOS `port.c` |
-| **ETH** | 106 | 122 | **7** | `ETH_IRQHandler` | `eth_drv_lwip.c` |
+| SVC | −5 | 11 | 0 | `SVC_Handler` | unused — resolves to `Default_Handler` |
+| PendSV | −2 | 14 | 15 (set by port) | `PendSV_Handler` | ThreadX `tx_thread_schedule.S` |
+| SysTick | −1 | 15 | 15 (`TICK_INT_PRIORITY`) | `SysTick_Handler` | `Startup/tx_initialize_low_level.S` — **ours** |
+| **ETH** | 106 | 122 | **7** | `ETH_IRQHandler` | `eth_drv_netxduo.c` |
 | **USART3** | 60 | 76 | **12** | `USART3_IRQHandler` | `serial_io.c` |
 | **GPDMA1 Ch0** | 27 | 43 | **12** | `GPDMA1_Channel0_IRQHandler` | `serial_io.c` |
 
@@ -332,11 +361,16 @@ handlers in `Src/main.c` that recover the exception frame, print `CFSR`, `HFSR`,
 `PC` and `LR` through the polled UART writer, and decode the causes this port has actually
 hit. Every other vector still resolves to `Default_Handler`, an infinite loop.
 
-That matters more on this part than it looks. The Cortex-M33 port programs `PSPLIM` on every
-context switch, so **a task stack overflow is trapped by hardware** (`UFSR.STKOF`) on the
-offending push, long before FreeRTOS's `configCHECK_FOR_STACK_OVERFLOW` pattern check would
-run at the next switch. `vApplicationStackOverflowHook()` is therefore almost never the thing
-that catches an overflow here — this handler is. Measured:
+That matters more on this part than it looks. ThreadX's Cortex-M33 port programs `PSPLIM` on
+every context switch (`tx_thread_schedule.S`), so **a thread stack overflow is trapped by
+hardware** (`UFSR.STKOF`) on the offending push. This was equally true under FreeRTOS and for
+the same reason — it is a property of the architecture, not of the kernel.
+
+The software check is therefore the backstop, not the primary: `TX_ENABLE_STACK_CHECKING` is
+defined in `Inc/tx_user.h` and `app_stack_error_handler()` is registered with
+`tx_thread_stack_error_notify()` in `main()`, but it only catches what the hardware cannot —
+a stack overrun *and then unwound* before the next context switch. In the ordinary case
+`UsageFault_Handler` gets there first. Measured:
 
 | Failure | Reported |
 |---|---|
@@ -480,11 +514,11 @@ accurate its inputs are.
 
 ## Memory Layout
 
-Regions from `stm32h563zitx_FLASH.ld`; usage from the Stage 15 build.
+Regions from `stm32h563zitx_FLASH.ld`; usage from the current Debug build.
 
 | Region | Base | Size | Contents | Used |
 |---|---|---|---|---|
-| FLASH | `0x08000000` | 2 MB | `.isr_vector`, `.text`, `.rodata`, `.data` LMA | 205 736 B (9.81%) |
+| FLASH | `0x08000000` | 2 MB | `.isr_vector`, `.text`, `.rodata`, `.data` LMA | 206 344 B (9.84%) |
 | SRAM1 | `0x20000000` | 256 KB | `.data`, `.bss`, main stack, C heap, **ThreadX byte pools** | 80 864 B (30.85%) |
 | SRAM2 | `0x20040000` | 64 KB | *(unallocated — deliberate spare capacity)* | 0 B |
 | SRAM3 | `0x20050000` | 320 KB | Ethernet DMA descriptors + buffers, **NetX Duo packet pool and IP thread stack** | 89 704 B (27.38%) |

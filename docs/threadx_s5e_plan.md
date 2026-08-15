@@ -129,8 +129,13 @@ and the same pair for the paths `ptp_tx_timestamp.c` guards.
 ### Option C — the NSD's own logic, on the existing harness
 
 **This was in the S6 plan and never got built.** S6 shipped in C and was verified on hardware
-only, so the three units it named have no automated coverage at all — and neither does anything
-else in `Src/flexptp_nsd/`. The 25 tests in `test/` cover `mac_drv.c` and nothing above it.
+only, so at the time of writing the three units it named had no automated coverage at all —
+and neither did anything else in `Src/flexptp_nsd/`. The 25 tests then in `test/` covered
+`mac_drv.c` and nothing above it.
+
+*(Since built. The three units were extracted to `Src/flexptp_nsd/ptp_{tx_registry,ts_codec,
+endpoint}` and the suite now stands at 55 `ctest` entries — see
+[testing_architecture.md](testing_architecture.md).)*
 
 | Unit | Why it is worth a test |
 |---|---|

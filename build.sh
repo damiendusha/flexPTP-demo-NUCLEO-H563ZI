@@ -16,6 +16,8 @@ BUILD_DIR="${PROJECT_ROOT}/build"
 BUILD_TYPE="Debug"
 CLEAN_BUILD=0
 TARGET="flexptp-demo"
+RUN_TESTS=0
+TESTS_ONLY=0
 
 # OpenOCD. The STM32H5 needs ST's fork: target/stm32h5x.cfg declares "flash bank ... stm32h5x",
 # which names a compiled-in flash driver, not tcl. Stock OpenOCD 0.12.0 has no such driver and
@@ -74,6 +76,14 @@ while [[ $# -gt 0 ]]; do
             WITH_OPENOCD=1
             shift
             ;;
+        --run-tests)
+            RUN_TESTS=1
+            shift
+            ;;
+        --tests-only)
+            TESTS_ONLY=1
+            shift
+            ;;
         -h|--help)
             echo "Usage: $0 [options]"
             echo ""
@@ -85,6 +95,11 @@ while [[ $# -gt 0 ]]; do
             echo "  --with-openocd      Build ST's OpenOCD fork into toolchains/openocd."
             echo "                      Required to flash or debug an STM32H5 -- upstream"
             echo "                      OpenOCD 0.12.0 cannot program this part."
+            echo "  --run-tests         Build the firmware, then build and run the host unit"
+            echo "                      test suite (test/). See docs/testing_architecture.md."
+            echo "  --tests-only        Run the host unit tests WITHOUT building the firmware."
+            echo "                      Skips the ARM toolchain download entirely -- the host"
+            echo "                      suite is compiled with the system gcc/g++."
             echo "  -h, --help          Show this help message"
             exit 0
             ;;
@@ -238,6 +253,33 @@ apply_submodule_patches() {
     done
 }
 
+JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+
+# The host unit tests.
+#
+# A SEPARATE CMake root, not a target of the firmware build: the top-level CMakeLists.txt
+# includes cmake/gcc-arm-none-eabi.cmake unconditionally, so it can only ever produce ARM
+# objects. test/ is its own project() compiled by the system gcc/g++, which is what lets it
+# link a real ThreadX (the Linux port) and run mac_drv.c against a software DMA model.
+#
+# What each tier does and does not prove is in docs/testing_architecture.md. The short version:
+# a green run here says nothing about codegen defects or anything downstream of the timestamp
+# capture -- for those, see tools/hil/.
+#
+# First run downloads GoogleTest via FetchContent, so it needs network.
+run_host_tests() {
+    local test_build_dir="${BUILD_DIR}/test"
+
+    info "Configuring host test suite (${test_build_dir})..."
+    cmake -S "${PROJECT_ROOT}/test" -B "${test_build_dir}"
+
+    info "Building host tests using ${JOBS} parallel jobs..."
+    cmake --build "${test_build_dir}" -j"${JOBS}"
+
+    info "Running host tests..."
+    ctest --test-dir "${test_build_dir}" --output-on-failure
+}
+
 # Step 0: Build OpenOCD if asked
 if [ "${WITH_OPENOCD}" -eq 1 ]; then
     provision_openocd
@@ -250,6 +292,15 @@ if [ -d "${PROJECT_ROOT}/.git" ]; then
 fi
 
 apply_submodule_patches
+
+# --tests-only stops here. The host suite needs the submodules (it compiles ST's real CMSIS
+# device headers and links Modules/threadx) but not the cross-compiler, so there is no reason
+# to pull 200 MB of ARM toolchain to run it.
+if [ "${TESTS_ONLY}" -eq 1 ]; then
+    run_host_tests
+    success "Host tests passed."
+    exit 0
+fi
 
 # Step 2: Ensure toolchain is downloaded and extracted
 if [ ! -f "${TOOLCHAIN_DIR}/bin/arm-none-eabi-gcc" ]; then
@@ -297,7 +348,6 @@ cmake -S "${PROJECT_ROOT}" -B "${BUILD_DIR}" \
     -DCMAKE_BUILD_TYPE="${BUILD_TYPE}"
 
 # Step 6: Build target
-JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 info "Building target '${TARGET}' using ${JOBS} parallel jobs..."
 cmake --build "${BUILD_DIR}" --target "${TARGET}" -j"${JOBS}"
 
@@ -317,4 +367,12 @@ if [ -x "${OPENOCD_DIR}/bin/openocd" ]; then
 else
     echo "No OpenOCD in toolchains/. Run '$0 --with-openocd' to build ST's fork;"
     echo "upstream OpenOCD 0.12.0 cannot program an STM32H5."
+fi
+
+# Step 8: Host unit tests, if asked. After the firmware so that a compile error in the thing
+# being shipped is reported before a test failure in the thing testing it.
+if [ "${RUN_TESTS}" -eq 1 ]; then
+    echo ""
+    run_host_tests
+    success "Host tests passed."
 fi

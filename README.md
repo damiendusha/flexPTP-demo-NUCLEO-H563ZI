@@ -7,9 +7,14 @@
 Still not clear what is it useful for? No worries, it's a behind-the-scenes support technology that you use unaware every day if you have a smartphone or when you are connected to the internet. Modern telecommunication and measurement systems often rely on precise time synchronization down to the nanoseconds' scale. Methods got standardized by the IEEE and now it's known by the name of the Precision Time Protocol. This software project is an evaluation environment to showcase the capabilities of our IEEE 1588 PTP implementation named `flexPTP` on the STMicroelectronics NUCLEO-H563ZI board.
 
 This project is a port of [flexPTP-demo-NUCLEO-H743ZI](https://github.com/epagris/flexPTP-demo-NUCLEO-H743ZI)
-from the STM32H743 (Cortex-M7) to the STM32H563 (Cortex-M33). The porting work, the decisions
-behind it and every defect found along the way are documented in [`docs/`](docs/) — start with
-[`docs/architecture.md`](docs/architecture.md).
+from the STM32H743 (Cortex-M7) to the STM32H563 (Cortex-M33). It has since been ported a
+second time, from FreeRTOS and lwIP to **Eclipse ThreadX and Eclipse NetX Duo**, which is what
+it runs today.
+
+The porting work, the decisions behind it and every defect found along the way are documented
+in [`docs/`](docs/) — start with [`docs/architecture.md`](docs/architecture.md) for how the
+firmware fits together, or [`docs/testing_architecture.md`](docs/testing_architecture.md) for
+how it is verified.
 
 ### Get the sources
 
@@ -91,6 +96,68 @@ cmake --build build --target flexptp-demo
 
 Outputs land in the chosen build directory: `flexptp-demo.elf`, `.bin`, `.hex` and `.map`.
 Both the `debug` and `release` presets are tested on hardware.
+
+## Testing
+
+Two suites. The host suite needs nothing but a compiler; the hardware suite needs the board.
+What each one can and — just as importantly — **cannot** prove is set out in
+[`docs/testing_architecture.md`](docs/testing_architecture.md).
+
+### Host unit tests — no board required
+
+55 `ctest` entries (59 GoogleTest cases) covering the Ethernet descriptor rings, the flexPTP
+network-stack driver's logic units, and the ThreadX context rules against a real kernel. The
+whole suite runs in about 0.2 seconds and gates every push in CI.
+
+```bash
+./build.sh --run-tests
+```
+
+That builds the firmware first, then the tests. To run only the tests — which skips the
+200 MB ARM toolchain download entirely, since the host suite is compiled with the system
+`gcc`/`g++`:
+
+```bash
+./build.sh --tests-only
+```
+
+Or drive CMake directly. `test/` is a **separate CMake root**, not a target of the firmware
+build, because the top-level `CMakeLists.txt` is unconditionally cross-compiling:
+
+```bash
+cmake -S test -B build/test && cmake --build build/test -j && ctest --test-dir build/test --output-on-failure
+```
+
+The first run downloads GoogleTest via `FetchContent`, so it needs network once.
+
+> [!IMPORTANT]
+> A green host suite says **nothing** about codegen defects, memory ordering, or anything
+> downstream of the timestamp capture. Two of this port's findings were an optimisation-level
+> HardFault and a bounded wait the compiler deleted above `-Og`; the host tests compile
+> different code, with a different compiler, for a different instruction set. Roughly a
+> quarter of the findings in [`docs/port_review.md`](docs/port_review.md) are reachable only
+> on hardware.
+
+### Hardware in the loop — board required
+
+Drives the board's serial CLI from the host, with OpenOCD for flash and reset. Ten checks,
+from PHY identification through DHCP and ping to a bounded PTP offset in `SLAVE`.
+
+```bash
+tools/hil/run.py --flash build/flexptp-demo.elf --stage S8
+```
+
+> [!WARNING]
+> Without `--flash` the runner tests **whatever firmware is already on the board**, and will
+> report a confident pass for code you never loaded.
+
+`tools/hil/run.py --list` shows the checks and the per-stage sets; `--compare
+tools/hil/baseline.json` diffs against golden values captured from the pre-port firmware.
+Exit status is `0` pass · `1` fail · `2` board unreachable · `3` passed but incomplete —
+**a skip is not a pass**, and conflating the two is how one finding survived for days.
+
+Details, including the network setup for a direct cable, are in
+[`tools/hil/README.md`](tools/hil/README.md).
 
 ## Deploying
 
@@ -210,11 +277,14 @@ ROOT
     CMSIS: ARM CMSIS-related files (CMSIS RTOS V2 and device headers)
     EthDrv: a custom Ethernet driver (with PTP timestamp support), a PHY-interface and network stack interfaces
     stm32h5xx-hal-driver: ST's STM32H5xx HAL driver files (submodule)
-  Inc: headers for compile-time library configuration
-  Middlewares: FreeRTOS CMake configuration
+  Inc: headers for compile-time library configuration (tx_user.h, nx_user.h, flexptp_options.h)
+  Middlewares: CMake glue for ThreadX, the CMSIS-RTOS2 wrapper and NetX Duo
   Modules
     flexptp: our PTP implementation (submodule)
-    lwip and lwip_port: the LwIP Ethernet stack and its system dependent module (submodule)
+    threadx: the Eclipse ThreadX kernel (submodule)
+    netxduo: the Eclipse NetX Duo Ethernet stack (submodule)
+    cmsis_rtos_threadx: ST's CMSIS-RTOS2 wrapper for ThreadX (submodule)
+    lwip: the LwIP Ethernet stack -- no longer built, pinned so pre-port commits still build (submodule)
     etherlib: our in-house developed Ethernet stack (submodule)
     embfmt: a printf()-like formatted printer implementation for embedded systems (submodule)
     blocking_io: a simple blocking FIFO implementation
@@ -222,23 +292,36 @@ ROOT
     cliutils: CLI-interface implementation
     ethernet: Ethernet stack initialization
     flexptp_port: the STM32H5 PTP hardware port, supplied by this project
+    flexptp_nsd: the NetX Duo network-stack driver for flexPTP, also supplied by this project
     standard_output: MSG() backend and the USART3 serial driver
 
     cmds.c: custom CLI commands
-  Startup: vector table and reset handler
+  Startup: vector table, reset handler and ThreadX low-level init
+  test: host unit tests -- no board required
   docs: porting documentation, design decisions and the review log
   patches: changes to submodules, which git cannot record for us
-  tools: host-side helpers (linuxptp configuration)
+  tools
+    hil: hardware-in-the-loop test harness
+    ci: documentation link checker
 ```
 
 > [!NOTE]
 > The flexPTP parameters are defined in the [flexptp_options.h](Inc/flexptp_options.h) header.
 
 Two submodules carry local changes, kept in [`patches/`](patches/) because the parent
-repository records only submodule commit pointers: a servo fix in flexPTP, and **four** defects across **two** findings, in **one** patch file: `%ll` conversions dropped ([F60](docs/port_review.md)), NaN rendered as `0.0000` (F60), small `%e` values swallowed by a pre-normalisation rounding constant ([F66](docs/port_review.md)), and a `%f`/`%e` rounding carry that subtracted 10 instead of 10^precision (F66)
-in embfmt. Both are described in [`docs/port_review.md`](docs/port_review.md) and are
-worth reporting upstream. **`./build.sh` applies them and will not build without them** —
-see [Get the sources](#get-the-sources) for why that matters.
+repository records only submodule commit pointers — **four patch files in total**:
+
+- **flexPTP, three.** A servo NaN-latch fix ([F59](docs/port_review.md)); a generic
+  network-stack extension point for the two IGMP group addresses; and a non-blocking heartbeat
+  enqueue, without which the BMCA never leaves `INITIALIZING` ([F80](docs/port_review.md)).
+- **embfmt, one** — carrying **four** defects across **two** findings: `%ll` conversions
+  dropped and NaN rendered as `0.0000` ([F60](docs/port_review.md)), plus small `%e` values
+  swallowed by a pre-normalisation rounding constant and a `%f`/`%e` rounding carry that
+  subtracted 10 instead of 10^precision ([F66](docs/port_review.md)).
+
+All are described in [`docs/port_review.md`](docs/port_review.md) and all are worth reporting
+upstream. **`./build.sh` applies them and will not build without them** — see
+[Get the sources](#get-the-sources) for why that matters.
 
 ### Printing and logging
 
@@ -249,10 +332,11 @@ In this project the memory-heavy `printf()` is replaced by the more embedded-opt
 The software offers you with the following multitude, most flexPTP-related of commands:
 
 ```
-?                                                  Print this help (23/64)
+?                                                  Print this help (24/64)
 hist                                               Print command history
 osinfo                                             Print OS-related information
 flexptp                                            Start flexPTP daemon
+ethinfo                                            Print Ethernet driver state and counters
 ptp reset                                          Reset PTP subsystem
 ptp servo offset [offset_ns]                       Set or query clock offset
 ptp log {def|corr|ts|info|locked|bmca} {on|off}    Turn on or off logging
@@ -276,8 +360,12 @@ ptp servo sg [var|default]                         Set or get sigma_gamma^2 (s^2
 ptp servo stm [var|default]                        Set or get sigma_theta_m^2 (s^2)
 ```
 
-Listed in the order the firmware emits them, captured from the running board. The `(23/64)`
+Listed in the order the firmware emits them, captured from the running board. The `(24/64)`
 on the first line is the CLI's own registered/available slot count.
+
+`ethinfo` is this project's own, added by the NetX Duo port. It prints the driver's state and
+its receive/transmit counters, and it is how four of the five defects in that port were
+actually diagnosed — counters, not code-reading.
 
 > [!TIP]
 > The above hint can be listed by typing '?'.
@@ -297,12 +385,13 @@ PID servo expose `ptp servo params` instead.
 | Document | Contents |
 |---|---|
 | [`docs/architecture.md`](docs/architecture.md) | Module inventory and versions, layering, boot sequence, threads and priorities, interrupts, clocking, the PTP timestamp path, memory layout |
-| [`docs/design_doc.md`](docs/design_doc.md) | Porting decisions and their rationale, submodule pinning, clock tree, pin map, stage-by-stage log |
+| [`docs/testing_architecture.md`](docs/testing_architecture.md) | The three test tiers, what each one reaches, the mutation-testing discipline, and the gaps stated plainly |
+| [`docs/design_doc.md`](docs/design_doc.md) | Porting decisions and their rationale, submodule pinning, clock tree, pin map, the EtherLib and TrustZone guides, stage-by-stage log |
 | [`docs/ptp_clock.md`](docs/ptp_clock.md) | Full derivation of the PTP timestamp clock, and why a 4 ns increment is possible but not adopted |
 | [`docs/ptp_profiles.md`](docs/ptp_profiles.md) | The three profile presets, the transport and delay-mechanism trade-offs, and what a switched network costs |
 | [`docs/host_ptp_setup.md`](docs/host_ptp_setup.md) | Running a PTP master on a Linux host, and what to check when nothing happens |
 | [`docs/port_review.md`](docs/port_review.md) | Every finding of the port review, with evidence — including the ones that cost days |
-| [`docs/implementation_plan.md`](docs/implementation_plan.md) | The staged work plan and what remains |
+| [`docs/implementation_plan.md`](docs/implementation_plan.md) | The staged plan for the **first** port (H743 → H563). Closed and historical; ends with a table of what changed afterwards |
 | [`docs/threadx_netxduo_feasibility.md`](docs/threadx_netxduo_feasibility.md) | What porting to Eclipse ThreadX and NetX Duo would cost, and the one flexPTP defect that would break it silently |
 | [`docs/threadx_porting_plan.md`](docs/threadx_porting_plan.md) | The staged execution plan for that port — hardware checkpoints, the host test tree, and progress tracking |
 | [`docs/threadx_s5e_plan.md`](docs/threadx_s5e_plan.md) | The one stage left undone: running the real stack on the host, what it would and would not have caught, and a cheaper alternative |

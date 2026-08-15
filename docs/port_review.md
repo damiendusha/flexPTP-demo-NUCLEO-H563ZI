@@ -1,8 +1,17 @@
 # Port Review — Findings & Disposition
 
 The audit trail for this port: what was checked, what was found, and where each finding is
-now tracked. It is not a task list — [implementation_plan.md](implementation_plan.md) owns
-the work.
+now tracked. It is not a task list.
+
+> **Findings are records, not descriptions of the current tree.** This log spans both ports —
+> H743 → H563, then FreeRTOS/lwIP → ThreadX/NetX Duo. Findings raised against the lwIP-era
+> firmware name files that **no longer exist** (`eth_drv_lwip.c`, `Inc/lwipopts.h`,
+> `Inc/FreeRTOSConfig.h`, `Modules/lwip_port/`), and they are deliberately left as written:
+> a finding rewritten to match a later tree loses the evidence that made it a finding.
+>
+> For the current state see [architecture.md](architecture.md). For which findings each test
+> tier can catch — and the roughly 50/25/25 split between reachable, regression-lockable and
+> irreducibly-hardware — see [testing_architecture.md](testing_architecture.md).
 
 **This is a living document, written in two phases.** Findings **F1–F43** come from a
 static review of the plan and the repository at commit `e2d9556` (Stage 4 complete),

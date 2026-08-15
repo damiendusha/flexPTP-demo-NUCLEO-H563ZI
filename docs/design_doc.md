@@ -4,6 +4,16 @@ This document captures design decisions, technical notes, and future porting gui
 for the flexPTP demo port from NUCLEO-H743ZI (STM32H743, Cortex-M7) to
 NUCLEO-H563ZI (STM32H563, Cortex-M33).
 
+**This project has been ported twice.** The first port moved it between silicon and is what
+most of this document describes. The second replaced the RTOS and the network stack —
+FreeRTOS/lwIP became Eclipse ThreadX and Eclipse NetX Duo — and everything below reflects the
+current, ThreadX state. Where a section describes how something *used to* work, it says so.
+The narrative of the second port is in
+[threadx_porting_plan.md](threadx_porting_plan.md); the reasoning that preceded it is in
+[threadx_netxduo_feasibility.md](threadx_netxduo_feasibility.md). The
+[Stage Log](#stage-log) at the end of this document is a record of the *first* port and is
+deliberately left as written.
+
 ## Table of Contents
 
 - [Port Overview](#port-overview)
@@ -19,10 +29,13 @@ NUCLEO-H563ZI (STM32H563, Cortex-M33).
 - [Stage Log](#stage-log)
 
 Companion documents: [architecture.md](architecture.md) (module stack, threads, interrupts) ·
+[testing_architecture.md](testing_architecture.md) (what is tested, and what is not) ·
 [host_ptp_setup.md](host_ptp_setup.md) (running a PTP master on the host) ·
 [ptp_clock.md](ptp_clock.md) (PTP clock derivation) ·
+[ptp_profiles.md](ptp_profiles.md) (default vs gPTP presets) ·
 [port_review.md](port_review.md) (review findings and verified-clean audit) ·
-[implementation_plan.md](implementation_plan.md) (staged work plan)
+[threadx_porting_plan.md](threadx_porting_plan.md) (the RTOS/stack port, stage by stage) ·
+[implementation_plan.md](implementation_plan.md) (the original silicon port — historical)
 
 ---
 
@@ -36,25 +49,42 @@ Key decisions:
   device — see [PTP Clock](#ptp-clock))
 - HSE: Bypass mode (stock Nucleo, ST-Link MCO at 8 MHz)
 - FPU: Keep `double` in Kalman filter, accept software emulation
-- Network stack: LwIP only (initial port)
-- TrustZone: Disabled (TZEN=0, ARM_CM33_NTZ)
-- mac_drv.c: Register-level port
+- RTOS: **Eclipse ThreadX**, reached through ST's CMSIS-RTOS2 wrapper so the application and
+  flexPTP stay RTOS-agnostic (was FreeRTOS)
+- Network stack: **Eclipse NetX Duo**, whose `nx_link` layer carries PTP hardware timestamps
+  natively (was lwIP; EtherLib remains selectable but uncompiled)
+- TrustZone: Disabled (TZEN=0, `TX_SINGLE_MODE_NON_SECURE`)
+- mac_drv.c: Register-level port, **unchanged by the RTOS/stack port**
 
 ---
 
 ## Submodule Pinning
 
-**All four submodules are pinned ahead of the NUCLEO-H743ZI reference project**, because
-Stage 1 added them at then-current `master` rather than at the commits the H743 demo
-records. This was not a deliberate choice at the time, but it is now a deliberate one to
-keep.
+There are eight submodules. Four came from the H743 reference project, one is ST's HAL, and
+three were added by the ThreadX port.
 
-| Submodule | This port | H743 reference |
+| Submodule | Pinned at | Notes |
 |---|---|---|
-| `flexptp` | `76aaf67` | `62fc906` |
-| `lwip` | `3d896ba` | `554e104` |
-| `embfmt` | `670a349` | `78d8aa4` |
-| `etherlib` | `ec35be5` | `1127b3d` |
+| `flexptp` | `76aaf67` | H743 reference had `62fc906` — see below |
+| `embfmt` | `670a349` | H743 reference had `78d8aa4` |
+| `etherlib` | `ec35be5` | H743 reference had `1127b3d`. Selectable, never compiled here |
+| `lwip` | `3d896ba` | H743 reference had `554e104`. **No longer built** — retained so the pre-port firmware stays reconstructable |
+| `stm32h5xx-hal-driver` | `0fff6e2` | ST HAL, `v1.7.0-8-g0fff6e2` |
+| `threadx` | `44d7c95` | Eclipse ThreadX, self-reports **6.5.1** |
+| `netxduo` | `473d192` | Eclipse NetX Duo, self-reports **6.5.1** |
+| `cmsis_rtos_threadx` | `3b0b28a` | ST's CMSIS-RTOS2 wrapper, `v1.4.1` |
+
+**The two Eclipse pins sit just past their release tags, and the difference is documentation
+only.** `threadx` is one commit after `v6.5.1.202602a_rel` and `netxduo` two after
+`v6.5.1.202602_rel`; in both cases the extra commits touch nothing but `SECURITY.md`. The
+`Middlewares/*.cmake` headers name the tags, which is materially accurate but not literally
+what is checked out — worth knowing before you try to reproduce a build from the tag alone.
+
+### The four original pins are ahead of the reference project
+
+Stage 1 of the silicon port added them at then-current `master` rather than at the commits the
+H743 demo records. That was not a deliberate choice at the time. It is now a deliberate one to
+keep.
 
 ### Decision: keep the newer pins
 
@@ -93,20 +123,40 @@ reference project never did. Details in [port_review.md](port_review.md):
 | Finding | Problem | Fix |
 |---|---|---|
 | **F47** | flexPTP uses `__PRI64_PREFIX`, a glibc-internal macro absent from newlib, so the library does not compile for `arm-none-eabi` | `__PRI64_PREFIX=__INT64` in `FLEXPTP_COMPILE_DEFS` |
-| **F48** | `tx_cb`'s tag argument changed from `uint32_t` to `void *`, breaking the TX timestamp path | Aligned `Inc/lwipopts.h` and the `mac_drv.c` call site |
+| **F48** | `tx_cb`'s tag argument changed from `uint32_t` to `void *`, breaking the TX timestamp path | Aligned `Inc/lwipopts.h` and the `mac_drv.c` call site (historical — that path is now the NetX Duo NSD) |
 
-Neither patches a submodule, so `git submodule update` remains safe.
+Neither of those two patches a submodule.
+
+### Submodules that *are* patched
+
+Four patches under `patches/` are applied to submodule working trees by `build.sh`, because
+the parent repository can only record a submodule's commit pointer — a working-tree edit inside
+`Modules/` is invisible to a clone and is discarded by `git submodule update`.
+
+| Patch | Fixes |
+|---|---|
+| `embfmt/0001-formatting-fixes` | **F60/F66** — `%ll` conversions dropped, NaN printed as `0.0000`, small `%e` values and rounding carries misreported |
+| `flexptp/0002-servo-nan-latch-fix` | **F59** — one duplicated Sync latches the Kalman servo into NaN permanently, with every visible indicator staying green while the clock free-runs |
+| `flexptp/0003-generic-netstack-igmp-addresses` | Not a defect: an extension point so a port supplying its own network stack can provide the two IGMP group addresses. Without it flexPTP `#error`s unless it recognises lwIP, EtherLib or Linux |
+| `flexptp/0004-cmsis-os2-event-enqueue-from-timer-thread` | **F80** — the binding enqueues heartbeat events with `osWaitForever` from the RTOS timer thread, which ThreadX forbids from blocking, so every heartbeat is dropped and the BMCA never leaves `INITIALIZING` |
+
+**Skipping them does not break the build; it produces a firmware that is silently wrong.**
+`build.sh` therefore refuses to continue if a patch can neither be applied nor be shown to be
+already applied, and CI re-checks two of them independently after the build.
 
 ### What to watch
 
 - **F47 should be reported upstream.** It breaks every newlib target, not just this one.
   If upstream fixes it, drop the `__PRI64_PREFIX` define — it is a reserved identifier and
   only defined here under duress.
-- **The `tx_cb` contract is unversioned.** `Inc/lwipopts.h` and flexPTP's `nsd_lwip.c` must
-  agree on the callback signature, and nothing enforces it. A future flexPTP bump should
-  re-check it. A mismatch in the tag's *type* fails at compile time, as it did here; a
-  mismatch in its *meaning* would not (F42).
-- The other three submodules were not audited commit-by-commit. They build and link; no
+- **Patches 0003 and 0004 should go upstream too.** Both are general: 0003 unblocks any
+  third-party network stack, and 0004 fixes a binding that is wrong on any RTOS whose timer
+  thread may not block — which is every ThreadX target, not just this board.
+- **A flexPTP bump must re-check all three flexPTP patches.** They are applied by
+  `git apply`, so a bump that touches the same lines fails loudly rather than silently
+  skipping — but a bump that *renames* the affected function would let a patch apply cleanly
+  to the wrong place.
+- The remaining submodules were not audited commit-by-commit. They build and link; no
   behavioural claim is made about their divergence.
 
 ### To revert
@@ -167,9 +217,22 @@ timestamp clock. See [ptp_clock.md](ptp_clock.md).
 
 **`PLLN = TARGET_SYSCLK_MHZ` is exact, not approximate.** Because VCI is 2 MHz and
 `PLLP` is 2, SYSCLK in MHz equals `PLLN` numerically. The H743 project relied on the same
-identity at 480. Consequently `configCPU_CLOCK_HZ` in `FreeRTOSConfig.h` is the single
-source of truth for the PLL: setting it to 250000000 drives the whole chain, and
-`init_pll()` needs no arithmetic change.
+identity at 480. Setting the target frequency drives the whole chain, and `init_pll()` needs
+no arithmetic change.
+
+**Three places state that frequency and none can include the others.** Under FreeRTOS the
+single source of truth was `configCPU_CLOCK_HZ` in `FreeRTOSConfig.h`; that header went away
+with the kernel in S3. The value now lives in `TARGET_SYSCLK_HZ` in `Src/main.c`, beside the
+PLL configuration that produces it, and two other declarations must agree with it by hand:
+
+| Where | Why it cannot just include `main.c` |
+|---|---|
+| `SYSTEM_CLOCK` in `Startup/tx_initialize_low_level.S` | Assembly; it computes the SysTick reload divisor |
+| `PTP_MAIN_OSCILLATOR_FREQ_HZ` in `Inc/flexptp_options.h` | `pll1_q_ck` feeds the timestamp unit at the same 250 MHz |
+
+Change one, change all three. A mismatch in the first gives a tick rate that is wrong by the
+ratio and an RTOS whose timeouts are all skewed; a mismatch in the second gives a PTP clock
+that runs at the wrong rate and a servo that cannot converge.
 
 **APB at DIV2 (125 MHz)** matches the H743 structure and is deliberate rather than
 inherited. The H563 would permit DIV1, but nothing in this project needs it: USART3's baud
@@ -225,16 +288,25 @@ divider `CR = DIV102` are paired with the 250 MHz *HCLK*, not with PTP.
 
 ## EtherLib Porting Guide
 
-EtherLib is Epagris' in-house Ethernet stack and an alternative to lwIP. It is present as a
-submodule and selectable with `ETH_STACK` in the top-level `CMakeLists.txt`:
+EtherLib is Epagris' in-house Ethernet stack and an alternative to NetX Duo. It is present as
+a submodule and selectable with `ETH_STACK` in the top-level `CMakeLists.txt`:
 
 ```cmake
-set(ETH_STACK "LWIP")   # or "ETHERLIB"
+set(ETH_STACK "NETXDUO")   # "NETXDUO", "ETHERLIB", or "NONE"
 ```
 
-**It is not compiled in this port and has never been built for the H563.** Only the lwIP path
-is exercised. The pieces that would have to be checked are listed below; none is known to be
-broken, but none has been tried either.
+**It is not compiled in this port and has never been built for the H563.** Only the NetX Duo
+path is exercised. The pieces that would have to be checked are listed below; none is known to
+be broken, but none has been tried either.
+
+> `ETH_STACK="LWIP"` is a fourth spelling that `Modules/CMakeLists.txt` recognises only in
+> order to reject it with a `FATAL_ERROR`. lwIP was removed from the build in S3 of the ThreadX
+> port; the submodule stays pinned so the pre-port firmware remains reconstructable, but the
+> path is gone. Check out a pre-S3 commit to build it.
+>
+> `"NONE"` builds flexPTP with a no-op network-stack driver and no stack underneath. It exists
+> because S3–S5 needed the servo, the profile machinery, the 19 CLI commands and the H563
+> hardware port to stay compiled and exercised while the stack beneath them was replaced.
 
 ### What already exists
 
@@ -243,8 +315,8 @@ broken, but none has been tried either.
 | `Modules/etherlib` submodule | Present, pinned at `ec35be5` |
 | `Inc/etherlib_options.h` | Complete — pool size, ARP cache, timers, and the CMSIS-OS2 binding |
 | `Src/etherlib_options.c` | Provides `ETHLIB_OS_THREAD_CREATE()` and the recursive-mutex attribute |
-| `Drivers/EthDrv/eth_drv_etherlib.c` | The EtherLib-side driver shim, alongside `eth_drv_lwip.c` |
-| `Modules/CMakeLists.txt` | Already branches on `ETH_STACK` and wires `FLEXPTP_NSD` to match |
+| `Drivers/EthDrv/eth_drv_etherlib.c` | The EtherLib-side driver shim, alongside `eth_drv_netxduo.c` |
+| `Modules/CMakeLists.txt` | Already branches on `ETH_STACK` and wires the flexPTP NSD to match |
 
 So the wiring is in place. What is missing is a linker placement, and verification.
 
@@ -295,10 +367,12 @@ The fix is a `NOLOAD` placement next to the other Ethernet regions in
   } >SRAM3
 ```
 
-SRAM3 has room — the Ethernet buffers and the lwIP heap use 74 888 B of 320 KB, and with lwIP
-deselected the 16 KB lwIP heap is not there at all. `NOLOAD` removes the flash cost and makes
-the "uninitialised" status explicit rather than accidental; `mp_init()` initialises the pool
-header itself, so zeroing is not required.
+SRAM3 has room. The measurement above was taken on the lwIP build, where the Ethernet buffers
+and the lwIP heap used 74 888 B of 320 KB; the NetX Duo build uses 89 704 B of the same region
+and there is still a quarter of a megabyte spare. Deselecting the current stack frees its
+packet pool in either case. `NOLOAD` removes the flash cost and makes the "uninitialised"
+status explicit rather than accidental; `mp_init()` initialises the pool header itself, so
+zeroing is not required.
 
 ### Remaining work to enable EtherLib
 
@@ -307,14 +381,24 @@ header itself, so zeroing is not required.
    `Drivers/EthDrv/eth_drv_etherlib.c` and `Src/ethernet/ethernet_etherlib.c` have **never
    been compiled** in this port — the F51 UID lesson applies, since
    `eth_drv_etherlib.c:97` builds its MAC from the same `ETH_MAC_ADDR*` macros.
-3. Check the flexPTP network-stack driver: `FLEXPTP_NSD` follows `ETH_STACK`, so the
-   EtherLib NSD gets selected automatically, but the `tx_cb` contract that bit us in F48 is
-   lwIP-specific and the EtherLib equivalent has not been checked.
-4. `CHECKSUM_BY_HARDWARE` in `Inc/lwipopts.h` is lwIP-only; EtherLib has its own arrangement.
-5. Re-run the PTP verification. EtherLib changes the RX/TX path completely, so F58 and F61 —
-   both in `eth_drv_lwip.c` and `mac_drv.c` respectively — need re-examining on that path.
-   `mac_drv.c` is shared, so the F61 fix carries over; the F58 pbuf-copy fix does not, because
-   EtherLib has no pbufs.
+3. Check the flexPTP network-stack driver. The NSD follows `ETH_STACK`, so the EtherLib NSD
+   gets selected automatically — but note that the NetX Duo path does **not** use flexPTP's
+   bundled NSD at all: it supplies its own under `Src/flexptp_nsd/` through the
+   `FLEXPTP_NSD_SRC` extension point. Whether EtherLib's bundled NSD still matches flexPTP's
+   current interface has not been checked, and the `tx_cb` contract that bit us in F48 was
+   lwIP-specific.
+4. Hardware checksum offload is configured per stack. On NetX Duo it is declared through
+   `nx_interface_capability_flag`, and getting it wrong made the MAC compute checksums twice
+   during bring-up; EtherLib has its own arrangement, and the old `CHECKSUM_BY_HARDWARE` in
+   `Inc/lwipopts.h` is gone with lwIP.
+5. Re-run the PTP verification. EtherLib changes the RX/TX path completely, so the
+   receive-path findings need re-examining. `mac_drv.c` is shared and unmodified by either
+   stack port, so the **F61** fix carries over; **F58**'s pbuf-copy fix does not, because
+   EtherLib has no pbufs — and neither does the 2-byte alignment shim the NetX Duo driver
+   needs, which is a property of where that stack expects the IP header to land.
+6. Patch `0003-generic-netstack-igmp-addresses` already covers EtherLib: it was written so
+   that *any* port supplying its own stack can provide the two IGMP group addresses, rather
+   than flexPTP `#error`ing on an unrecognised stack.
 
 ---
 
@@ -330,11 +414,22 @@ measurement in these documents was taken on. This section is what a migration wo
 | Setting | Value | Where |
 |---|---|---|
 | `TZEN` option bit | disabled (`0xC3`) | `FLASH_OPTSR2_PRG`, RM0481 §3.6.1 |
-| FreeRTOS port | `GCC_ARM_CM33_NTZ_NONSECURE` | `Middlewares/CMakeLists.txt` |
-| `configENABLE_TRUSTZONE` | `0` | `Inc/FreeRTOSConfig.h` |
-| `configRUN_FREERTOS_SECURE_ONLY` | `0` | `Inc/FreeRTOSConfig.h` |
-| `configENABLE_MPU` | `0` | `Inc/FreeRTOSConfig.h` |
+| ThreadX port | `ports/cortex_m33/gnu` | `Middlewares/threadx.cmake` |
+| `TX_SINGLE_MODE_NON_SECURE` | defined | `Middlewares/threadx.cmake` |
+| Secure-stack sources | **excluded from the build** | `list(FILTER … EXCLUDE REGEX "secure_stack")` |
 | Flash / SRAM | `0x08000000` / `0x20000000` — the non-secure aliases | `stm32h563zitx_FLASH.ld` |
+
+ThreadX has one Cortex-M33 port rather than FreeRTOS's three, and it selects its TrustZone
+behaviour with macros instead of with the port directory. The predecessor here was
+`GCC_ARM_CM33_NTZ_NONSECURE`, the non-TrustZone FreeRTOS variant, so the two configurations
+are equivalent.
+
+Both halves of the current setting are needed and they fail differently:
+`TX_SINGLE_MODE_NON_SECURE` removes the secure-stack calls from the port's context-switch
+paths, and the `EXCLUDE REGEX` drops the five files implementing them. Excluding the files
+without defining the macro fails to link; defining the macro without excluding the files
+merely emits five `cmse_nonsecure_entry attribute ignored without -mcmse` warnings and links
+entry points that can never be reached.
 
 `TZEN` is an option byte, not a runtime setting: it is programmed with the debugger, it
 changes which boot-address option bytes the device honours (`SECBOOTADD` instead of
@@ -353,15 +448,25 @@ the non-secure image. The address aliases are fixed by the architecture (RM0481 
 
 The linker script and the vector table move accordingly; secure and non-secure have
 **separate vector tables**, and SysTick, the MPU and parts of the SCB are banked (RM0481
-§3.6.2), so the non-secure FreeRTOS gets its own SysTick.
+§3.6.2), so the non-secure kernel gets its own SysTick.
 
-**FreeRTOS changes.** Swap `FREERTOS_PORT` from `GCC_ARM_CM33_NTZ_NONSECURE` to the
-TrustZone-aware **`GCC_ARM_CM33_NONSECURE`** in `Middlewares/CMakeLists.txt`, and set
-`configENABLE_TRUSTZONE = 1`. The secure image builds the companion **`GCC_ARM_CM33_SECURE`**
-port, which supplies `secure_context.c`, `secure_context_port.c` and `secure_heap.c` — the
-context management that lets non-secure tasks call secure functions. Both port names are
-already recognised by the fetched kernel (`portable/CMakeLists.txt`), and the sources sit
-side by side under `portable/GCC/ARM_CM33/{non_secure,secure}` and `ARM_CM33_NTZ/non_secure`.
+**ThreadX changes.** Stop defining `TX_SINGLE_MODE_NON_SECURE` and stop filtering the
+`secure_stack` sources out of `THREADX_PORT_SRC` — both in `Middlewares/threadx.cmake`. That
+restores `tx_thread_secure_stack.c` and its four assembly companions, which give each thread
+a secure stack allocated through `tx_thread_secure_stack_allocate()` so that non-secure
+threads can call into the secure world without corrupting one another's secure state.
+
+Two consequences that do not exist under the flat build:
+
+- **Secure stacks are per-thread and must be allocated explicitly.** A thread that calls a
+  secure function without one faults. `TX_THREAD_USER_EXTENSION` is already in use here for
+  the CMSIS-RTOS2 wrapper's joinable flag, so anything added there needs to coexist with it.
+- **The port must be compiled with `-mcmse`** for the entry-point attributes to mean anything,
+  which the current firmware does not pass.
+
+The secure image is a separate project with its own ThreadX instance or none at all; ThreadX
+does not ship a paired "secure port" the way FreeRTOS's `GCC_ARM_CM33_SECURE` does, because
+the secure side is usually a thin, non-RTOS supervisor.
 
 **Partitioning the CPU's view** uses the SAU: eight programmable regions, configurable only
 in secure-privileged state, and defaulting to all-secure when TrustZone is enabled (RM0481
@@ -580,6 +685,17 @@ to cover both.
 ---
 
 ## Stage Log
+
+> **Historical — the first port only.** What follows records the H743 → H563 silicon port,
+> Stages 1–20, as it happened. It describes a FreeRTOS/lwIP firmware, and several statements
+> in it are no longer true of the code in this repository: Stage 9 configures a kernel that has
+> since been replaced, Stage 12's driver has gained a NetX Duo sibling, and the memory figures
+> predate the stack swap.
+>
+> It is **deliberately not updated**. Rewriting a log to match a later state destroys the one
+> thing a log is for — knowing what was believed, and when. For the current state see
+> [architecture.md](architecture.md); for the second port's stage-by-stage record see
+> [threadx_porting_plan.md](threadx_porting_plan.md).
 
 ### Stage 1 — Create new repository, copy structure
 - Created new repository at `/home/damien/git/flexPTP-demo-NUCLEO-H563ZI`
