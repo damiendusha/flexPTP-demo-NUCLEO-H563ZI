@@ -1084,6 +1084,10 @@ falls out of the CMake build.
 `git ls-files tools/hil` lists both. `.gitignore` has two entries (`build/`, `toolchains/`) and
 lacks `__pycache__/` and a trailing newline. `git rm --cached` the two files and add the pattern.
 
+> **✅ ADDRESSED** — both files untracked; `.gitignore` gained `__pycache__/`, `*.pyc` and the
+> missing trailing newline. Done early and out of priority order because the stale bytecode was
+> turning up as a modification in every commit of this review's work.
+
 ### GI-05 — the release optimisation-level analysis deserves a re-run
 
 **Priority: Low** · `CMakeLists.txt:150-180`
@@ -1170,7 +1174,7 @@ how, and for the evidence.
 | [GI-01](#gi-01--let-the-hil-runner-prove-which-firmware-it-is-testing) | P2 | Improvement | HIL cannot prove which image it tested; the control is a README warning | `tools/hil/run.py` | Print a build identity, compare against the ELF, fail on mismatch — the same transformation `build.sh` applied to the patch hazard |
 | [GI-02](#gi-02--give-ethinfo-and-osinfo-a-machine-readable-mode) | P3 | Improvement | HIL regex-parses human prose; a `MSG()` edit can silently disable a check | `checks.py`, `eth_drv_report()` | `checks.py:256` already records one silent miscount |
 | [GI-03](#gi-03--add-static-analysis-to-ci) | P3 | Improvement | No static analysis; `compile_commands.json` already available | `ci.yml` | Would likely have caught NX-05 and NX-08 |
-| [GI-04](#gi-04--two-pyc-files-are-committed) | P3 | Hygiene | Two `__pycache__/*.pyc` tracked; `.gitignore` lacks the pattern | `tools/hil/__pycache__/` | Also missing a trailing newline |
+| [GI-04](#gi-04--two-pyc-files-are-committed) | ✅ P3 | Hygiene | Two `__pycache__/*.pyc` tracked; `.gitignore` lacks the pattern | `tools/hil/__pycache__/` | Also missing a trailing newline |
 | [GI-05](#gi-05--the-release-optimisation-level-analysis-deserves-a-re-run) | P3 | Stale data | The `-Og`/`-O2`/`-Os` figures predate the port (167 KB quoted; image is now 206 344 B) | `CMakeLists.txt:150-180` | Conclusion likely unchanged; the numbers describe a different firmware |
 | [GI-06](#gi-06--consider-persisting-ptp-settings) | P3 | Decision | No settings store; profiles are lost on reset | — | Probably correct for a demo. Record it as a decision with a sketch of where it would go |
 

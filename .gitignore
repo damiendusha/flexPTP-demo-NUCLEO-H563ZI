@@ -1,2 +1,4 @@
 build/
 toolchains/
+__pycache__/
+*.pyc
