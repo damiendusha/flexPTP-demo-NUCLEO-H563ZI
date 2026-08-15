@@ -18,6 +18,7 @@ CLEAN_BUILD=0
 TARGET="flexptp-demo"
 RUN_TESTS=0
 TESTS_ONLY=0
+CHECK_PATCHES=0
 
 # OpenOCD. The STM32H5 needs ST's fork: target/stm32h5x.cfg declares "flash bank ... stm32h5x",
 # which names a compiled-in flash driver, not tcl. Stock OpenOCD 0.12.0 has no such driver and
@@ -84,6 +85,10 @@ while [[ $# -gt 0 ]]; do
             TESTS_ONLY=1
             shift
             ;;
+        --check-patches)
+            CHECK_PATCHES=1
+            shift
+            ;;
         -h|--help)
             echo "Usage: $0 [options]"
             echo ""
@@ -100,6 +105,10 @@ while [[ $# -gt 0 ]]; do
             echo "  --tests-only        Run the host unit tests WITHOUT building the firmware."
             echo "                      Skips the ARM toolchain download entirely -- the host"
             echo "                      suite is compiled with the system gcc/g++."
+            echo "  --check-patches     Verify every submodule patch is applied and exit."
+            echo "                      Changes nothing; this is the independent check CI runs,"
+            echo "                      because a build that applies a patch cannot also be the"
+            echo "                      evidence that it was applied."
             echo "  -h, --help          Show this help message"
             exit 0
             ;;
@@ -209,6 +218,43 @@ SUBMODULE_PATCHES=(
     "Modules/flexptp:patches/flexptp/0004-cmsis-os2-event-enqueue-from-timer-thread.patch"
 )
 
+# Verify, without changing anything, that every patch is applied.
+#
+# Separate from apply_submodule_patches() because CI needs an INDEPENDENT check: the build
+# applying a patch and then the build succeeding is one claim, not two. Before this existed CI
+# checked two of the four patches by hand, and the two it left out included 0004 -- the one
+# whose absence is silent. Without 0003 flexPTP #errors and the build fails loudly; without
+# 0004 every heartbeat is rejected, the BMCA never leaves INITIALIZING, and the firmware simply
+# never syncs (F80).
+#
+# Driven from the same array as the apply path, so the two cannot drift.
+verify_submodule_patches() {
+    local entry submodule_rel submodule patch name failed=0
+
+    for entry in "${SUBMODULE_PATCHES[@]}"; do
+        submodule_rel="${entry%%:*}"
+        submodule="${PROJECT_ROOT}/${submodule_rel}"
+        patch="${PROJECT_ROOT}/${entry#*:}"
+        name="$(basename "${patch}")"
+
+        if git -C "${submodule}" apply --check --reverse "${patch}" 2>/dev/null; then
+            success "${submodule_rel}: ${name} applied"
+        else
+            error "${submodule_rel}: ${name} is NOT applied"
+            failed=1
+        fi
+    done
+
+    if [ "${failed}" -ne 0 ]; then
+        echo ""
+        echo "  A missing patch does not break the build -- it produces a firmware that is"
+        echo "  silently wrong. See the table in README.md under 'Get the sources'."
+        exit 1
+    fi
+
+    success "all ${#SUBMODULE_PATCHES[@]} submodule patches are applied"
+}
+
 # Bring each submodule to its patched state, and refuse to build if that cannot be reached.
 # "Already applied" is detected by a reverse dry-run rather than by a marker file, so the
 # check stays correct however the tree got into its current state.
@@ -279,6 +325,14 @@ run_host_tests() {
     info "Running host tests..."
     ctest --test-dir "${test_build_dir}" --output-on-failure
 }
+
+# --check-patches is a verification, not a build step: it must not update submodules, apply
+# anything, or download a toolchain. It answers one question about the tree as it stands.
+if [ "${CHECK_PATCHES}" -eq 1 ]; then
+    info "Verifying submodule patches..."
+    verify_submodule_patches
+    exit 0
+fi
 
 # Step 0: Build OpenOCD if asked
 if [ "${WITH_OPENOCD}" -eq 1 ]; then

@@ -691,6 +691,18 @@ precisely the patch whose omission the README's table describes as producing a f
 Loop over the same `SUBMODULE_PATCHES` list `build.sh:205-210` already defines, so the two cannot
 drift.
 
+> **✅ ADDRESSED** — `build.sh --check-patches`, `.github/workflows/ci.yml`.
+>
+> A verify-only mode driven from the same `SUBMODULE_PATCHES` array as the apply path: it
+> updates nothing, applies nothing and downloads nothing, so it stays an *independent* check —
+> a build that applies a patch cannot also be the evidence that it was applied. CI's step is
+> now one line.
+>
+> **Evidence.** Positive: all four reported applied, exit 0. Negative, which is the case that
+> matters: reversing **only** `0004` — the silent one CI used to skip — makes it report
+> `0004-… is NOT applied` and exit 1, with the other three still green. Restored and
+> re-verified.
+
 ### TS-07 — no test of the NSD lifecycle
 
 **Priority: Medium**
@@ -1229,7 +1241,7 @@ how, and for the evidence.
 | [TS-03](#ts-03--the-dma-model-cannot-express-a-late-context-descriptor) | ✅ **P1** | Test gap | DMA model always writes a complete context descriptor, so NX-01 is unreachable | `eth_model.cpp:100-119` | Add `deliver_frame_ts_pending()` / `_no_ctxt()`. Write the tests **before** the NX-01 fix so it is mutation-verified |
 | [TS-04](#ts-04--drv_sends-framing-logic-is-untested) | P2 | Test gap | `drv_send()` untested — the function with the port's highest defect density | `eth_drv_netxduo.c:469-616` | Most important property: **every** drop path cancels the pending timestamp |
 | [TS-05](#ts-05--the-hil-threads-check-does-not-assert-the-priorities-that-matter) | P2 | Test gap | HIL `threads` check omits `eth ip` (16), `rx` (24), `ptpts` (24) and their presence | `checks.py:280-295` | `architecture.md` presents that table as the spec; four dictionary entries close it |
-| [TS-06](#ts-06--ci-verifies-two-of-the-four-submodule-patches) | P2 | Test gap | CI verifies patches 0001 and 0002 only; **0004 is the silent one** | `ci.yml:59-62` | Without 0004 no master is ever selected. Loop over `build.sh`'s existing `SUBMODULE_PATCHES` list |
+| [TS-06](#ts-06--ci-verifies-two-of-the-four-submodule-patches) | ✅ P2 | Test gap | CI verifies patches 0001 and 0002 only; **0004 is the silent one** | `ci.yml:59-62` | Without 0004 no master is ever selected. Loop over `build.sh`'s existing `SUBMODULE_PATCHES` list |
 | [TS-07](#ts-07--no-test-of-the-nsd-lifecycle) | ✅ P2 | Test gap | No lifecycle test for `ptp_nsd_init` teardown / transport switch / re-init | `nsd_netxduo.c` | The state machine holding NX-02. Needs a fake, not a real `NX_IP` |
 | [TS-08](#ts-08--no-compile-only-gate-for-the-non-default-eth_stack-paths) | P3 | Test gap | `ETH_STACK=ETHERLIB` and `=NONE` are not built anywhere | `ci.yml` | Two matrix entries; also settles AR-05 |
 | [TS-09](#ts-09--the-isr-half-of-the-context-rule-is-reachable-on-the-host-after-all) | P3 | Opportunity | A settable host `__get_IPSR()` makes the ISR half of the context rule testable | `test/host/cmsis_compiler.h` | Pins the *wrapper's* rule, not the silicon's — document the narrower claim. Contradicts a "cannot" in two docs |

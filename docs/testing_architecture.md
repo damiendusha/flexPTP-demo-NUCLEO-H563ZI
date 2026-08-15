@@ -13,6 +13,7 @@ suite, because it converts an unknown into a false certainty.
 - [Tier 3 — hardware in the loop](#tier-3--hardware-in-the-loop)
 - [What is reachable, measured](#what-is-reachable-measured)
 - [Mutation testing is the entry fee](#mutation-testing-is-the-entry-fee)
+- [What CI gates](#what-ci-gates)
 - [Known gaps](#known-gaps)
 
 Companion documents: [architecture.md](architecture.md) (what is being tested) ·
@@ -251,6 +252,23 @@ Three things this exercise taught, each of which changed the code:
   originally asserted against 224.0.1.129, whose third octet is `0x00` — so it passed whether
   the mask was `0x7F` or `0xFF`. It is now exercised through `ptp_endpoint_ipv4_group_mac()`
   with 239.129.1.1, whose third octet is `0x81` and therefore puts the bit in play.
+
+## What CI gates
+
+Three jobs, and one of them is not a test in the usual sense:
+
+| Job | Asserts |
+|---|---|
+| **Build (Debug, Release)** | both configurations compile and link, with **zero first-party warnings** |
+| **Host unit tests** | tiers 1 and 2, above |
+| **Docs cross-references** | every relative link and in-document anchor resolves |
+
+The build job also runs **`./build.sh --check-patches`**, which verifies all four submodule
+patches are applied — independently of the build, and driven from `build.sh`'s own list so the
+two cannot drift. It used to name two of the four by hand, and the two it omitted were the ones
+that needed it most: without `0003` flexPTP `#error`s and the build fails loudly, but `0004` is
+**silent** — omit it and the firmware builds, boots, gets an address and never syncs, because
+every heartbeat is rejected and the BMCA never leaves `INITIALIZING` (F80).
 
 ## Known gaps
 

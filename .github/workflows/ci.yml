@@ -56,10 +56,17 @@ jobs:
           grep 'warning:' build.log | grep -E '/(Src|Inc|Drivers/EthDrv)/' || true
           test "$first" -eq 0
 
+      # Independent of the build, and driven from build.sh's own SUBMODULE_PATCHES array so the
+      # two lists cannot drift.
+      #
+      # This step used to name two of the four patches by hand, and the two it left out were
+      # the two that matter most for this: without 0003 flexPTP #errors, so the build itself
+      # covers it -- but 0004 is SILENT. Omit it and the firmware builds, boots, links, gets an
+      # address and never syncs, because every heartbeat is rejected and the BMCA never leaves
+      # INITIALIZING (F80). Exactly the class of failure this check exists to catch, and
+      # exactly the one it was not checking.
       - name: Check the patches really were applied
-        run: |
-          git -C Modules/embfmt  apply --check --reverse "$PWD/patches/embfmt/0001-formatting-fixes.patch"
-          git -C Modules/flexptp apply --check --reverse "$PWD/patches/flexptp/0002-servo-nan-latch-fix.patch"
+        run: ./build.sh --check-patches
 
       - uses: actions/upload-artifact@v4
         with:

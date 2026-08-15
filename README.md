@@ -34,6 +34,13 @@ git -C Modules/flexptp apply "$PWD/patches/flexptp/0004-cmsis-os2-event-enqueue-
 `./build.sh` does **both** steps for you, and refuses to build if the patches can be
 neither applied nor confirmed already applied. Use it, or run the six commands above.
 
+To check an existing tree without building or changing anything — this is what CI runs, because
+a build that applies a patch cannot also be the evidence that it was applied:
+
+```bash
+./build.sh --check-patches
+```
+
 > [!IMPORTANT]
 > The patch commands are not optional. Two submodules carry local bug fixes that git
 > cannot record for us — the parent repository stores only a submodule's *commit pointer*,
