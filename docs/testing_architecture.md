@@ -63,10 +63,11 @@ Tier 3 needs the board attached:
 tools/hil/run.py --flash build/flexptp-demo.elf --stage S8
 ```
 
-**`--flash` is not optional if you want to test what you just built.** Without it the runner
-drives whatever firmware is already on the board and reports a confident pass for code that was
-never loaded. This has caught out at least one careless operator; see
-[`tools/hil/README.md`](../tools/hil/README.md).
+**It cannot report a pass for the wrong image.** The linker stamps a SHA-1 build ID into
+every firmware (`-Wl,--build-id=sha1`), `osinfo` prints it, and the `build_id` check compares it
+against the ELF — so a run against a board holding different firmware **fails**, whether or not
+`--flash` was passed. That used to be a warning in two READMEs, which is the weakest available
+control for a hazard that had already caught out an operator; it is now an assertion.
 
 ## Tier 1 — host unit tests
 
@@ -167,11 +168,12 @@ session, and it is fully covered.
 ## Tier 3 — hardware in the loop
 
 `tools/hil/` drives the board's serial CLI from the host over pyserial, with OpenOCD for flash
-and reset. Eleven named checks, grouped into per-stage sets so that a partially-ported firmware
+and reset. Twelve named checks, grouped into per-stage sets so that a partially-ported firmware
 can still be tested against the subset that is meaningful at that point.
 
 | Check | Asserts |
 |---|---|
+| `build_id` | **The board is running the image this run was given** |
 | `boot` | PHY identified, link up |
 | `cli` | Command table populated |
 | `osinfo` | Kernel version and free memory |

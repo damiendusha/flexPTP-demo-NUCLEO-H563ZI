@@ -82,6 +82,29 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
+  /*
+   * The linker's build ID: a SHA-1 over the linked output, emitted because CMakeLists.txt
+   * passes -Wl,--build-id=sha1.
+   *
+   * It is here so the RUNNING firmware can report which image it is. tools/hil/ used to have
+   * no way to tell -- without --flash it drove whatever was already on the board and reported
+   * a confident pass for code that was never loaded, and the only control was a warning in the
+   * README (finding GI-01). Now `osinfo` prints this and the runner compares it against the
+   * ELF, so testing the wrong image is a hard failure rather than a thing to remember.
+   *
+   * It must be KEEP()t (nothing references it) and it must be inside the loaded image, which
+   * is why it sits in FLASH immediately after the vector table rather than in a note section
+   * the objcopy would drop.
+   */
+  .note.gnu.build-id :
+  {
+    . = ALIGN(4);
+    PROVIDE(__build_id_note_start = .);
+    KEEP(*(.note.gnu.build-id))
+    PROVIDE(__build_id_note_end = .);
+    . = ALIGN(4);
+  } >FLASH
+
   /* The program code and other data goes into FLASH */
   .text :
   {

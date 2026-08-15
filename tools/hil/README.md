@@ -8,6 +8,13 @@ to it — it is a regression suite for this firmware.
 ```
 hil.py               Board: serial session, cmd(), expect(), reset() over SWD
 checks.py            the named checks, and which are valid at each porting stage
+
+The first check in every stage is `build_id`: the linker stamps a SHA-1 over each image,
+`osinfo` prints it, and the check compares it against the ELF given by `--flash` or `--elf`.
+A mismatch fails the run. Without it -- and it was without it for the whole ThreadX port -- the
+runner happily tested whatever firmware happened to be on the board and reported a confident
+pass for code that was never loaded (finding GI-01). With no ELF given it SKIPs, which the
+runner reports as incomplete: no claim was made, so none is checked.
 run.py               the runner
 setup_host_net.sh    privileged host-side network setup (direct cable)
 baseline.json        golden values captured from the pre-port firmware
@@ -20,6 +27,9 @@ tools/hil/run.py --list
 tools/hil/run.py --stage S0
 tools/hil/run.py --checks boot,cli,osinfo
 tools/hil/run.py --flash build/Debug/flexptp-demo.elf --stage S0
+
+# ...or check a board you did not just flash, without reflashing it:
+tools/hil/run.py --elf build/Debug/flexptp-demo.elf --stage S0
 ```
 
 Exit status: `0` all passed · `1` something failed or regressed · `2` could not reach the

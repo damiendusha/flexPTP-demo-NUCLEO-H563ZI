@@ -207,6 +207,11 @@ target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
     # there is not cosmetic: removing it from CMAKE_C_FLAGS without adding it here grew the
     # Release image from 167 424 B to 233 924 B, which is what caught the mistake (H-3).
     -Wl,--gc-sections
+
+    # A SHA-1 over the linked output, placed in .note.gnu.build-id by the linker script.
+    # `osinfo` prints it and tools/hil/ compares it against the ELF, so the hardware suite
+    # cannot report a pass for an image it did not test (GI-01).
+    -Wl,--build-id=sha1
     -Wl,--start-group
     -lc
     -lm

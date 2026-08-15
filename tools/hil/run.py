@@ -49,6 +49,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--port", default="/dev/ttyACM0")
     p.add_argument("--iface", default="enp5s0", help="host interface facing the board")
     p.add_argument("--flash", type=Path, help="flash this ELF before running")
+    p.add_argument("--elf", type=Path,
+                   help="the ELF the board is expected to be running, for the build_id check. "
+                        "Defaults to --flash. Give it on its own to check a board you did not "
+                        "just flash.")
     p.add_argument("--save", type=Path, help="write results as JSON (the baseline)")
     p.add_argument("--compare", type=Path, help="compare results against a saved baseline")
     p.add_argument("--settle", type=float, default=90.0, help="PTP settle window, seconds")
@@ -111,6 +115,7 @@ def main() -> int:
         ptp_settle_s=args.settle,
         expect_phy=(args.stage not in STAGES_WITHOUT_PHY),
         expect_ip_thread=(args.stage not in STAGES_WITHOUT_IP_THREAD),
+        elf=(args.elf or args.flash),
     )
 
     if args.flash:

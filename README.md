@@ -147,16 +147,18 @@ The first run downloads GoogleTest via `FetchContent`, so it needs network once.
 
 ### Hardware in the loop — board required
 
-Drives the board's serial CLI from the host, with OpenOCD for flash and reset. Eleven checks,
+Drives the board's serial CLI from the host, with OpenOCD for flash and reset. Twelve checks,
 from PHY identification through DHCP and ping to a bounded PTP offset in `SLAVE`.
 
 ```bash
 tools/hil/run.py --flash build/flexptp-demo.elf --stage S8
 ```
 
-> [!WARNING]
-> Without `--flash` the runner tests **whatever firmware is already on the board**, and will
-> report a confident pass for code you never loaded.
+> [!NOTE]
+> The runner checks it is testing the image you gave it. The linker stamps a SHA-1 build ID
+> into every image, `osinfo` prints it, and the `build_id` check compares the two — so running
+> without `--flash` against a board holding different firmware is a **failure**, not a
+> confident pass. Use `--elf` to check a board you did not just flash.
 
 `tools/hil/run.py --list` shows the checks and the per-stage sets; `--compare
 tools/hil/baseline.json` diffs against golden values captured from the pre-port firmware.

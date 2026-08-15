@@ -1291,6 +1291,26 @@ the same identity out of the supplied ELF and **fails with exit 1 on a mismatch*
 wrong image", which is the same transformation `build.sh`'s patch check already applied to the
 submodule hazard.
 
+> **✅ ADDRESSED** — `-Wl,--build-id=sha1` + the linker script + `osinfo` + a `build_id` check
+> that runs **first in every stage**.
+>
+> The identity is the linker's own SHA-1 over the linked output, not a home-made hash or a
+> `__DATE__` string: it changes when and only when the image does. `osinfo` parses the ELF note
+> out of FLASH; the runner parses the same note out of the ELF **in pure Python**, so a missing
+> `readelf` cannot make the check silently skip — which would be the exact failure mode it
+> exists to remove.
+>
+> **Evidence, all three paths:**
+>
+> | Case | Result |
+> |---|---|
+> | board flashed from the given ELF | `PASS build_id 6fe33dcff5c8d8ec… matches flexptp-demo.elf` |
+> | board running a different image (built a variant to force it) | `FAIL … the board is running 6fe33dcff5c8d8ec… but flexptp-demo.elf is 16044a068c71263a… -- every other result in this run is about the wrong firmware` |
+> | no ELF given | `SKIP … no ELF to compare against`, and the run reports **incomplete** — no claim was made, so none is checked |
+>
+> Full `S8` **12/12**, `|offset| ≤ 3 817 ns`. The README's `[!WARNING]` about `--flash` is now
+> a `[!NOTE]` describing a control rather than a hazard.
+
 ### GI-02 — give `ethinfo` and `osinfo` a machine-readable mode
 
 **Priority: Low**
@@ -1408,7 +1428,7 @@ how, and for the evidence.
 | [DS-04](#ds-04--two-options-is-followed-by-three) | ✅ P3 | Self-consistency | "## Two options" followed by A, B, C and "How the three compose" | `threadx_s5e_plan.md:80` | Status banner is correct; only the heading lagged |
 | [DS-05](#ds-05--the-host-suites-runtime-is-quoted-as-three-different-numbers) | ✅ P3 | Self-consistency | Suite runtime quoted as 0.04 s, 0.06 s and 0.2 s; measured 0.16 s | four documents | The 0.04 s figure underpins the "250× headroom" arithmetic for `TIMEOUT 10` (really ~60×) |
 | [DS-06](#ds-06--the-review-archives-readme-stops-at-f7x) | ✅ P3 | Self-consistency | "every finding (F1–F7x)"; the log reaches F80 | `docs/reviews/README.md:8` | |
-| [GI-01](#gi-01--let-the-hil-runner-prove-which-firmware-it-is-testing) | P2 | Improvement | HIL cannot prove which image it tested; the control is a README warning | `tools/hil/run.py` | Print a build identity, compare against the ELF, fail on mismatch — the same transformation `build.sh` applied to the patch hazard |
+| [GI-01](#gi-01--let-the-hil-runner-prove-which-firmware-it-is-testing) | ✅ P2 | Improvement | HIL cannot prove which image it tested; the control is a README warning | `tools/hil/run.py` | Print a build identity, compare against the ELF, fail on mismatch — the same transformation `build.sh` applied to the patch hazard |
 | [GI-02](#gi-02--give-ethinfo-and-osinfo-a-machine-readable-mode) | P3 | Improvement | HIL regex-parses human prose; a `MSG()` edit can silently disable a check | `checks.py`, `eth_drv_report()` | `checks.py:256` already records one silent miscount |
 | [GI-03](#gi-03--add-static-analysis-to-ci) | P3 | Improvement | No static analysis; `compile_commands.json` already available | `ci.yml` | Would likely have caught NX-05 and NX-08 |
 | [GI-04](#gi-04--two-pyc-files-are-committed) | ✅ P3 | Hygiene | Two `__pycache__/*.pyc` tracked; `.gitignore` lacks the pattern | `tools/hil/__pycache__/` | Also missing a trailing newline |

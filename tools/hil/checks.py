@@ -15,6 +15,7 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 
 from hil import Board, BoardError
 
@@ -56,6 +57,9 @@ class Context:
     expect_phy: bool = True
     expect_ip_thread: bool = True
     baseline: dict = field(default_factory=dict)
+
+    # The ELF this run claims to be testing, for check_build_id. None means no claim was made.
+    elf: "Path | None" = None
 
 
 # The addend's NOMINAL value: 2^32 / 1.25 for a 250 MHz clk_ptp_ref_i at a 5 ns increment.
@@ -260,6 +264,85 @@ def check_irq_prio(board: Board, ctx: Context) -> CheckResult:
 
     return CheckResult("irq_prio", Status.PASS,
                        f"{len(EXPECTED_IRQ_PRIORITIES)} priorities as documented", data)
+
+
+def check_build_id(board: Board, ctx: Context) -> CheckResult:
+    """The firmware running on the board is the image this run was given.
+
+    Finding GI-01. Without --flash the runner drives whatever is already on the board, and
+    every other check then reports a confident pass for code that was never loaded. The only
+    control was a warning in two READMEs, which is the weakest available answer to a hazard
+    this cheap to eliminate.
+
+    The linker emits a SHA-1 over the linked output into .note.gnu.build-id; `osinfo` prints
+    it and this reads the same value out of the ELF. A mismatch fails whether or not --flash
+    was passed, so "remember to pass a flag" becomes "cannot report a pass for the wrong
+    image".
+
+    SKIPs -- not fails -- when no ELF was given, because there is then no claim to check.
+    """
+    out = board.cmd("osinfo", quiet=1.2, timeout=10)
+    m = re.search(r"Build ID:\s*([0-9a-f]{8,})", out)
+    if not m:
+        return CheckResult(
+            "build_id", Status.SKIP, "osinfo does not report a build ID (added after S8)"
+        )
+    on_board = m.group(1)
+    data = {"board": on_board}
+
+    if ctx.elf is None:
+        return CheckResult("build_id", Status.SKIP,
+                           f"board reports {on_board[:16]}…, no ELF to compare against", data)
+
+    from_elf = read_elf_build_id(ctx.elf)
+    data["elf"] = from_elf
+    if from_elf is None:
+        return CheckResult("build_id", Status.SKIP,
+                           f"no build ID in {ctx.elf.name}; is it an old image?", data)
+
+    if from_elf != on_board:
+        return CheckResult(
+            "build_id", Status.FAIL,
+            f"the board is running {on_board[:16]}… but {ctx.elf.name} is {from_elf[:16]}… "
+            f"-- every other result in this run is about the wrong firmware", data)
+
+    return CheckResult("build_id", Status.PASS, f"{on_board[:16]}… matches {ctx.elf.name}", data)
+
+
+def read_elf_build_id(elf: "Path") -> "str | None":
+    """The build ID from an ELF, without needing a toolchain on PATH.
+
+    Parsed here rather than shelled out to readelf: the ARM toolchain lives under toolchains/
+    and may not be on PATH, and a check that silently skips because a binary was missing is
+    the failure mode this whole check exists to remove.
+    """
+    import struct
+
+    data = elf.read_bytes()
+    if len(data) < 52 or data[:4] != b"\x7fELF":
+        return None
+
+    # 32-bit little-endian ELF: e_shoff at 0x20, e_shentsize 0x2E, e_shnum 0x30.
+    e_shoff, = struct.unpack_from("<I", data, 0x20)
+    e_shentsize, e_shnum = struct.unpack_from("<HH", data, 0x2E)
+
+    for i in range(e_shnum):
+        off = e_shoff + (i * e_shentsize)
+        sh_type, = struct.unpack_from("<I", data, off + 4)
+        if sh_type != 7:  # SHT_NOTE
+            continue
+        sh_offset, sh_size = struct.unpack_from("<II", data, off + 0x10)
+        note = data[sh_offset:sh_offset + sh_size]
+
+        pos = 0
+        while pos + 12 <= len(note):
+            namesz, descsz, ntype = struct.unpack_from("<III", note, pos)
+            name_padded = (namesz + 3) & ~3
+            desc_at = pos + 12 + name_padded
+            if ntype == 3 and note[pos + 12:pos + 12 + 3] == b"GNU":  # NT_GNU_BUILD_ID
+                return note[desc_at:desc_at + descsz].hex()
+            pos = desc_at + ((descsz + 3) & ~3)
+    return None
 
 
 def check_ptp_start(board: Board, ctx: Context) -> CheckResult:
@@ -622,6 +705,7 @@ def check_ptp_sync(board: Board, ctx: Context) -> CheckResult:
 # --------------------------------------------------------------------------
 
 ALL_CHECKS = {
+    "build_id": check_build_id,
     "boot": check_boot,
     "cli": check_cli,
     "osinfo": check_osinfo,
@@ -644,15 +728,15 @@ STAGES_WITHOUT_PHY = {"S3", "S4"}
 STAGES_WITHOUT_IP_THREAD = {"S3"}
 
 STAGES = {
-    "S0": ["boot", "cli", "osinfo", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync"],
-    "S1": ["boot", "cli", "osinfo", "cpp_ctor", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync"],
-    "S3": ["boot", "cli", "osinfo", "cpp_ctor", "threads"],
-    "S4": ["boot", "cli", "osinfo", "cpp_ctor", "threads"],
-    "S5a": ["boot", "cli", "osinfo", "threads"],
-    "S5b": ["boot", "cli", "osinfo", "threads"],
-    "S5c": ["boot", "cli", "osinfo", "threads", "dhcp", "ping"],
-    "S5d": ["boot", "cli", "osinfo", "threads", "dhcp", "ping"],
-    "S6": ["boot", "cli", "osinfo", "threads", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync"],
-    "S7": ["boot", "cli", "osinfo", "threads", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync"],
+    "S0": ["build_id", "boot", "cli", "osinfo", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync"],
+    "S1": ["build_id", "boot", "cli", "osinfo", "cpp_ctor", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync"],
+    "S3": ["build_id", "boot", "cli", "osinfo", "cpp_ctor", "threads"],
+    "S4": ["build_id", "boot", "cli", "osinfo", "cpp_ctor", "threads"],
+    "S5a": ["build_id", "boot", "cli", "osinfo", "threads"],
+    "S5b": ["build_id", "boot", "cli", "osinfo", "threads"],
+    "S5c": ["build_id", "boot", "cli", "osinfo", "threads", "dhcp", "ping"],
+    "S5d": ["build_id", "boot", "cli", "osinfo", "threads", "dhcp", "ping"],
+    "S6": ["build_id", "boot", "cli", "osinfo", "threads", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync"],
+    "S7": ["build_id", "boot", "cli", "osinfo", "threads", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync"],
     "S8": list(ALL_CHECKS),
 }
