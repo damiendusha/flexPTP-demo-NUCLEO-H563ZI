@@ -29,6 +29,7 @@ split is worth noticing.
 - [Plan Structure Findings](#plan-structure-findings)
 - [Preconditions Requiring Hardware or Datasheet](#preconditions-requiring-hardware-or-datasheet)
 - [flexPTP Library & Documentation Findings](#flexptp-library--documentation-findings)
+- [Second-Review and ThreadX-Port Findings](#second-review-and-threadx-port-findings)
 - [Minor Findings](#minor-findings)
 - [Verified Clean](#verified-clean)
 - [H743 Baseline Reference Data](#h743-baseline-reference-data)
@@ -75,6 +76,8 @@ finding came from before trusting how it was established**:
 | Static review | F1–F43 | reading code, headers and documentation |
 | Implementation | F44–F50 | configuring, compiling and linking |
 | Hardware bring-up | F51–F66 | executing on the target, read over SWD and the console |
+| Independent review | F67–F79 | two later review passes over the tree; see [reviews/](reviews/README.md) |
+| ThreadX/NetX Duo port | F80 | the S6 bench session |
 
 > **This paragraph used to read "Still not done: **no hardware**. Nothing here has executed on
 > a device."** It was true when Phases 1 and 2 were written and has not been true since F51.
@@ -91,6 +94,8 @@ finding came from before trusting how it was established**:
 | Static review | F1–F43 (43) | Reading code, headers and documentation |
 | Implementation | F44–F50 (7) | Configuring, compiling and linking |
 | **Hardware bring-up** | **F51–F66 (16)** | **Executing on the target; SWD register reads, console captures and `tcpdump`** |
+| Independent review | F67–F79 (13) | Two later review passes over the tree, by more than one model |
+| ThreadX/NetX Duo port | F80 (1) | The S6 bench session — and the only finding here with no N-number, for that reason |
 
 The third phase is the one that changed the most conclusions. It produced the two defects
 that were invisible to both earlier phases (F51's byte-access fault, F52's init ordering),
@@ -187,9 +192,29 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F56 | `PTP_LOG_TRANSMISSION` exists in flexPTP's enum but has no CLI switch | Minor (cost hours) | documented |
 | F57 | `ETHHW_ProcessTx()` never reset its per-pass descriptor count — could re-dispatch a stale index | Latent bug | fixed |
 
+| F67 | The console FIFO could not tell full from empty | **RESOLVED** [N1, N7] | occupancy is a modular difference of two running totals; host-tested (TS-01) |
+| F68 | Console output from an interrupt hung the board | **RESOLVED** [N6] | interrupt context is refused and counted, not served |
+| F69 | A known vendor with an unlisted model was a boot HardFault | **RESOLVED** [N4] | fixed in the PHY driver |
+| F70 | The bounded transmit wait was compiled away above `-Og` | **RESOLVED** [N2, N9] | `volatile` on the descriptor; verified in the disassembly at three levels |
+| F71 | A momentary RX ring exhaustion killed reception permanently | **RESOLVED** [N3] | tail-pointer write on restore; host-tested and mutation-verified |
+| F72 | Every lwIP assertion was a silent no-op | **RESOLVED** [N5] | historical — lwIP was removed in S3 |
+| F73 | `init_ethernet()` built the netif without the core lock | **RESOLVED** | historical — lwIP was removed in S3 |
+| F74 | CLI tokenizer: a one-byte overflow and shared state | **RESOLVED** [N8, N12] | host-tested and mutation-verified (TS-02) |
+| F75 | A dropped transmit was reported to lwIP as sent | **RESOLVED** [N14] | the NetX Duo driver reports `NX_TX_QUEUE_DEPTH`; host-tested |
+| F76 | The MAC handed the FCS up with every received frame | **RESOLVED** [N13] | CST/ACS enabled; host-tested |
+| F77 | Two traps on the EtherLib receive path | **RESOLVED** [N10, N11] | EtherLib is present but not compiled — see [design_doc.md](design_doc.md#etherlib-porting-guide) |
+| F78 | Two configuration statements that did not hold | **RESOLVED** [N15, N16] | the same class as NX-03, which corrected a third |
+| F79 | The flash figure is not reproducible across build directories | **documented** [N17] | compare deltas, not absolutes |
+| F80 | **flexPTP's heartbeat cannot be enqueued from ThreadX's timer thread** | **RESOLVED** | `patches/flexptp/0004`; pinned by a host test against a real kernel |
+
 **Every finding is tracked.** F33 and F34 are recorded here only because they are
 observations about upstream code that require no action — noted so a future reader does not
 spend time on them.
+
+> **This table ran F1–F66 and still said "every finding is tracked"** until finding DS-02 of
+> [`review_v1_opus_5p0.md`](review_v1_opus_5p0.md). Fourteen findings — a fifth of the log, and
+> the fifth containing most of the ThreadX/NetX Duo work — had a section each and no row here,
+> and the two phase tables above stopped at F66 as well. All three are corrected.
 
 ---
 
@@ -1653,11 +1678,17 @@ state. Stage 20 previously said only "converging offset"; it now names the thres
 
 ---
 
-## Second-Review Findings
+## Second-Review and ThreadX-Port Findings
 
-Raised by the second review pass ([`final_review_v2_opus_5p0.md`](reviews/final_review_v2_opus_5p0.md),
-[`consolidated_review_v2.md`](reviews/consolidated_review_v2.md)) and numbered F67 onward. The N-numbers
-in brackets are the identifiers those documents use.
+F67 onward, from two different sources — which this heading used to conflate.
+
+**F67–F79** were raised by the second review pass
+([`final_review_v2_opus_5p0.md`](reviews/final_review_v2_opus_5p0.md),
+[`consolidated_review_v2.md`](reviews/consolidated_review_v2.md)); the N-numbers in brackets are
+the identifiers those documents use, and their absence is the visible sign of the other source.
+
+**F80** has no N-number because it was not found by review at all. It came out of the S6 bench
+session of the ThreadX/NetX Duo port, and it is why `patches/flexptp/0004` exists.
 
 ### F67 — the console FIFO could not tell full from empty *(RESOLVED)* [N1, N7]
 

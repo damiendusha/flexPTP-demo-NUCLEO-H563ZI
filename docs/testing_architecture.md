@@ -27,8 +27,8 @@ Companion documents: [architecture.md](architecture.md) (what is being tested) �
 
 | Tier | Where it runs | Needs | Wall clock | Gates |
 |---|---|---|---|---|
-| **1. Host unit tests** | dev machine / CI, system `gcc` | nothing | 0.2 s | every push |
-| **2. Real ThreadX on the host** | dev machine / CI, ThreadX `ports/linux` | nothing | 0.04 s | every push |
+| **1. Host unit tests** | dev machine / CI, system `gcc` | nothing | 0.20 s | every push |
+| **2. Real ThreadX on the host** | dev machine / CI, ThreadX `ports/linux` | nothing | 0.05 s | every push |
 | **3. Hardware in the loop** | the NUCLEO board over SWD + serial | board, cable, host NIC | ~3 min | manual |
 
 Tiers 1 and 2 live in the same CMake project and the same `ctest` run; they are separated here
@@ -251,7 +251,9 @@ Three things this exercise taught, each of which changed the code:
 - **F57 presents as a hang, not a wrong value.** With the per-pass count hoisted, `found` never
   reaches zero and the drain loop spins forever. Without a timeout the suite wedges and CI waits
   for its job limit instead of reporting anything. That is why `add_host_test()` sets
-  `TIMEOUT 10` — 250× headroom over the 0.04 s the suite actually takes.
+  `TIMEOUT 10`, which is ~40× headroom over the 0.26 s the whole suite takes and far more
+  over any single binary in it. (Re-measured: the figure was quoted as 0.04 s, 0.06 s and 0.2 s
+  in four different documents, none of them current.)
 
 - **A third NX-01 branch survived the first mutation round.** Checking that the context slot is
   application-owned is not sufficient, because an ordinary frame in that slot is

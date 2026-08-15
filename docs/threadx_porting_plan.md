@@ -91,7 +91,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending · ⏸️ optional/deferred
 | **P3** | Plan approved by the maintainer | — | — | ✅ done |
 | **S0** | Baseline capture + HIL harness (`tools/hil/`) | ✅ 8/8 green, twice | 1 d | ✅ **done** |
 | **S1** | C++ proof TU + host GTest tree (`test/`) | ✅ 9/9, `cpp_ctor: ok`, no regressions | 0.5–1 d | ✅ **done** |
-| **S1b** | Tier 1+2 host harness: real ST headers + descriptor-ring model; characterisation tests pinning current-driver behaviour | ⬜ host only | 1–1.5 d | ✅ **done — 25 tests, 0.06 s; F57/F61/F71 + wrap ordering all mutation-verified; no production change needed** |
+| **S1b** | Tier 1+2 host harness: real ST headers + descriptor-ring model; characterisation tests pinning current-driver behaviour | ⬜ host only | 1–1.5 d | ✅ **done — 25 tests, well under a second; F57/F61/F71 + wrap ordering all mutation-verified; no production change needed** |
 | **S2** | Vendor ThreadX + wrapper; `tx_user.h`; low-level init; linker script | ✅ 9/9, image byte-identical | 0.5–1 d | ✅ **done** |
 | **S3** | Kernel swap: CMSIS-RTOS2 on ThreadX, `main.c` reorder, hooks, `osinfo` — **lwIP removed, no network** | ✅ 5/5 | 1.5–2 d | ✅ **done** |
 | **S4** | Vendor NetX Duo; `nx_user.h`; IP instance + packet pool; **stub driver** | ✅ 5/5, IP thread alive | 0.5 d | ✅ **done** |

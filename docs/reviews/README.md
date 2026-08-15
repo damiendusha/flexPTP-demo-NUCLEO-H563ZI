@@ -5,7 +5,7 @@ of how the findings were arrived at and contested — they are **historical arte
 current documentation**.
 
 > **Read [`../port_review.md`](../port_review.md) for the findings themselves.** It is the
-> living document: every finding (F1–F7x), its evidence, its status, and the ones that were
+> living document: every finding (F1–F80), its evidence, its status, and the ones that were
 > retracted. The files here are the raw inputs that fed it, frozen at the commit each was
 > written against. Where they disagree with `port_review.md`, `port_review.md` wins.
 

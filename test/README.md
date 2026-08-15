@@ -174,8 +174,7 @@ Three things this exercise taught, all of which changed the code above:
 - **F57 presents as a hang, not a wrong value.** With the per-pass count hoisted, `found`
   never reaches zero and the drain loop spins forever. Without a timeout the suite wedges and
   CI waits for its job limit instead of reporting anything. That is why `add_host_test()` sets
-  `TIMEOUT 10` — 250× headroom over the 0.04 s the whole suite takes, and it turns the hang
-  into six clean failures.
+  `TIMEOUT 10`, and it turns the hang into six clean failures.
 
 - **The first version of the wrap test could not fail.** Four timestamped frames straddling
   the wrap are ordered identically by the correct modular arithmetic and by the buggy widened

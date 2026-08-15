@@ -1184,6 +1184,9 @@ The TOC lists ten sections. **"Second-Review Findings"** — 620 lines, findings
 including F80, the defect that cost a bench session and required the fourth submodule patch — is
 not among them. A reader navigating by TOC never learns those findings exist.
 
+> **✅ ADDRESSED** — the section is in the TOC, renamed *Second-Review and ThreadX-Port
+> Findings* so the heading stops claiming a single source.
+
 ### DS-02 — the Disposition Summary claims completeness it does not have
 
 **Priority: Medium** · `docs/port_review.md:119-195`
@@ -1206,6 +1209,11 @@ Adding a fourth phase row ("Second review and ThreadX port · F67–F80 · indep
 tree, plus the ThreadX/NetX Duo bench sessions") and extending the disposition table would fix
 both DS-01 and DS-02.
 
+> **✅ ADDRESSED** — 14 disposition rows added, checked programmatically: every `### Fnn` section
+> now has a row. And **two** phase rows rather than one, because the sources really are
+> different — *Independent review · F67–F79* and *ThreadX/NetX Duo port · F80*. The completeness
+> claim now carries a note recording that it was wrong and for how long.
+
 ### DS-03 — F80 is attributed to the second review pass, which did not find it
 
 **Priority: Low** · `docs/port_review.md:1656-1660`
@@ -1218,6 +1226,10 @@ own entry, `Inc/tx_user.h:47-53` ("CORRECTION, S6 … it cost the S6 bench sessi
 `testing_architecture.md:121-132` all say. Every other finding in the section has an `[Nnn]`
 bracket tying it to a second-review identifier; F80 has none, which is the visible symptom.
 
+> **✅ ADDRESSED** — the section body separates F67–F79 (second review) from F80 (the S6 bench
+> session), and points out that the missing N-number is the visible sign of the difference
+> rather than an omission.
+
 ### DS-04 — "Two options" is followed by three
 
 **Priority: Low** · `docs/threadx_s5e_plan.md:80`
@@ -1225,6 +1237,8 @@ bracket tying it to a second-review identifier; F80 has none, which is the visib
 `## Two options` → `### Option A`, `### Option B`, `### Option C`, `## How the three compose`,
 and a recommendation that sequences all three. The status banner at the top is accurate ("C and B
 are built and passing"); only the heading was left behind when C was added.
+
+> **✅ ADDRESSED** — the heading is now *The three options*.
 
 ### DS-05 — the host suite's runtime is quoted as three different numbers
 
@@ -1242,6 +1256,11 @@ Trivial individually. Worth one pass because the 0.04 s figure is used as the ju
 the `TIMEOUT 10` headroom calculation ("250× headroom"), which against the real figure is ~60×
 — still ample, but the stated arithmetic no longer follows.
 
+> **✅ ADDRESSED** — re-measured (three runs: 0.25, 0.25, 0.26 s for 86 entries; 0.20 s for the
+> tier-1 subset) and made consistent across five documents. The `TIMEOUT 10` justification no
+> longer quotes a multiplier that has to be maintained — the suite grew by 31 entries during
+> this review alone, which is exactly why that number kept going stale.
+
 ### DS-06 — the review archive's README stops at "F7x"
 
 **Priority: Low** · `docs/reviews/README.md:8`
@@ -1250,6 +1269,8 @@ the `TIMEOUT 10` headroom calculation ("250× headroom"), which against the real
 
 The log reaches F80. A small thing, but it is in the sentence that tells the reader `port_review.md`
 is the complete record.
+
+> **✅ ADDRESSED** — now `F1–F80`.
 
 ---
 
@@ -1381,12 +1402,12 @@ how, and for the evidence.
 | [DC-08](#dc-08--flexptp_optionsh-describes-the-transmit-timestamp-deferral-as-future-work) | ✅ P3 | Doc | "S6 must defer the callback…" — S6 shipped and the deferral exists | `flexptp_options.h:42-44` | Keep the warning, point it at `ptp_tx_timestamp.c`. Also: stale include-guard name |
 | [DC-09](#dc-09--the-igmp-comment-keeps-a-superseded-first-paragraph) | ✅ P3 | Doc | Superseded first paragraph precedes its own correction | `nsd_netxduo.c:328-336` | |
 | [DC-10](#dc-10--readmemd-overstates-the-eth_stack-switch) | P3 | Doc | README/design_doc disagree on the EtherLib switch | `README.md:263-271` | Same as AR-05 |
-| [DS-01](#ds-01--port_reviewmds-table-of-contents-omits-its-largest-section) | P2 | Self-consistency | `port_review.md` TOC omits "Second-Review Findings" (F67–F80, 620 lines) | `port_review.md:22-34` | Includes F80, the finding that required patch 0004 |
-| [DS-02](#ds-02--the-disposition-summary-claims-completeness-it-does-not-have) | P2 | Self-consistency | Disposition Summary stops at F66 yet says "Every finding is tracked"; both phase tables likewise | `port_review.md:78-95,119-195` | 14 findings with no disposition row and no phase attribution |
-| [DS-03](#ds-03--f80-is-attributed-to-the-second-review-pass-which-did-not-find-it) | P3 | Self-consistency | F80 filed under "raised by the second review pass"; it came from the S6 bench session | `port_review.md:1656-1660` | Visible symptom: it is the only entry with no `[Nnn]` bracket |
-| [DS-04](#ds-04--two-options-is-followed-by-three) | P3 | Self-consistency | "## Two options" followed by A, B, C and "How the three compose" | `threadx_s5e_plan.md:80` | Status banner is correct; only the heading lagged |
-| [DS-05](#ds-05--the-host-suites-runtime-is-quoted-as-three-different-numbers) | P3 | Self-consistency | Suite runtime quoted as 0.04 s, 0.06 s and 0.2 s; measured 0.16 s | four documents | The 0.04 s figure underpins the "250× headroom" arithmetic for `TIMEOUT 10` (really ~60×) |
-| [DS-06](#ds-06--the-review-archives-readme-stops-at-f7x) | P3 | Self-consistency | "every finding (F1–F7x)"; the log reaches F80 | `docs/reviews/README.md:8` | |
+| [DS-01](#ds-01--port_reviewmds-table-of-contents-omits-its-largest-section) | ✅ P2 | Self-consistency | `port_review.md` TOC omits "Second-Review Findings" (F67–F80, 620 lines) | `port_review.md:22-34` | Includes F80, the finding that required patch 0004 |
+| [DS-02](#ds-02--the-disposition-summary-claims-completeness-it-does-not-have) | ✅ P2 | Self-consistency | Disposition Summary stops at F66 yet says "Every finding is tracked"; both phase tables likewise | `port_review.md:78-95,119-195` | 14 findings with no disposition row and no phase attribution |
+| [DS-03](#ds-03--f80-is-attributed-to-the-second-review-pass-which-did-not-find-it) | ✅ P3 | Self-consistency | F80 filed under "raised by the second review pass"; it came from the S6 bench session | `port_review.md:1656-1660` | Visible symptom: it is the only entry with no `[Nnn]` bracket |
+| [DS-04](#ds-04--two-options-is-followed-by-three) | ✅ P3 | Self-consistency | "## Two options" followed by A, B, C and "How the three compose" | `threadx_s5e_plan.md:80` | Status banner is correct; only the heading lagged |
+| [DS-05](#ds-05--the-host-suites-runtime-is-quoted-as-three-different-numbers) | ✅ P3 | Self-consistency | Suite runtime quoted as 0.04 s, 0.06 s and 0.2 s; measured 0.16 s | four documents | The 0.04 s figure underpins the "250× headroom" arithmetic for `TIMEOUT 10` (really ~60×) |
+| [DS-06](#ds-06--the-review-archives-readme-stops-at-f7x) | ✅ P3 | Self-consistency | "every finding (F1–F7x)"; the log reaches F80 | `docs/reviews/README.md:8` | |
 | [GI-01](#gi-01--let-the-hil-runner-prove-which-firmware-it-is-testing) | P2 | Improvement | HIL cannot prove which image it tested; the control is a README warning | `tools/hil/run.py` | Print a build identity, compare against the ELF, fail on mismatch — the same transformation `build.sh` applied to the patch hazard |
 | [GI-02](#gi-02--give-ethinfo-and-osinfo-a-machine-readable-mode) | P3 | Improvement | HIL regex-parses human prose; a `MSG()` edit can silently disable a check | `checks.py`, `eth_drv_report()` | `checks.py:256` already records one silent miscount |
 | [GI-03](#gi-03--add-static-analysis-to-ci) | P3 | Improvement | No static analysis; `compile_commands.json` already available | `ci.yml` | Would likely have caught NX-05 and NX-08 |

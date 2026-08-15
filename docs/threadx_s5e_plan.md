@@ -67,7 +67,7 @@ talking over a RAM driver means a real PTP exchange, not just "does the NSD comp
    t3 present, path delay computed) rather than *accuracy*, and by keeping timeouts generous.
 
 3. **It is a simulator, not a unit test.** The existing `test/` tree compiles individual files
-   against small fakes and runs in 0.06 s. This would link two real middleware stacks and run
+   against small fakes and runs in a fraction of a second. This would link two real middleware stacks and run
    for seconds. It should live in its own target, not alongside them, or it will make the fast
    suite slow and the slow suite look flaky.
 
@@ -77,7 +77,7 @@ talking over a RAM driver means a real PTP exchange, not just "does the NSD comp
 
 ---
 
-## Two options
+## The three options
 
 ### Option A — the full tier, as originally scoped
 
