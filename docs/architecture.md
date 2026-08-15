@@ -150,7 +150,7 @@ Project-owned code that would otherwise look like a third-party module:
 | Component | Location | Role |
 |---|---|---|
 | **EthDrv** | `Drivers/EthDrv/` | Register-level Ethernet MAC driver (`mac_drv.c`), PHY driver, and the NetX Duo glue (`eth_drv_netxduo.c`) |
-| **flexPTP NSD** | `Src/flexptp_nsd/` | This project's network-stack driver for flexPTP, supplied through `FLEXPTP_NSD_SRC` rather than using flexPTP's bundled one. Three of its units are C++ and host-tested |
+| **flexPTP NSD** | `Src/flexptp_nsd/` | This project's network-stack driver for flexPTP, supplied through `FLEXPTP_NSD_SRC` rather than using flexPTP's bundled one. Four of its units are C++ and host-tested |
 | **blocking_io** | `Modules/blocking_io/` | Blocking FIFO behind the console |
 | **flexPTP HW port** | `Src/flexptp_port/` | STM32H563 hardware port for flexPTP (Stage 14) |
 
@@ -196,7 +196,7 @@ along with both of the things it bridged.
 The NSD box is the one that moved. Under lwIP this project used flexPTP's **bundled**
 `nsd_lwip.c`; under NetX Duo it supplies its own through flexPTP's `FLEXPTP_NSD_SRC`
 extension point, because flexPTP ships no NetX Duo driver. That is why
-`Src/flexptp_nsd/` exists and why three of its units were extracted into testable,
+`Src/flexptp_nsd/` exists and why four of its units were extracted into testable,
 dependency-free C++ — see [testing_architecture.md](testing_architecture.md).
 
 Two boundaries are worth calling out:

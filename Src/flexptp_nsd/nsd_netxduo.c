@@ -22,6 +22,7 @@
 #include "Drivers/EthDrv/eth_drv_netxduo.h"
 #include "ethernet/ethernet_netxduo.h"
 #include "ptp_endpoint.h"
+#include "ptp_nsd_lifecycle.h"
 #include "ptp_ts_codec.h"
 #include "ptp_tx_timestamp.h"
 #include "standard_output/standard_output.h"
@@ -33,15 +34,19 @@
 
 static NX_UDP_SOCKET s_event_socket;   /* port 319: Sync, Delay_Req, PDelay_Req/Resp */
 static NX_UDP_SOCKET s_general_socket; /* port 320: Follow_Up, Delay_Resp, Announce   */
-static bool s_sockets_open;
 
 /* The 802.3 receive registration. NetX Duo keeps this queue structure in a list on the
    interface, so it must outlive the call -- a stack local would corrupt that list. */
 static NX_LINK_RECEIVE_QUEUE s_l2_queue;
-static bool s_l2_registered;
 
-static PtpTransportType s_tp = -1;
-static PtpDelayMechanism s_dm = -1;
+/* Which objects exist and which transport is live is ptp_nsd_lifecycle.cpp's business, not
+ * this file's. It was this file's, and it got the failure paths wrong: a socket created but
+ * not bound was left on NetX Duo's created list because the "open" flag was only set once the
+ * whole sequence had succeeded (finding NX-02). The state machine is now separated from the
+ * stack it drives and tested against a fake -- see test/test_ptp_nsd_lifecycle.cpp. */
+static PtpNsdLifecycle s_lifecycle;
+static bool s_lifecycle_ready;
+
 
 /* Bring-up counters. The question "is the callback firing at all?" has three different
    answers with three different causes, and none is visible from the console otherwise. */
@@ -102,15 +107,21 @@ static void extract_rx_timestamp(NX_PACKET *packet, uint32_t *ts_s, uint32_t *ts
     }
 }
 
-/* flexPTP's enums to the endpoint unit's. One call site, so the mapping stays visible. */
+/* The live configuration, as the endpoint unit sees it.
+ *
+ * Read from the lifecycle rather than from a copy kept here. That is not tidiness: the
+ * multicast group depends on the delay mechanism and the destination on the transport, and the
+ * lifecycle publishes each at the point the group join needs it -- the delay before building,
+ * the transport once the build has succeeded and before the join. A local copy updated after
+ * ptp_nsd_lifecycle_configure() returns would be one step behind the join it is meant to
+ * describe. */
 static void resolve_endpoint(PtpEndpoint *out) {
-    PtpEndpointTransport tp = PTP_EP_TRANSPORT_NONE;
-    if (s_tp == PTP_TP_IPv4) {
-        tp = PTP_EP_TRANSPORT_IPV4;
-    } else if (s_tp == PTP_TP_802_3) {
-        tp = PTP_EP_TRANSPORT_802_3;
-    }
-    ptp_endpoint_resolve(tp, (s_dm == PTP_DM_E2E) ? PTP_EP_DELAY_E2E : PTP_EP_DELAY_P2P, out);
+    ptp_endpoint_resolve(s_lifecycle.transport, s_lifecycle.delay, out);
+}
+
+/** The transport currently live, or PTP_EP_TRANSPORT_NONE. */
+static PtpEndpointTransport live_transport(void) {
+    return s_lifecycle_ready ? s_lifecycle.transport : PTP_EP_TRANSPORT_NONE;
 }
 
 /* --- Receive ------------------------------------------------------------------------------ */
@@ -222,36 +233,97 @@ static void l2_group_address(ULONG *msw, ULONG *lsw) {
 
 /* --- Driver interface ----------------------------------------------------------------------- */
 
-static void close_sockets(void) {
-    NX_IP *ip = ethernet_ip();
-    if (s_l2_registered && (ip != NX_NULL)) {
-        (void)nx_link_packet_receive_callback_remove(ip, 0, &s_l2_queue);
-        s_l2_registered = false;
-    }
+/* --- The lifecycle unit's view of NetX Duo ------------------------------------------------ */
 
-    if (!s_sockets_open) {
-        return;
-    }
-
-    nx_udp_socket_unbind(&s_event_socket);
-    nx_udp_socket_delete(&s_event_socket);
-    nx_udp_socket_unbind(&s_general_socket);
-    nx_udp_socket_delete(&s_general_socket);
-    s_sockets_open = false;
+static NX_UDP_SOCKET *socket_of(PtpNsdSocket which) {
+    return (which == PTP_NSD_SOCK_EVENT) ? &s_event_socket : &s_general_socket;
 }
 
-void ptp_nsd_init(PtpTransportType tp, PtpDelayMechanism dm) {
+static bool nsd_socket_create(void *ctx, PtpNsdSocket which) {
+    (void)ctx;
     NX_IP *ip = ethernet_ip();
+    if (ip == NX_NULL) {
+        return false;
+    }
 
-    ptp_nsd_igmp_join_leave(false);
-    close_sockets();
+    /* NX_IP_NORMAL type-of-service and a 32-deep receive queue, matching the depth lwIP's UDP
+       PCB effectively had. NX_FRAGMENT_OKAY is irrelevant here -- PTP messages are far below
+       the MTU -- but NetX Duo requires the argument. */
+    const CHAR *name = (which == PTP_NSD_SOCK_EVENT) ? "ptp event" : "ptp general";
+    if (nx_udp_socket_create(ip, socket_of(which), (CHAR *)name, NX_IP_NORMAL,
+                             NX_FRAGMENT_OKAY, NX_IP_TIME_TO_LIVE, 32) != NX_SUCCESS) {
+        MSG("PTP: could not create the %s socket\n", name);
+        return false;
+    }
+    return true;
+}
 
-    /* Either parameter as -1 means "shut down" -- flexPTP calls it that way from
-       unreg_task_ptp(). */
-    if ((tp == -1) || (dm == -1) || (ip == NX_NULL)) {
-        s_tp = -1;
-        s_dm = -1;
-        return;
+static bool nsd_socket_bind(void *ctx, PtpNsdSocket which, uint16_t port) {
+    (void)ctx;
+
+    /* Bounded, not NX_WAIT_FOREVER.
+     *
+     * This runs on flexPTP's own thread, so an unavailable port used to park the PTP stack
+     * for good with nothing said -- the same shape as the unbounded hardware waits F54 swept
+     * up. A second is far longer than a bind that is going to succeed needs, and the failure
+     * is now reportable and, more to the point, recoverable: the lifecycle unit deletes what
+     * it built and the next profile change tries again. */
+    if (nx_udp_socket_bind(socket_of(which), port, NX_IP_PERIODIC_RATE) != NX_SUCCESS) {
+        MSG("PTP: could not bind UDP port %u\n", (unsigned)port);
+        return false;
+    }
+    return true;
+}
+
+static void nsd_socket_notify(void *ctx, PtpNsdSocket which) {
+    (void)ctx;
+    nx_udp_socket_receive_notify(socket_of(which), ptp_udp_receive);
+}
+
+static void nsd_socket_delete(void *ctx, PtpNsdSocket which) {
+    (void)ctx;
+    /* Unbind unconditionally: a socket that was created but never bound answers NX_NOT_BOUND,
+       which is exactly the state a failed configure leaves and exactly what must still be
+       deletable. */
+    (void)nx_udp_socket_unbind(socket_of(which));
+    (void)nx_udp_socket_delete(socket_of(which));
+}
+
+static bool nsd_l2_register(void *ctx) {
+    (void)ctx;
+    NX_IP *ip = ethernet_ip();
+    if ((ip == NX_NULL) ||
+        (nx_link_packet_receive_callback_add(ip, 0, &s_l2_queue, NX_LINK_ETHERNET_PTP,
+                                             ptp_l2_receive, NX_NULL) != NX_SUCCESS)) {
+        MSG("PTP: could not register the 802.3 receive callback\n");
+        return false;
+    }
+    return true;
+}
+
+static void nsd_l2_unregister(void *ctx) {
+    (void)ctx;
+    NX_IP *ip = ethernet_ip();
+    if (ip != NX_NULL) {
+        (void)nx_link_packet_receive_callback_remove(ip, 0, &s_l2_queue);
+    }
+}
+
+static void nsd_multicast(void *ctx, bool join) {
+    (void)ctx;
+    ptp_nsd_igmp_join_leave(join);
+}
+
+static const PtpNsdOps s_nsd_ops = {
+    nsd_socket_create, nsd_socket_bind, nsd_socket_notify, nsd_socket_delete,
+    nsd_l2_register,   nsd_l2_unregister, nsd_multicast,   NULL};
+
+/* --- Driver interface, continued ------------------------------------------------------------ */
+
+void ptp_nsd_init(PtpTransportType tp, PtpDelayMechanism dm) {
+    if (!s_lifecycle_ready) {
+        ptp_nsd_lifecycle_init(&s_lifecycle, &s_nsd_ops);
+        s_lifecycle_ready = true;
     }
 
     /* The transmit-timestamp deferral must exist before the first frame goes out, or the
@@ -262,40 +334,24 @@ void ptp_nsd_init(PtpTransportType tp, PtpDelayMechanism dm) {
         MSG("PTP: transmit-timestamp deferral unavailable; t3 will be missing\n");
     }
 
-    if (tp == PTP_TP_IPv4) {
-        /* NX_IP_NORMAL type-of-service and a 32-deep receive queue, matching the depth lwIP's
-           UDP PCB effectively had. NX_FRAGMENT_OKAY is irrelevant here -- PTP messages are far
-           below the MTU -- but NetX Duo requires the argument. */
-        if ((nx_udp_socket_create(ip, &s_event_socket, "ptp event", NX_IP_NORMAL,
-                                  NX_FRAGMENT_OKAY, NX_IP_TIME_TO_LIVE, 32) != NX_SUCCESS) ||
-            (nx_udp_socket_create(ip, &s_general_socket, "ptp general", NX_IP_NORMAL,
-                                  NX_FRAGMENT_OKAY, NX_IP_TIME_TO_LIVE, 32) != NX_SUCCESS)) {
-            MSG("PTP: could not create the UDP sockets\n");
-            return;
+    /* Either parameter as -1 means "shut down" -- flexPTP calls it that way from
+       unreg_task_ptp(). So does a missing IP instance: there is nothing to configure against. */
+    PtpEndpointTransport ep_tp = PTP_EP_TRANSPORT_NONE;
+    if ((tp != -1) && (dm != -1) && (ethernet_ip() != NX_NULL)) {
+        if (tp == PTP_TP_IPv4) {
+            ep_tp = PTP_EP_TRANSPORT_IPV4;
+        } else if (tp == PTP_TP_802_3) {
+            ep_tp = PTP_EP_TRANSPORT_802_3;
         }
-
-        if ((nx_udp_socket_bind(&s_event_socket, PTP_PORT_EVENT, NX_WAIT_FOREVER) != NX_SUCCESS) ||
-            (nx_udp_socket_bind(&s_general_socket, PTP_PORT_GENERAL, NX_WAIT_FOREVER) != NX_SUCCESS)) {
-            MSG("PTP: could not bind the UDP sockets\n");
-            return;
-        }
-
-        nx_udp_socket_receive_notify(&s_event_socket, ptp_udp_receive);
-        nx_udp_socket_receive_notify(&s_general_socket, ptp_udp_receive);
-        s_sockets_open = true;
-    } else if (tp == PTP_TP_802_3) {
-        if (nx_link_packet_receive_callback_add(ip, 0, &s_l2_queue, NX_LINK_ETHERNET_PTP,
-                                                ptp_l2_receive, NX_NULL) != NX_SUCCESS) {
-            MSG("PTP: could not register the 802.3 receive callback\n");
-            return;
-        }
-        s_l2_registered = true;
     }
 
-    s_tp = tp;
-    s_dm = dm;
+    /* The lifecycle owns the answer. A failed configure leaves it reporting
+       PTP_EP_TRANSPORT_NONE, so the transmit path cannot act on sockets that have just been
+       deleted -- which was the half of NX-02 that is not a leak. */
+    const PtpEndpointDelay ep_dm =
+        (dm == PTP_DM_E2E) ? PTP_EP_DELAY_E2E : PTP_EP_DELAY_P2P;
 
-    ptp_nsd_igmp_join_leave(true);
+    (void)ptp_nsd_lifecycle_configure(&s_lifecycle, ep_tp, ep_dm);
 }
 
 void ptp_nsd_igmp_join_leave(bool join) {
@@ -308,7 +364,7 @@ void ptp_nsd_igmp_join_leave(bool join) {
     /* 802.3 has no IGMP -- the grouping is a link-layer multicast MAC. nx_link_multicast_join()
        is the equivalent, and the lwIP driver had no counterpart at all: it relied on the MAC
        being in pass-all-multicast, which works but filters nothing. */
-    if (s_tp == PTP_TP_802_3) {
+    if (live_transport() == PTP_EP_TRANSPORT_802_3) {
         ULONG msw = 0, lsw = 0;
         l2_group_address(&msw, &lsw);
         if (join) {
@@ -321,7 +377,7 @@ void ptp_nsd_igmp_join_leave(bool join) {
         return;
     }
 
-    if (s_tp != PTP_TP_IPv4) {
+    if (live_transport() != PTP_EP_TRANSPORT_IPV4) {
         return;
     }
 
@@ -369,7 +425,7 @@ void ptp_nsd_transmit_msg(RawPtpMessage *pMsg, uint32_t uid) {
     if ((pMsg == NULL) || (ip == NX_NULL) || (pool == NX_NULL)) {
         return;
     }
-    if ((s_tp != PTP_TP_IPv4) && (s_tp != PTP_TP_802_3)) {
+    if (live_transport() == PTP_EP_TRANSPORT_NONE) {
         return;
     }
 
@@ -378,7 +434,8 @@ void ptp_nsd_transmit_msg(RawPtpMessage *pMsg, uint32_t uid) {
        offset for an L2 frame would still work but would waste 28 bytes of every packet and
        obscure where the header actually starts. */
     NX_PACKET *packet = NX_NULL;
-    UINT alloc_type = (s_tp == PTP_TP_IPv4) ? NX_UDP_PACKET : NX_PHYSICAL_HEADER;
+    UINT alloc_type =
+        (live_transport() == PTP_EP_TRANSPORT_IPV4) ? NX_UDP_PACKET : NX_PHYSICAL_HEADER;
     if (nx_packet_allocate(pool, &packet, alloc_type, NX_NO_WAIT) != NX_SUCCESS) {
         /* No timestamp callback will ever come for this uid. flexPTP ages the message out of
            its buffer on TTL, so the slot is not leaked -- but the Sync cycle is lost, which is
@@ -402,7 +459,7 @@ void ptp_nsd_transmit_msg(RawPtpMessage *pMsg, uint32_t uid) {
     eth_drv_request_tx_timestamp(packet, uid);
     s_tx_requested++;
 
-    if (s_tp == PTP_TP_802_3) {
+    if (live_transport() == PTP_EP_TRANSPORT_802_3) {
         /* Raw 802.3. nx_link_ethernet_packet_send() builds the Ethernet header itself and
            issues NX_LINK_RAW_PACKET_SEND, which the driver passes through untouched -- so the
            capability flag set above still reaches it and the timestamp is still requested.

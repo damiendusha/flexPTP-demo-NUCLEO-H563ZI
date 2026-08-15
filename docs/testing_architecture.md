@@ -96,8 +96,8 @@ silent divergence.
 
 ### The NSD logic units
 
-`Src/flexptp_nsd/ptp_{tx_registry,ts_codec,endpoint}` were extracted from `eth_drv_netxduo.c`
-and `nsd_netxduo.c` specifically so they could be tested. They are C++ with `extern "C"`
+`Src/flexptp_nsd/ptp_{tx_registry,ts_codec,endpoint,nsd_lifecycle}` were extracted from
+`eth_drv_netxduo.c` and `nsd_netxduo.c` specifically so they could be tested. They are C++ with `extern "C"`
 boundaries and they depend on **nothing** — no ThreadX, no NetX Duo, not even the fakes in
 `test/host/`. The registry keys on `const void *` rather than `NX_PACKET *` for exactly that
 reason.
@@ -107,6 +107,7 @@ reason.
 | `test_ptp_tx_registry` | 12 | **The ABA hazard.** NetX Duo recycles packets, so an entry left behind after consumption would be claimed by a later, unrelated packet at the same address — feeding the servo a real timestamp under the wrong message uid |
 | `test_ptp_ts_codec` | 8 | The 12-byte headroom precondition. Below it the three ULONGs were never written, so what is there is payload; returning zeroed-and-false beats a plausible wrong time (the **F59** lesson) |
 | `test_ptp_endpoint` | 9 | Five cases of transport × delay mechanism. A wrong destination presents as "no response received", not as a routing bug |
+| `test_ptp_nsd_lifecycle` | 14 | **Transactional configuration.** Every socket created is deleted, a failure part-way leaves nothing behind, and a failed configure leaves the transport unset — the three properties **NX-02** got wrong. Driven against a fake stack that counts, so the failure paths are reachable at all |
 
 Before this extraction the network-stack driver had **zero** automated coverage. That is what
 the exercise bought, more than any individual assertion.
@@ -220,6 +221,8 @@ reintroduced, the suite re-run, the source restored and verified byte-identical.
 | Drop the context descriptor's `OWN` check (**NX-01**) | 2 `RxRing` tests fail — a frame is delivered stamped `1 080 035 208 ns`, the buffer address |
 | Drop the stray-context-descriptor skip (**NX-01**) | `RxRing.DoesNotMistakeAStrayContextDescriptorForAFrame` fails |
 | Drop the `CTXT` test on the context slot (**NX-01**) | `RxRing.DoesNotReadTheNextFrameAsATimestamp` fails — **and this test exists only because that mutation survived the first round** |
+| Mark the sockets created only once the whole sequence succeeded (**NX-02**) | 3 `Lifecycle` tests fail, reporting a socket the stack still holds |
+| Leave the transport set across a teardown (**NX-02**) | 4 `Lifecycle` tests fail |
 
 Do the same for any new characterisation test: break the thing, watch it go red, put it back.
 

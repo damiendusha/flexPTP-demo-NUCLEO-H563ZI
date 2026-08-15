@@ -56,7 +56,8 @@ if (ETH_STACK STREQUAL "NETXDUO")
         # Src/cpp_support.cpp -- no allocation, no exceptions, extern "C" at the boundary.
         ${CMAKE_SOURCE_DIR}/Src/flexptp_nsd/ptp_tx_registry.cpp
         ${CMAKE_SOURCE_DIR}/Src/flexptp_nsd/ptp_ts_codec.cpp
-        ${CMAKE_SOURCE_DIR}/Src/flexptp_nsd/ptp_endpoint.cpp)
+        ${CMAKE_SOURCE_DIR}/Src/flexptp_nsd/ptp_endpoint.cpp
+        ${CMAKE_SOURCE_DIR}/Src/flexptp_nsd/ptp_nsd_lifecycle.cpp)
 else()
     # S3-S5 kept flexPTP linked on a no-op driver while the stack underneath was rebuilt.
     set(FLEXPTP_NSD_SRC ${CMAKE_SOURCE_DIR}/Src/flexptp_nsd/nsd_stub.c)

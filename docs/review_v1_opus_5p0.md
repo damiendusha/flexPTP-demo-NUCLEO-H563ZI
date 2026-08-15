@@ -211,6 +211,36 @@ what was created on every failure path; and set `s_tp = s_dm = -1` before every 
 the transmit path cannot act on a half-configured NSD. This is also the single best argument for
 [CX-04](#cx-04--nsdlifecycle-over-an-injected-stack-interface).
 
+> **✅ ADDRESSED** — with [CX-04](#cx-04--nsdlifecycle-over-an-injected-stack-interface) and
+> [TS-07](#ts-07--no-test-of-the-nsd-lifecycle), because the fix is only worth anything if it is
+> verified and it was not verifiable in place.
+>
+> The state machine moved to `Src/flexptp_nsd/ptp_nsd_lifecycle.{h,cpp}` and
+> `ptp_nsd_init()` became a mapping onto it. `nsd_netxduo.c` supplies the seven stack calls;
+> the decisions are the unit's.
+>
+> - **Per-object flags.** Each socket is marked created the instant it exists, not once the
+>   pair is complete, so cleanup is exact rather than approximate.
+> - **Transactional.** Any failure destroys everything that call built.
+> - **`s_tp`/`s_dm` are gone.** The transmit and receive paths read the lifecycle's own
+>   transport, which stays `PTP_EP_TRANSPORT_NONE` until the build has succeeded — so a failed
+>   configure cannot leave the transmit path pointing at deleted sockets. That also fixed an
+>   ordering trap the refactor exposed: the multicast join needs the *new* delay mechanism and
+>   the *new* transport, and a copy updated after `configure()` returns is one step behind.
+> - **`nx_udp_socket_bind()` is now bounded** (1 s) rather than `NX_WAIT_FOREVER`. It runs on
+>   flexPTP's own thread, so an occupied port used to park the PTP stack for good — the shape
+>   F54 swept up — and it also made the failure path this finding is about unreachable in
+>   practice. Bounded, it is reportable *and* recoverable.
+>
+> **Evidence.** 14 new tests against a fake stack that counts creates and deletes and can be
+> told to fail any single call. Two mutations, both caught: marking the sockets created only
+> once the whole sequence succeeded (3 tests fail, reporting a socket the stack still holds),
+> and leaving the transport set across a teardown (4 tests fail). Host suite 73/73.
+> Hardware `S8` **10/10**, `|offset| ≤ 10 971 ns`. Then the path S8 does *not* cover, driven
+> over the CLI: **15 profile loads** cycling `gPTP` → `defp2p` → `default` plus a `ptp reset`
+> — 18 NSD re-initialisations — after which the board returned to `SLAVE` with a master
+> selected and `ptp ts: posted 95, delivered 95, dropped 0`.
+
 ### NX-03 — the newlib heap and the ThreadX byte pools are not disjoint
 
 **Priority: High** · `Src/sysmem.c:56-72`, `stm32h563zitx_FLASH.ld:200-211`
@@ -640,6 +670,13 @@ eventually deleted; a create failure leaves no socket behind; a bind failure lea
 behind; a failed init leaves the transport unset; IPv4 → 802.3 → IPv4 leaves exactly two sockets
 and one L2 registration. See [CX-04](#cx-04--nsdlifecycle-over-an-injected-stack-interface).
 
+> **✅ ADDRESSED** — `test/test_ptp_nsd_lifecycle.cpp`, 14 cases, all of the properties above
+> plus teardown idempotence, shutdown-by-`(-1,-1)`, and five IPv4↔802.3 round trips leaking
+> nothing. The fake is a ledger, not a simulator: it records every call in order (so the
+> transport-switch test asserts the exact sequence `mcast:leave, delete:event, delete:general,
+> l2:register, mcast:join`) and flags a second create of a live socket, which is the Release
+> list corruption made loud.
+
 ### TS-08 — no compile-only gate for the non-default `ETH_STACK` paths
 
 **Priority: Low**
@@ -792,6 +829,19 @@ deleted" and "a failure leaves nothing behind" become assertions a fake can chec
 becomes a red test before it becomes a fix. Note the virtual calls are on a cold path (profile
 changes), so the vtable cost is irrelevant here; a template parameter would work equally well if
 the C++ rules in `cpp_support.cpp` are read as excluding virtuals.
+
+> **✅ ADDRESSED** — `Src/flexptp_nsd/ptp_nsd_lifecycle.{h,cpp}`, 14 tests.
+>
+> Built with a **C function-pointer struct** (`PtpNsdOps`) rather than an abstract class: the
+> caller is C, the boundary is `extern "C"` like the other three units, and it sidesteps the
+> question of whether `cpp_support.cpp`'s rules admit virtuals. Seven calls —
+> create/bind/notify/delete, L2 register/unregister, multicast — and the storage is the
+> caller's struct, so it adds nothing to any byte pool.
+>
+> The refactor paid for itself immediately beyond NX-02: it exposed that the multicast join
+> reads the delay mechanism and transport, and that publishing them *after* `configure()`
+> returns would be one step too late. `TheDelayMechanismIsPublishedBeforeTheGroupIsJoined`
+> pins the ordering.
 
 ### CX-05 — `EthernetFramer`
 
@@ -1122,7 +1172,7 @@ how, and for the evidence.
 | ID | Pri | Type | Finding | Location | Notes |
 |---|---|---|---|---|---|
 | [NX-01](#nx-01--the-receive-timestamp-is-read-from-a-context-descriptor-that-may-not-have-been-written) | ✅ **P1** | Defect | RX timestamp read from a context descriptor without checking `OWN` or `CTXT` | `mac_drv.c:471-483` | ST's HAL checks both and retries (`stm32h5xx_hal_eth.c:1130-1148`). Yields a plausible wrong `t2`, and can deliver a context descriptor upward as a frame. Invisible to the host suite — see TS-03 |
-| [NX-02](#nx-02--partial-failure-in-ptp_nsd_init-leaks-created-sockets) | **P1** | Defect | Partial failure in `ptp_nsd_init()` leaks created UDP sockets; `s_tp`/`s_dm` left stale | `nsd_netxduo.c:265-293` | Debug → PTP permanently dead (`NX_PTR_ERROR`). Release → `nx_ip_udp_created_sockets_ptr` list corruption, because `NX_DISABLE_ERROR_CHECKING` removes the guard |
+| [NX-02](#nx-02--partial-failure-in-ptp_nsd_init-leaks-created-sockets) | ✅ **P1** | Defect | Partial failure in `ptp_nsd_init()` leaks created UDP sockets; `s_tp`/`s_dm` left stale | `nsd_netxduo.c:265-293` | Debug → PTP permanently dead (`NX_PTR_ERROR`). Release → `nx_ip_udp_created_sockets_ptr` list corruption, because `NX_DISABLE_ERROR_CHECKING` removes the guard |
 | [NX-03](#nx-03--the-newlib-heap-and-the-threadx-byte-pools-are-not-disjoint) | **P1** | Defect | `_sbrk` can allocate into the ThreadX byte pools after 2 560 bytes; the linker script claims the two are disjoint | `sysmem.c:56-72`, `.ld:200-211` | `atof`→`strtod`→`_Balloc`→`_malloc_r` all linked; reachable from `ptp pps` and the servo CLI. One-line fix: bound against `__RAM_segment_used_end__` |
 | [NX-04](#nx-04--systick-and-svcall-run-at-priorities-the-documentation-does-not-state) | P2 | Defect/Doc | SysTick runs at priority 4 (not 15) and SVCall at 15 (not 0); changed silently from the FreeRTOS build | `tx_initialize_low_level.S:119-128` | SysTick now preempts ETH. Not unsafe (PRIMASK critical sections) but undocumented; the file's own comment contradicts its code |
 | [NX-05](#nx-05--unchecked-length-arithmetic-on-the-8023-receive-path) | P3 | Defect | `nx_packet_length - header_size` can underflow; chained L2 packet dropped silently | `nsd_netxduo.c:197-206` | Contained by flexPTP's `MIN(len, 128)` clamp — verified in `task_ptp.c:486`. NetX Duo does **not** validate the length itself |
@@ -1144,14 +1194,14 @@ how, and for the evidence.
 | [TS-04](#ts-04--drv_sends-framing-logic-is-untested) | P2 | Test gap | `drv_send()` untested — the function with the port's highest defect density | `eth_drv_netxduo.c:469-616` | Most important property: **every** drop path cancels the pending timestamp |
 | [TS-05](#ts-05--the-hil-threads-check-does-not-assert-the-priorities-that-matter) | P2 | Test gap | HIL `threads` check omits `eth ip` (16), `rx` (24), `ptpts` (24) and their presence | `checks.py:280-295` | `architecture.md` presents that table as the spec; four dictionary entries close it |
 | [TS-06](#ts-06--ci-verifies-two-of-the-four-submodule-patches) | P2 | Test gap | CI verifies patches 0001 and 0002 only; **0004 is the silent one** | `ci.yml:59-62` | Without 0004 no master is ever selected. Loop over `build.sh`'s existing `SUBMODULE_PATCHES` list |
-| [TS-07](#ts-07--no-test-of-the-nsd-lifecycle) | P2 | Test gap | No lifecycle test for `ptp_nsd_init` teardown / transport switch / re-init | `nsd_netxduo.c` | The state machine holding NX-02. Needs a fake, not a real `NX_IP` |
+| [TS-07](#ts-07--no-test-of-the-nsd-lifecycle) | ✅ P2 | Test gap | No lifecycle test for `ptp_nsd_init` teardown / transport switch / re-init | `nsd_netxduo.c` | The state machine holding NX-02. Needs a fake, not a real `NX_IP` |
 | [TS-08](#ts-08--no-compile-only-gate-for-the-non-default-eth_stack-paths) | P3 | Test gap | `ETH_STACK=ETHERLIB` and `=NONE` are not built anywhere | `ci.yml` | Two matrix entries; also settles AR-05 |
 | [TS-09](#ts-09--the-isr-half-of-the-context-rule-is-reachable-on-the-host-after-all) | P3 | Opportunity | A settable host `__get_IPSR()` makes the ISR half of the context rule testable | `test/host/cmsis_compiler.h` | Pins the *wrapper's* rule, not the silicon's — document the narrower claim. Contradicts a "cannot" in two docs |
 | [TS-10](#ts-10--the-2-byte-alignment-contract-has-no-static-assert) | P3 | Test gap | No `_Static_assert` on `NX_PHYSICAL_HEADER >= 16` | `eth_drv_netxduo.c:148-167` | A NetX Duo bump would silently reintroduce "every IPv4 checksum fails while ARP works" |
 | [CX-01](#cx-01--rxring--txring-as-typed-c-over-an-injected-descriptor-view) | Opp (H) | C++ | Extract the ring state machines; retires the `MAP_32BIT` arena, `-no-pie` and two harness tests | `mac_drv.c` → C++ | Enables ASan/UBSan. Breaks the "`mac_drv.c` unchanged" property — a real trade |
 | [CX-02](#cx-02--bytefifo-with-an-injected-critical-section-policy) | Opp (H) | C++ | `ByteFifo<Crit>` with an injectable critical section | `blocking_fifo.c` → C++ | An instrumented `Crit` makes the F67/N7 mid-push interleaving an actual test. Pairs with TS-01 |
 | [CX-03](#cx-03--tokenizer-and-commandtable) | Opp (M) | C++ | `Tokenizer` over `string_view` + `CommandTable` | `cli.c` → C++ | Makes the F74/N8 shared-state defect unrepresentable rather than fixed. Pairs with TS-02 |
-| [CX-04](#cx-04--nsdlifecycle-over-an-injected-stack-interface) | Opp (M) | C++ | `NsdLifecycle` over a five-call stack interface | `nsd_netxduo.c` → C++ | Makes NX-02 a red test before a fix. Cold path, so dispatch cost is irrelevant |
+| [CX-04](#cx-04--nsdlifecycle-over-an-injected-stack-interface) | ✅ Opp (M) | C++ | `NsdLifecycle` over a five-call stack interface | `nsd_netxduo.c` → C++ | Makes NX-02 a red test before a fix. Cold path, so dispatch cost is irrelevant |
 | [CX-05](#cx-05--ethernetframer) | Opp (M) | C++ | `EthernetFramer`: ethertype selection, header write, chain flatten | `eth_drv_netxduo.c` → C++ | Twelve hand-written byte shifts become one expected-array test. Pairs with TS-04 |
 | [CX-06](#cx-06--linkstate-as-a-pure-transition-function) | Opp (L) | C++ | `LinkDecision next(prev, phy_status)` | `eth_drv_netxduo.c:220-269` | Pins the first-poll `DOWN` suppression rule |
 | [CX-07](#cx-07--make-the-c-rules-enforced-rather-than-documented) | Opp (L) | C++ | Assert in CI that the image has no `operator new` / `__cxa_throw` | `cpp_support.cpp:22-30` | Makes the no-allocation rule observable, as `cpp_ctor` does for static init. Cannot assert "no `malloc`" — see NX-03 |

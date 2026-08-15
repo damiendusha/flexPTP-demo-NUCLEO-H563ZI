@@ -110,6 +110,7 @@ add_library(ptp_units STATIC
     ${REPO_ROOT}/Src/flexptp_nsd/ptp_tx_registry.cpp
     ${REPO_ROOT}/Src/flexptp_nsd/ptp_ts_codec.cpp
     ${REPO_ROOT}/Src/flexptp_nsd/ptp_endpoint.cpp
+    ${REPO_ROOT}/Src/flexptp_nsd/ptp_nsd_lifecycle.cpp
 )
 target_include_directories(ptp_units PUBLIC ${REPO_ROOT}/Src/flexptp_nsd)
 target_compile_options(ptp_units PRIVATE -Wall -Wextra)
@@ -124,6 +125,7 @@ endfunction()
 add_unit_test(test_ptp_tx_registry)
 add_unit_test(test_ptp_ts_codec)
 add_unit_test(test_ptp_endpoint)
+add_unit_test(test_ptp_nsd_lifecycle)
 
 add_host_test(test_host_harness)
 add_host_test(test_rx_ring)

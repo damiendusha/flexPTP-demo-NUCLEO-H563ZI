@@ -92,8 +92,8 @@ split — rather than something the model decides on the hardware's behalf.
 
 ## The NSD logic units
 
-`Src/flexptp_nsd/ptp_{tx_registry,ts_codec,endpoint}` were extracted from `eth_drv_netxduo.c`
-and `nsd_netxduo.c` so they could be tested. They are C++ with `extern "C"` boundaries, per the
+`Src/flexptp_nsd/ptp_{tx_registry,ts_codec,endpoint,nsd_lifecycle}` were extracted from
+`eth_drv_netxduo.c` and `nsd_netxduo.c` so they could be tested. They are C++ with `extern "C"` boundaries, per the
 rules in `Src/cpp_support.cpp`, and they deliberately depend on **nothing** — no ThreadX, no
 NetX Duo, not even the fakes in `host/`. The registry keys on `const void *` rather than
 `NX_PACKET *` for exactly that reason.
@@ -103,6 +103,7 @@ NetX Duo, not even the fakes in `host/`. The registry keys on `const void *` rat
 | `ptp_tx_registry` | **The ABA hazard.** NetX Duo recycles packets, so `take` clears the slot and the NSD cancels on send failure. Without both, a recycled packet inherits a stale uid and the servo is fed a real timestamp under the wrong message — silently, and only on colliding cycles |
 | `ptp_ts_codec` | The 12-byte headroom precondition. Below it the three ULONGs were never written, so what is there is payload; returning zeroed-and-false beats a plausible wrong time (the F59 lesson) |
 | `ptp_endpoint` | Five cases of transport × delay mechanism. A wrong destination presents as "no response received", not as a routing bug |
+| `ptp_nsd_lifecycle` | **Transactional configuration.** A create or bind failure part-way through used to leave a socket on NetX Duo's created list, which the next attempt created again — `NX_PTR_ERROR` in Debug, a corrupted list in Release. The fake stack can be told to fail any single call, which is what makes those paths reachable |
 
 ## Context rules, on a real ThreadX kernel
 
@@ -145,6 +146,8 @@ restored and verified byte-identical:
 | `ptp_tx_registry_take()` reads instead of clearing (**the ABA hazard**) | **5 tests fail** |
 | `ptp_tx_registry_cancel()` does nothing (the send-failure leak) | 1 test fails |
 | Drop the codec's headroom precondition | 1 test fails |
+| Mark the NSD sockets created only once the whole sequence succeeded (**NX-02**) | 3 tests fail |
+| Leave the transport set across an NSD teardown (**NX-02**) | 4 tests fail |
 | Drop the context descriptor's `OWN` check (**NX-01**) | 2 `RxRing` tests fail |
 | Drop the stray-context-descriptor skip (**NX-01**) | 1 test fails |
 | Drop the `CTXT` test on the context slot (**NX-01**) | 1 test fails — **added only after that mutation survived the first round** |

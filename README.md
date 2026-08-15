@@ -105,7 +105,7 @@ What each one can and — just as importantly — **cannot** prove is set out in
 
 ### Host unit tests — no board required
 
-59 `ctest` entries (63 GoogleTest cases) covering the Ethernet descriptor rings, the flexPTP
+73 `ctest` entries (77 GoogleTest cases) covering the Ethernet descriptor rings, the flexPTP
 network-stack driver's logic units, and the ThreadX context rules against a real kernel. The
 whole suite runs in about 0.2 seconds and gates every push in CI.
 
