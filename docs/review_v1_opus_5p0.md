@@ -1498,6 +1498,29 @@ hardware*, with the F62 disassembly regression checked at each. But the absolute
 The comment even warns to "compare deltas rather than absolutes". The conclusion is very likely
 unchanged, but the numbers now describe a different firmware, and this is a project that measures.
 
+> **✅ ADDRESSED — re-measured and re-run, not just re-numbered.**
+>
+> | Level | FLASH | vs `-Og` | Hardware |
+> |---|---|---|---|
+> | `-Og` *(ships)* | 149 400 B | — | `S8` 12/12, offset ≤ 11 036 ns |
+> | `-O2` | 149 456 B | **+56 B** | `S8` 12/12, ≤ 14 895 ns |
+> | `-Os` | 147 400 B | −2 000 B | `S8` 12/12, ≤ 9 142 ns |
+>
+> *(The 206 344 B in the finding above is the **Debug** image — `-O0 -g3`. Release was never
+> that size; the two were being compared across configurations.)*
+>
+> The absolutes are ~18 KB below the pre-port figures — lwIP and FreeRTOS left, NetX Duo and
+> ThreadX arrived — but the *relationship* the decision rests on is unchanged, including the
+> counter-intuitive part: `-O2` is still **larger** than `-Og`.
+>
+> **One claim was narrowed rather than refreshed.** The comment said the F62 regression "was
+> checked at each level: no byte-wide loads of the UID region appear in any of the three
+> disassemblies". I could only reproduce that at `-Og`, where the UID is read with `ldr.w` and
+> the bytes extracted with `ubfx`. At `-O2` and `-Os` `drv_initialize()` is inlined away and I
+> did not track the base register through the inlined code. The comment now says exactly that,
+> and notes the hardware runs as the weaker evidence standing in for it — F62 was a HardFault,
+> so a pass does mean the byte access is absent, but only on the paths `S8` exercises.
+
 ### GI-06 — consider persisting PTP settings
 
 **Priority: Low**
@@ -1582,7 +1605,7 @@ how, and for the evidence.
 | [GI-02](#gi-02--give-ethinfo-and-osinfo-a-machine-readable-mode) | P3 | Improvement | HIL regex-parses human prose; a `MSG()` edit can silently disable a check | `checks.py`, `eth_drv_report()` | `checks.py:256` already records one silent miscount |
 | [GI-03](#gi-03--add-static-analysis-to-ci) | P3 | Improvement | No static analysis; `compile_commands.json` already available | `ci.yml` | Would likely have caught NX-05 and NX-08 |
 | [GI-04](#gi-04--two-pyc-files-are-committed) | ✅ P3 | Hygiene | Two `__pycache__/*.pyc` tracked; `.gitignore` lacks the pattern | `tools/hil/__pycache__/` | Also missing a trailing newline |
-| [GI-05](#gi-05--the-release-optimisation-level-analysis-deserves-a-re-run) | P3 | Stale data | The `-Og`/`-O2`/`-Os` figures predate the port (167 KB quoted; image is now 206 344 B) | `CMakeLists.txt:150-180` | Conclusion likely unchanged; the numbers describe a different firmware |
+| [GI-05](#gi-05--the-release-optimisation-level-analysis-deserves-a-re-run) | ✅ P3 | Stale data | The `-Og`/`-O2`/`-Os` figures predate the port (167 KB quoted; image is now 206 344 B) | `CMakeLists.txt:150-180` | Conclusion likely unchanged; the numbers describe a different firmware |
 | [GI-06](#gi-06--consider-persisting-ptp-settings) | ✅ P3 | Decision | No settings store; profiles are lost on reset | — | Probably correct for a demo. Record it as a decision with a sketch of where it would go |
 
 **Totals:** 56 findings — **6 × P1** (3 defects: NX-01/02/03; 3 test gaps: TS-01/02/03), 13 × P2,

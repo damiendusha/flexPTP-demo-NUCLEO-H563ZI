@@ -168,27 +168,33 @@ target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
 
     # Release stays at -Og. That is unusual -- "optimize for debugging" under a name that
     # normally means -O2 -- so it is a decision rather than an oversight, and these are the
-    # measurements behind it (re-measured in P6.12; one build directory, one variable):
+    # measurements behind it (re-measured after the ThreadX/NetX Duo port; one build
+    # directory, one variable):
     #
-    #     -Og   FLASH 167 404 B   (current)
-    #     -O2   FLASH 167 708 B   LARGER by 304 B
-    #     -Os   FLASH 165 140 B   smaller by 2 264 B, i.e. 0.1% of the 2 MB part
+    #     -Og   FLASH 149 400 B   (current)
+    #     -O2   FLASH 149 456 B   LARGER by 56 B
+    #     -Os   FLASH 147 400 B   smaller by 2 000 B, i.e. 0.1% of the 2 MB part
     #
-    # The absolute numbers moved down ~13 KB from the original set when P6.6 removed newlib's
-    # printf from the link; the relationships are unchanged. Compare deltas rather than
-    # absolutes if you re-run this: the figure also depends on the build directory's path
-    # length, because configASSERT() embeds __FILE__ and the FreeRTOS kernel is fetched into
-    # the build tree (finding N17). Measured spread: 336 bytes between two paths.
+    # The absolute figures are ~18 KB below the ones quoted before the port -- lwIP and the
+    # FreeRTOS kernel left, NetX Duo and ThreadX arrived, and the two do not weigh the same.
+    # The RELATIONSHIP is unchanged, which is the part the decision rests on. Compare deltas
+    # rather than absolutes if you re-run this; the figure also depends on the build
+    # directory's path length where any assertion macro embeds __FILE__ (finding N17).
     #
-    # All three were built AND run on hardware: boot, PHY, link, DHCP, flexPTP start,
-    # "ptp addend" = 3435973836, ping 0% loss at 1400 bytes, no faults. So changing it is
-    # safe -- it simply buys nothing. Flash sits at 8.6% of 2 MB and the PTP servo runs once
-    # per Sync (1-8 Hz), so neither size nor speed constrains this firmware, while -Og keeps
-    # release images meaningfully debuggable, which on this project has repeatedly mattered.
+    # All three were built AND run on hardware, this time as well as originally: the full
+    # 12-check S8 suite, 12/12 on each, reaching SLAVE with |offset| <= 14 895 ns (-O2),
+    # 9 142 ns (-Os) and 11 036 ns (-Og). So changing it is safe -- it simply buys nothing.
+    # Flash sits at 7% of 2 MB and the PTP servo runs once per Sync (1-8 Hz), so neither size
+    # nor speed constrains this firmware, while -Og keeps release images meaningfully
+    # debuggable, which on this project has repeatedly mattered.
     #
-    # The F62 regression was checked at each level: no byte-wide loads of the UID region
-    # appear in any of the three disassemblies, so the `volatile` fix holds above the
-    # optimisation level it was originally tested at.
+    # The F62 regression was re-checked at -Og, the level that ships: the UID is read with
+    # `ldr.w rN, [rM, #0x800]` and the bytes extracted with `ubfx` -- 32-bit loads, which is
+    # exactly what the `volatile const uint32_t *` in stm32h5xx_hal_conf.h exists to force.
+    # NOT re-checked at -O2 and -Os: drv_initialize() is inlined away at those levels and the
+    # UID base register was not tracked through the inlined code. The hardware runs above are
+    # the evidence there, and they are weaker evidence -- F62 was a HardFault, so a pass does
+    # mean the byte access is absent, but only for the paths S8 exercises.
     #
     # To change it, edit the line below; all three levels are known-good.
     $<$<CONFIG:Release>:-Og -g0>
