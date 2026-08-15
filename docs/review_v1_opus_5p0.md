@@ -660,6 +660,13 @@ decision, and it is not written down anywhere. One paragraph in `architecture.md
 watchdog is ever added, a `HAL_IWDG` refresh in the `serialio` thread plus a reset-cause report at
 boot) would settle it.
 
+> **✅ ADDRESSED** — recorded in `architecture.md` as a decision, with the argument (an
+> auto-rebooting board destroys the console output that says what happened, and presents as an
+> intermittent fault) and with what would change for a product: IWDG enabled in `main()`,
+> refreshed from the `serialio` thread — the lowest-priority thread that must keep running for
+> the console to work, so a refresh there proves more than a timer callback would — plus a
+> reset-cause report from `RCC_RSR` at boot.
+
 ### AR-07 — equal-priority scheduling semantics changed with the kernel
 
 **Priority: Low** · `Modules/cmsis_rtos_threadx/cmsis_os2.c:116,923`
@@ -673,6 +680,10 @@ thread in this firmware spins without blocking anyway. Recorded only because `ar
 threads section documents the *priority* mapping between the two kernels in detail and says
 nothing about the quantum, and because `RTOS2_DEFAULT_TIME_SLICE` is overridable from
 `Middlewares/threadx.cmake` if it ever needs to be.
+
+> **✅ ADDRESSED** — `architecture.md` gains a *Scheduling* subsection next to the thread table:
+> the quantum, that it changed from 1 tick to 4 with the kernel swap, that nothing depends on it
+> because all four equal-priority threads block, and where to override it.
 
 ---
 
@@ -1497,6 +1508,13 @@ behaviour — every reset returns to a known state. Recording it as an explicit 
 "where you would put it if you wanted it": one flash sector, written on an explicit `ptp save`)
 rather than as an absence would close the question.
 
+> **✅ ADDRESSED** — recorded as a decision in `architecture.md`, with the reason (nothing
+> accumulates invisibly across sessions, so "it behaves differently from your board" is never
+> explained by settings someone typed a month ago) and the shape it would take: one flash
+> sector, magic-and-version header, fallback to the compile-time preset on mismatch, and written
+> **only** on an explicit `ptp save` — never implicitly by `ptp profile preset`, which would
+> reintroduce exactly the invisible state this avoids.
+
 ---
 
 ## Summary table
@@ -1525,8 +1543,8 @@ how, and for the evidence.
 | [AR-03](#ar-03--diagnostics-reach-across-layers-through-function-local-extern-declarations) | ✅ P3 | Arch | Four unheadered `extern` prototypes inside `eth_drv_report()` | `eth_drv_netxduo.c:729-759` | Signature-drift exposure — the F48 class. A small registration table fixes it without inverting the dependency |
 | [AR-04](#ar-04--debug-and-release-differ-in-more-than-optimisation-level) | ✅ P2 | Arch/Doc | Release changes NetX Duo API semantics and drops the software stack check | `nx_user.h:91-103`, `tx_user.h:73-75` | Turns NX-02 from an error code into list corruption. No document states the delta |
 | [AR-05](#ar-05--the-eth_stack-switch-is-advertised-as-easier-than-it-is) | ✅ P3 | Doc/Arch | README calls the EtherLib switch easy; design_doc says the files have never been compiled | `README.md:263-271` | Align the two; see TS-08 |
-| [AR-06](#ar-06--no-watchdog-and-every-failure-path-halts-forever) | P3 | Decision | No IWDG; all failure paths halt | `main.c`, `serial_io.c` | Defensible for a bench demo — but undocumented as a choice |
-| [AR-07](#ar-07--equal-priority-scheduling-semantics-changed-with-the-kernel) | P3 | Doc | Equal-priority round-robin quantum changed 1 ms → 4 ms with the kernel swap | `cmsis_os2.c:116,923` | Checked expecting starvation; there is none. `RTOS2_DEFAULT_TIME_SLICE` is overridable |
+| [AR-06](#ar-06--no-watchdog-and-every-failure-path-halts-forever) | ✅ P3 | Decision | No IWDG; all failure paths halt | `main.c`, `serial_io.c` | Defensible for a bench demo — but undocumented as a choice |
+| [AR-07](#ar-07--equal-priority-scheduling-semantics-changed-with-the-kernel) | ✅ P3 | Doc | Equal-priority round-robin quantum changed 1 ms → 4 ms with the kernel swap | `cmsis_os2.c:116,923` | Checked expecting starvation; there is none. `RTOS2_DEFAULT_TIME_SLICE` is overridable |
 | [TS-01](#ts-01--blocking_fifoc-has-no-automated-coverage-at-all) | ✅ **P1** | Test gap | `blocking_fifo.c` untested despite carrying F67 (N1, N7) and wrap-dependent arithmetic | `blocking_fifo.c` | Cheapest high-value test in the tree — the real-ThreadX host target already exists |
 | [TS-02](#ts-02--the-cli-tokenizer-has-no-automated-coverage) | ✅ **P1** | Test gap | CLI tokenizer untested despite F74 (N8, N12: one-byte overflow, shared `strtok` state) | `cli.c:82-200` | Include the `ptp servo st` / `ptp servo stm` prefix-matching case |
 | [TS-03](#ts-03--the-dma-model-cannot-express-a-late-context-descriptor) | ✅ **P1** | Test gap | DMA model always writes a complete context descriptor, so NX-01 is unreachable | `eth_model.cpp:100-119` | Add `deliver_frame_ts_pending()` / `_no_ctxt()`. Write the tests **before** the NX-01 fix so it is mutation-verified |
@@ -1565,7 +1583,7 @@ how, and for the evidence.
 | [GI-03](#gi-03--add-static-analysis-to-ci) | P3 | Improvement | No static analysis; `compile_commands.json` already available | `ci.yml` | Would likely have caught NX-05 and NX-08 |
 | [GI-04](#gi-04--two-pyc-files-are-committed) | ✅ P3 | Hygiene | Two `__pycache__/*.pyc` tracked; `.gitignore` lacks the pattern | `tools/hil/__pycache__/` | Also missing a trailing newline |
 | [GI-05](#gi-05--the-release-optimisation-level-analysis-deserves-a-re-run) | P3 | Stale data | The `-Og`/`-O2`/`-Os` figures predate the port (167 KB quoted; image is now 206 344 B) | `CMakeLists.txt:150-180` | Conclusion likely unchanged; the numbers describe a different firmware |
-| [GI-06](#gi-06--consider-persisting-ptp-settings) | P3 | Decision | No settings store; profiles are lost on reset | — | Probably correct for a demo. Record it as a decision with a sketch of where it would go |
+| [GI-06](#gi-06--consider-persisting-ptp-settings) | ✅ P3 | Decision | No settings store; profiles are lost on reset | — | Probably correct for a demo. Record it as a decision with a sketch of where it would go |
 
 **Totals:** 56 findings — **6 × P1** (3 defects: NX-01/02/03; 3 test gaps: TS-01/02/03), 13 × P2,
 28 × P3, 9 opportunities.

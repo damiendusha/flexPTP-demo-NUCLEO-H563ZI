@@ -269,6 +269,14 @@ There is no settings store, so a profile changed at runtime with `ptp profile pr
 lost on the next reset and the compile-time preset is reinstated — see
 [ptp_profiles.md](ptp_profiles.md).
 
+**That is a decision, not an omission.** Every reset returns the board to a state the source
+describes, which is what you want from a demo and from a bench instrument: nothing accumulates
+invisibly across sessions, and "it behaves differently from your board" is never explained by
+settings someone typed a month ago. If persistence is ever wanted, the shape is one flash
+sector, written only on an explicit `ptp save`, with a magic-and-version header and a fallback
+to the compile-time preset on any mismatch — never written implicitly by a `ptp profile preset`,
+which would reintroduce exactly the invisible state this avoids.
+
 ---
 
 ## Threads
@@ -313,6 +321,19 @@ Notes:
   24 KB for stacks, the rest for objects. `osinfo` reports both. There is no heap; the
   FreeRTOS `ucHeap` and its `.FreeRTOSHeapSection` are gone.
 
+### Scheduling: equal priorities do round-robin, at 4 ms
+
+Four threads sit at ThreadX 32 — `init`, `cli`, `serialio` and `ptp` — so how they share the CPU
+is a real question and the answer changed with the kernel. ST's CMSIS-RTOS2 wrapper passes
+`RTOS2_DEFAULT_TIME_SLICE` (4) to every `tx_thread_create()`, so equal-priority threads
+round-robin every **4 ticks = 4 ms**. Under FreeRTOS with `configUSE_TIME_SLICING` they
+round-robined every tick.
+
+Nothing here depends on it: every one of those four blocks — on a queue, an event flag, a FIFO
+or `osDelay()` — so none can starve another. Recorded because it is a behavioural difference the
+kernel swap introduced silently, and because `RTOS2_DEFAULT_TIME_SLICE` is overridable from
+`Middlewares/threadx.cmake` if a future thread ever does spin.
+
 ### RX depths, and which one is the limit
 
 Three numbers govern the receive path, and they are not interchangeable:
@@ -353,6 +374,24 @@ state: the receive path has no *observed* bottleneck, and if one ever appears it
 of the three it is instead of leaving the reader to guess.
 
 `NX_PACKET_POOL_PACKET_COUNT` is deliberately left at 8.
+
+### There is no watchdog, and every failure path halts
+
+Deliberate, and worth stating because the alternative is assumed. `Error_Handler()`,
+`app_stack_error_handler()`, `fault_report()`, `_sbrk()`'s exhaustion path and both
+`serial_io_start()` failures all end in `for (;;)` with a message on the console. No IWDG is
+configured anywhere.
+
+For a bench demo that is the right trade: this firmware's whole thesis is that a failure should
+be *loud*, and an auto-rebooting board is the opposite — it destroys the console output that
+says what happened and presents as an intermittent fault. Halting with a decoded `CFSR`, a
+faulting `PC` and a sentence naming the constant to raise is worth more than uptime here.
+
+**It would be the wrong trade in a product**, and the change is not large: enable the IWDG in
+`main()`, refresh it from the `serialio` thread (the lowest-priority thread that must keep
+running for the console to work, so a refresh proves more than a timer callback would), and
+report the reset cause from `RCC_RSR` at boot so a watchdog reset is distinguishable from a
+power cycle.
 
 ---
 
