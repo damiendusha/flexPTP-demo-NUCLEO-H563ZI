@@ -80,6 +80,16 @@ again. That is finding F71, and it is precisely the case where a naively written
 have been wrong in the same way the code was. `RestoringWritesTheTailPointerToRestartTheEngine`
 asserts the driver performs the write; it cannot prove the engine restarts.
 
+**An omission that was found the hard way, and is worth the space:** the model originally wrote a
+data descriptor and its context descriptor in one call, always both, always complete. That is the
+ordinary case and it is not the only one — the DMA may release the data descriptor before it has
+written the timestamp, which is why ST's HAL breaks out and retries. A model that cannot express
+the other case makes the driver's handling of it untestable, and this one duly was: the driver
+read the unwritten slot and reported `ts_ns = 1 080 035 208`, the buffer address, as a receive
+timestamp (finding NX-01). Write-back ordering is now the *test's* choice —
+`deliver_frame_ts()` for both, `deliver_frame_ts_pending()` plus `complete_pending_ts()` for the
+split — rather than something the model decides on the hardware's behalf.
+
 ## The NSD logic units
 
 `Src/flexptp_nsd/ptp_{tx_registry,ts_codec,endpoint}` were extracted from `eth_drv_netxduo.c`
@@ -135,6 +145,9 @@ restored and verified byte-identical:
 | `ptp_tx_registry_take()` reads instead of clearing (**the ABA hazard**) | **5 tests fail** |
 | `ptp_tx_registry_cancel()` does nothing (the send-failure leak) | 1 test fails |
 | Drop the codec's headroom precondition | 1 test fails |
+| Drop the context descriptor's `OWN` check (**NX-01**) | 2 `RxRing` tests fail |
+| Drop the stray-context-descriptor skip (**NX-01**) | 1 test fails |
+| Drop the `CTXT` test on the context slot (**NX-01**) | 1 test fails — **added only after that mutation survived the first round** |
 | Endpoint teardown stops zeroing | 1 test fails |
 | Widen the RFC 1112 mask from 23 to 24 bits | 1 test fails — **but only after the test was fixed; see below** |
 | Assert the timer-thread blocking put SUCCEEDS (**F80 inverted**) | `RtosContext.BlockingEnqueueFromATimerCallbackIsRejected` **fails**, reporting −2 vs 0 — proving the kernel really rejects it rather than the test being tautological |

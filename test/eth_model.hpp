@@ -20,6 +20,11 @@
  *     prove the engine restarts, and that stays on the bench.
  *   - No multi-descriptor frames. The firmware's 1528-byte buffers hold a full MTU frame,
  *     so FD and LD are always both set in practice.
+ *   - Write-back ordering between a data descriptor and its context descriptor is under the
+ *     TEST's control, not the model's: deliver_frame_ts() writes both at once (the ordinary
+ *     case), deliver_frame_ts_pending() writes only the first. The model does not decide
+ *     which the hardware does -- it lets a test ask for either. An earlier version offered
+ *     only the first, which is why NX-01 was invisible to a green suite.
  *   - No checksum offload, no MAC filtering, no PHY.
  *   - No memory ordering. __DSB/__DMB are no-ops on the host; whether the target's barriers
  *     are correctly placed is not observable here.
@@ -74,6 +79,32 @@ class EthModel {
     /** Deliver a frame plus the context descriptor carrying its timestamp. */
     void deliver_frame_ts(const std::uint8_t *data, std::uint16_t len,
                           std::uint32_t ts_s, std::uint32_t ts_ns);
+
+    /**
+     * Deliver a frame whose timestamp has NOT yet been written back.
+     *
+     * TSA is set on the data descriptor, but the following context descriptor is still owned
+     * by the DMA -- the state ST's HAL handles by breaking out and retrying later
+     * (stm32h5xx_hal_eth.c: "timestamp context descriptor is not ready, exit and retry
+     * later"). Releasing the data descriptor before the context descriptor is a real
+     * write-back ordering the databook permits, and reading the context slot in that state
+     * yields whatever the driver last left there -- on a freshly armed descriptor, the buffer
+     * address, which is a large and entirely plausible nanosecond value.
+     */
+    void deliver_frame_ts_pending(const std::uint8_t *data, std::uint16_t len);
+
+    /** Write the context descriptor a previous deliver_frame_ts_pending() left outstanding. */
+    void complete_pending_ts(std::uint32_t ts_s, std::uint32_t ts_ns);
+
+    /**
+     * Place a context descriptor with no data descriptor in front of it.
+     *
+     * Defence in depth rather than a state the MAC produces on its own: it is what the ring
+     * is left holding if a context descriptor is ever released while the DMA still owns it.
+     * Its DES3 carries CTXT and a zero length, so a driver that does not test for CTXT
+     * delivers it upward as a zero-length frame.
+     */
+    void deliver_stray_context_descriptor(std::uint32_t ts_s, std::uint32_t ts_ns);
 
     /** Complete the oldest outstanding transmit, optionally capturing a timestamp. */
     void complete_tx(bool with_timestamp, std::uint32_t ts_s = 0, std::uint32_t ts_ns = 0);

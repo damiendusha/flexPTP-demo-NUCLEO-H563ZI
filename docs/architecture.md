@@ -474,6 +474,22 @@ MAC captures RX timestamp into a context descriptor
   → nsd_netxduo.c reads it back from nx_packet_data_start and calls ptp_receive_enqueue()
 ```
 
+**"Pairs" is doing real work in that first line.** `RDES1.TSA` on a data descriptor promises that
+a context descriptor *follows*; it does not promise the DMA has written it, and the engine may
+release the data descriptor first. So the pairing is three tests, not an assumption — the context
+slot must be application-owned, and it must carry `RDES3.CTXT`:
+
+| Context slot | Action |
+|---|---|
+| still owned by the DMA | **defer**: leave the frame unmarked and retry on the next receive interrupt, exactly as ST's HAL does. Counted as `rx ts: N deferred` |
+| owned by us, `CTXT` set | pair them; this is the ordinary case |
+| owned by us, `CTXT` clear | deliver the frame **unstamped**; counted as `rx ts: N stray` |
+
+Reading the slot unchecked is not a loud failure, which is why it is worth the three tests: an
+armed descriptor holds `DES0 = bufAddr`, an SRAM3 address and therefore a plausible sub-second
+nanosecond count. Finding NX-01; the same shape as F59. Both counters read zero over 603 frames
+of a full `S8` run.
+
 **The 2-byte offset is not cosmetic.** `NX_PHYSICAL_HEADER` is **16**, not 14, precisely so a
 14-byte Ethernet header leaves the IP header 4-byte aligned. Copy the frame to `prepend_ptr`
 directly and every IPv4 packet fails its header checksum while ARP — which has none — works

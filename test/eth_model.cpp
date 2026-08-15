@@ -118,6 +118,40 @@ void EthModel::deliver_frame_ts(const std::uint8_t *data, std::uint16_t len,
     advance_rx_cursor();
 }
 
+void EthModel::deliver_frame_ts_pending(const std::uint8_t *data, std::uint16_t len) {
+    ETHHW_DescFull *bd = rx_ring_ + rx_cursor_;
+
+    std::memcpy(reinterpret_cast<void *>(static_cast<std::uintptr_t>(bd->ext.bufAddr)), data, len);
+
+    bd->desc.DES1 = ETH_DMARXNDESCWBF_TSA;
+    bd->desc.DES3 = static_cast<std::uint32_t>(len) | ETH_DMARXNDESCWBF_FD | ETH_DMARXNDESCWBF_LD;
+
+    /* Advance onto the context slot and stop. It keeps whatever ETHHW_Init() or
+       ETHHW_RestoreRXDesc() armed it with -- OWN set, DES0 = bufAddr -- which is exactly what
+       the DMA leaves there until it writes the timestamp. DMACCARDR now points at it, because
+       that is the descriptor the engine is about to fill. */
+    advance_rx_cursor();
+}
+
+void EthModel::complete_pending_ts(std::uint32_t ts_s, std::uint32_t ts_ns) {
+    /* rx_cursor_ is sitting on the context slot; deliver_frame_ts_pending() left it there. */
+    ETHHW_DescFull *ctx = rx_ring_ + rx_cursor_;
+    ctx->desc.DES0 = ts_ns;
+    ctx->desc.DES1 = ts_s;
+    ctx->desc.DES3 = ETH_DMARXNDESCWBF_CTXT;
+
+    advance_rx_cursor();
+}
+
+void EthModel::deliver_stray_context_descriptor(std::uint32_t ts_s, std::uint32_t ts_ns) {
+    ETHHW_DescFull *ctx = rx_ring_ + rx_cursor_;
+    ctx->desc.DES0 = ts_ns;
+    ctx->desc.DES1 = ts_s;
+    ctx->desc.DES3 = ETH_DMARXNDESCWBF_CTXT;
+
+    advance_rx_cursor();
+}
+
 void EthModel::complete_tx(bool with_timestamp, std::uint32_t ts_s, std::uint32_t ts_ns) {
     ETHHW_DescFull *bd = tx_ring_ + tx_reap_;
 

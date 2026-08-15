@@ -882,7 +882,7 @@ written; this is the delta.
 | Two submodule patches (F59, F60/F66) | **Four**: those two, plus a generic IGMP-address extension point and the F80 non-blocking heartbeat enqueue |
 | Timestamps carried by `LWIP_PBUF_CUSTOM_DATA` injection | `NX_LINK_TIME` through NetX Duo's own `nx_link` API. **`NX_ENABLE_VLAN` is mandatory** — the entire `nx_link` layer is behind it |
 | gPTP "deferred" | Implemented in S7. PTP over raw 802.3 and profile switching both work; the peer-delay exchange is proven on the wire. Reaching `SLAVE` under 802.1AS remains unverifiable here for the same PHC reason as `LOCKED` |
-| No automated tests | 55 `ctest` entries (59 GoogleTest cases) covering the driver rings, the NSD logic units and the ThreadX context rules, plus a 10-check hardware suite. See [testing_architecture.md](testing_architecture.md) |
+| No automated tests | 59 `ctest` entries (63 GoogleTest cases) covering the driver rings, the NSD logic units and the ThreadX context rules, plus a 10-check hardware suite. See [testing_architecture.md](testing_architecture.md) |
 | 23 CLI commands | 24 |
 | 217 160 B FLASH, 133 168 B SRAM1 | 206 344 B FLASH, 80 864 B SRAM1, 89 704 B SRAM3 |
 

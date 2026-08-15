@@ -722,6 +722,18 @@ void eth_drv_report(void) {
         (drv_interface != NX_NULL) ? (unsigned)drv_interface->nx_interface_link_up : 0U);
     MSG("  rx: %u delivered, %u dropped (no packet), %u dropped (size)\n",
         (unsigned)drv_rx_frames, (unsigned)drv_rx_dropped_nopacket, (unsigned)drv_rx_dropped_size);
+
+    /* Both expected to stay at zero. `deferred` counts frames whose context descriptor the
+       DMA had not written yet -- retried rather than stamped with whatever the slot held
+       (NX-01); `stray` counts context descriptors that turned up without a frame in front of
+       them. A rising `deferred` under load is not a fault, but a rising `stray` is. */
+    {
+        uint32_t ctx_deferred = 0, ctx_stray = 0;
+        ETHHW_GetRxCtxCounters(&ctx_deferred, &ctx_stray);
+        MSG("  rx ts: %u deferred (context descriptor late), %u stray context descriptors\n",
+            (unsigned)ctx_deferred, (unsigned)ctx_stray);
+    }
+
     MSG("  tx: %u sent, %u dropped (link down), %u dropped (MAC busy)\n",
         (unsigned)drv_tx_frames, (unsigned)drv_tx_dropped_linkdown, (unsigned)drv_tx_dropped_mac);
 

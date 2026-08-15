@@ -111,6 +111,16 @@ bool ETHHW_Transmit(ETH_TypeDef *eth, const uint8_t *buf, uint16_t len, uint8_t 
 void ETHHW_ProcessRx(ETH_TypeDef *eth);
 void ETHHW_RestoreRXDesc(ETHHW_DescFull *bd);
 
+/* Receive-timestamp pairing anomalies, both expected to stay at zero.
+ *
+ *   deferred  a frame whose context descriptor the DMA had not written yet; retried on the
+ *             next receive interrupt rather than stamped with whatever the slot held (NX-01)
+ *   stray     a context descriptor with no frame in front of it, or a TSA frame followed by
+ *             something that is not one; skipped and restored
+ *
+ * Counted in interrupt context and read from a thread. Either pointer may be NULL. */
+void ETHHW_GetRxCtxCounters(uint32_t *pDeferred, uint32_t *pStray);
+
 void ETHHW_SetLinkProperties(ETH_TypeDef *eth, bool fastEthernet, bool fullDuplex);
 
 void ETHHW_ISR(ETH_TypeDef *eth);

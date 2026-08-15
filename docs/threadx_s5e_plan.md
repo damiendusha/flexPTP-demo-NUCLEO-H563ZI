@@ -1,6 +1,6 @@
 # S5e — running the real stack on the host
 
-> **Status: C and B are built and passing** (55 host tests). A remains undone, deliberately —
+> **Status: C and B are built and passing** (59 host tests). A remains undone, deliberately —
 > see [Recommendation](#recommendation). This document is kept as the reasoning behind that
 > split rather than as an outstanding to-do.
 
@@ -134,7 +134,7 @@ and neither did anything else in `Src/flexptp_nsd/`. The 25 tests then in `test/
 `mac_drv.c` and nothing above it.
 
 *(Since built. The three units were extracted to `Src/flexptp_nsd/ptp_{tx_registry,ts_codec,
-endpoint}` and the suite now stands at 55 `ctest` entries — see
+endpoint}` and the suite now stands at 59 `ctest` entries — see
 [testing_architecture.md](testing_architecture.md).)*
 
 | Unit | Why it is worth a test |

@@ -99,7 +99,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending · ⏸️ optional/deferred
 | **S5b** | Driver: RX path → `nx_link_ethernet_packet_received()` | ✅ (with S5c) | 1 d | ✅ **done** |
 | **S5c** | Driver: TX path, multicast join/leave, deferred processing | ✅ ping 0% @ 1400 B, 0.337 ms | 1 d | ✅ **done** |
 | **S5d** | DHCP client | ✅ 192.168.2.191, 6/6 vs baseline | 0.5 d | ✅ **done** |
-| **S5e** | *Tier 3:* host-test tiers — **B** real ThreadX (`ports/linux`) context rules, **C** extracted NSD logic units, **A** real NetX Duo + RAM driver | ✅ host only, 55 tests | 1–5 d | ✅ **B and C done; A deliberately not built** — see [threadx_s5e_plan.md](threadx_s5e_plan.md) |
+| **S5e** | *Tier 3:* host-test tiers — **B** real ThreadX (`ports/linux`) context rules, **C** extracted NSD logic units, **A** real NetX Duo + RAM driver | ✅ host only, 59 tests | 1–5 d | ✅ **B and C done; A deliberately not built** — see [threadx_s5e_plan.md](threadx_s5e_plan.md) |
 | **S6** | NSD: UDP/IPv4 E2E + TX-timestamp deferral fix | ✅ 9/9 vs baseline, `\|offset\| ≤ 3301 ns` | 2–3 d | ✅ **done** |
 | **S7** | 802.3 transport, P2P, all three profile presets | ✅ TX, RX and peer-delay proven; Announce/Sync blocked by the host's `asCapable` threshold | 1–2 d | ✅ **done, with a documented host limitation** |
 | **S8** | Cleanup, docs rewrite, CI update, final review | ✅ 10/10 vs baseline | 1.5–2 d | ✅ **done.** Independent review since run: 3 findings, all nits, all fixed and re-verified 8/8 on hardware |

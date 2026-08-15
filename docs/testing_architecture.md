@@ -79,7 +79,7 @@ produce ARM objects.
 
 | Binary | Cases | What it pins |
 |---|---|---|
-| `test_rx_ring` | 9 | Receive descriptor state machine: re-delivery (**F61**), the RBU tail-pointer restart (**F71**), copy-pointer advance (**F58**) |
+| `test_rx_ring` | 13 | Receive descriptor state machine: re-delivery (**F61**), the RBU tail-pointer restart (**F71**), copy-pointer advance (**F58**), and the data/context descriptor pairing rules (**NX-01**) |
 | `test_tx_ring` | 10 | Transmit completion ordering, including across the 16-bit counter wrap; dropped-vs-sent accounting (**F75**); the per-pass count reset (**F57**) |
 | `test_host_harness` | 6 | The harness itself — 32-bit arena and function-pointer round-trips. These fail *first* and say why, because if they regress the driver tests corrupt memory rather than failing cleanly |
 
@@ -217,6 +217,9 @@ reintroduced, the suite re-run, the source restored and verified byte-identical.
 | Endpoint teardown stops zeroing | 1 test fails |
 | Widen the RFC 1112 mask from 23 to 24 bits | 1 test fails — *but only after the test was fixed* |
 | Assert the timer-thread blocking put SUCCEEDS (**F80** inverted) | `RtosContext.BlockingEnqueueFromATimerCallbackIsRejected` fails, reporting −2 vs 0 |
+| Drop the context descriptor's `OWN` check (**NX-01**) | 2 `RxRing` tests fail — a frame is delivered stamped `1 080 035 208 ns`, the buffer address |
+| Drop the stray-context-descriptor skip (**NX-01**) | `RxRing.DoesNotMistakeAStrayContextDescriptorForAFrame` fails |
+| Drop the `CTXT` test on the context slot (**NX-01**) | `RxRing.DoesNotReadTheNextFrameAsATimestamp` fails — **and this test exists only because that mutation survived the first round** |
 
 Do the same for any new characterisation test: break the thing, watch it go red, put it back.
 
@@ -226,6 +229,14 @@ Three things this exercise taught, each of which changed the code:
   reaches zero and the drain loop spins forever. Without a timeout the suite wedges and CI waits
   for its job limit instead of reporting anything. That is why `add_host_test()` sets
   `TIMEOUT 10` — 250× headroom over the 0.04 s the suite actually takes.
+
+- **A third NX-01 branch survived the first mutation round.** Checking that the context slot is
+  application-owned is not sufficient, because an ordinary frame in that slot is
+  application-owned too — so `if (1)` in place of the `CTXT` test passed the whole suite. The
+  discriminating case needs a TSA frame with a *normal* frame behind it, and it asserts both
+  halves: that the following frame is not read as a time, and that it is not swallowed.
+  Mutation testing found the gap; the test was written afterwards, which is the wrong order and
+  is why the round is run at all.
 
 - **The first wrap-ordering test could not fail.** Four timestamped frames straddling the wrap
   are ordered identically by correct modular arithmetic and by the buggy widened subtraction. A

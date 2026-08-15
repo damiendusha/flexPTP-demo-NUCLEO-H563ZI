@@ -433,6 +433,27 @@ __attribute__((unused)) static void ETHHW_PrintRingBufStatus(ETH_TypeDef *eth,
 #define ETHHW_DESC_NEEDS_PROCESSING(bd) \
     (ETHHW_DESC_OWNED_BY_APPLICATION(bd) && !((bd)->ext.inFlight))
 
+// A context descriptor carries a timestamp, not a frame. CTXT is a write-back flag, so it is
+// only meaningful on a descriptor the application owns.
+#define ETHHW_DESC_IS_CONTEXT(bd) \
+    ((((bd)->desc.DES3) & ETH_DMARXNDESCWBF_CTXT) != 0U)
+
+/* Frames deferred because their timestamp had not been written back yet, and context
+ * descriptors found without a frame in front of them. Both are expected to stay at zero; they
+ * are counted rather than printed because this is interrupt context (F68), and reported by
+ * `ethinfo` so that "the timestamps are odd" has somewhere to look. */
+static volatile uint32_t sRxCtxDeferred = 0;
+static volatile uint32_t sRxCtxStray = 0;
+
+void ETHHW_GetRxCtxCounters(uint32_t *pDeferred, uint32_t *pStray) {
+    if (pDeferred != NULL) {
+        *pDeferred = sRxCtxDeferred;
+    }
+    if (pStray != NULL) {
+        *pStray = sRxCtxStray;
+    }
+}
+
 // process incoming packet
 void ETHHW_ProcessRx(ETH_TypeDef *eth) {
     // ETHHW_PrintRingBufStatus(eth, ETHHW_RINGBUF_RX);
@@ -455,11 +476,25 @@ void ETHHW_ProcessRx(ETH_TypeDef *eth) {
     while (ETHHW_DESC_NEEDS_PROCESSING(bd)) {
         ETHHW_DescFull *bd_next = ETHHW_DESC_NEXT(ring, ringLen, bd);
 
+        /* A context descriptor is not a frame.
+         *
+         * Defence in depth: the MAC only emits one behind a data descriptor with TSA set, and
+         * the loop below consumes the pair together, so reaching one here means the ring is in
+         * a state it should not be. Delivered as a frame it would become a zero-length packet
+         * handed to the stack -- its DES3 carries CTXT and no length -- and skipping it
+         * without restoring it would cost the ring a descriptor for good (F71). */
+        if (ETHHW_DESC_IS_CONTEXT(bd)) {
+            sRxCtxStray++;
+            ETHHW_RestoreRXDesc(bd);
+            bd = bd_next;
+            continue;
+        }
+
         /* Zeroed because ts_s/ts_ns are only assigned when a context descriptor carried a
-         * timestamp, but rx_thread copies them into pbuf->time_s/time_ns unconditionally.
-         * Left uninitialised, a frame the MAC did not timestamp handed flexPTP whatever was
-         * on the stack -- a plausible-looking wrong time rather than an obvious zero, which
-         * is the same class of trap as F59's NaN printing as "0.0000". */
+         * timestamp, but rx_thread copies them into the NX_LINK_TIME it hands NetX Duo
+         * unconditionally. Left uninitialised, a frame the MAC did not timestamp handed
+         * flexPTP whatever was on the stack -- a plausible-looking wrong time rather than an
+         * obvious zero, which is the same class of trap as F59's NaN printing as "0.0000". */
         ETHHW_EventDesc evt;
         memset(&evt, 0, sizeof(evt));
         evt.type = ETHHW_EVT_RX_READ;
@@ -471,13 +506,42 @@ void ETHHW_ProcessRx(ETH_TypeDef *eth) {
         bool tsFound = bd->desc.DES1 & ETH_DMARXNDESCWBF_TSA;
         ETHHW_DescFull *ctx_bd = NULL; // context descriptor holding the timestamp
         if (tsFound) {
-            // fetch timestamp
-            ctx_bd = bd_next;
-            evt.data.rx.ts_s = ctx_bd->desc.DES1;
-            evt.data.rx.ts_ns = ctx_bd->desc.DES0;
+            /* TSA says a context descriptor FOLLOWS. It does not say the DMA has written it
+             * yet, and the engine may release the data descriptor first -- so the context
+             * slot must be checked, not assumed.
+             *
+             * Reading it unchecked is not a loud failure. An armed descriptor holds
+             * DES0 = bufAddr, which on this part is an SRAM3 address and therefore a
+             * perfectly plausible sub-second nanosecond count; measured on the host model at
+             * 1 080 035 208 ns for a frame the MAC had not stamped. The servo cannot tell
+             * that from a real t2. Finding NX-01, and the same shape as F59.
+             *
+             * ST's HAL takes the same two decisions in the same order and, when the context
+             * descriptor is not ready, breaks out of its drain loop to retry later
+             * (stm32h5xx_hal_eth.c: "timestamp context descriptor is not ready, exit and
+             * retry later"). Deferring is safe here: the descriptor stays application-owned
+             * and unmarked, so the backward scan above picks it up on the next receive
+             * interrupt -- and the DMA cannot advance past the context slot without writing
+             * it, so nothing newer can overtake it in the meantime. */
+            if (!ETHHW_DESC_OWNED_BY_APPLICATION(bd_next)) {
+                sRxCtxDeferred++;
+                break;
+            }
 
-            // step next bd further
-            bd_next = ETHHW_DESC_NEXT(ring, ringLen, bd_next);
+            if (ETHHW_DESC_IS_CONTEXT(bd_next)) {
+                // fetch timestamp
+                ctx_bd = bd_next;
+                evt.data.rx.ts_s = ctx_bd->desc.DES1;
+                evt.data.rx.ts_ns = ctx_bd->desc.DES0;
+
+                // step next bd further
+                bd_next = ETHHW_DESC_NEXT(ring, ringLen, bd_next);
+            } else {
+                /* TSA set but what follows is not a context descriptor. Deliver the frame
+                   unstamped rather than reading another frame's header as a time: zero is
+                   wrong in a way the reader can see, which a plausible number is not. */
+                sRxCtxStray++;
+            }
         }
 
         evt.bd_ctx = ctx_bd;

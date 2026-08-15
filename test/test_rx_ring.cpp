@@ -75,6 +75,93 @@ TEST_F(RxRing, PairsAFrameWithItsContextDescriptorTimestamp) {
                                     "can restore it too";
 }
 
+TEST_F(RxRing, DoesNotDeliverAFrameWhoseTimestampHasNotArrivedYet) {
+    /* Finding NX-01.
+     *
+     * TSA on the data descriptor says "a context descriptor follows carrying this frame's
+     * timestamp". It does not say the DMA has written it yet, and the databook permits the
+     * data descriptor to be released first. ST's own HAL tests the context descriptor's OWN
+     * bit and breaks out of its drain loop when it is still set -- "timestamp context
+     * descriptor is not ready, exit and retry later" (stm32h5xx_hal_eth.c:1146).
+     *
+     * Reading it anyway does not produce an obviously wrong answer, which is what makes it
+     * dangerous: an armed descriptor holds DES0 = bufAddr, a large plausible nanosecond
+     * value, and the servo has no way to tell it from a real one. The F59 shape.
+     *
+     * Nothing must be delivered here. The frame is not lost -- the descriptor stays
+     * application-owned and unmarked, so the backward scan picks it up next time. */
+    auto frame = make_frame(80);
+    eth_->deliver_frame_ts_pending(frame.data(), frame.size());
+
+    ETHHW_ProcessRx(eth_->eth());
+
+    EXPECT_EQ(EthModel::rx_events().size(), 0u)
+        << "a frame was delivered with a timestamp the MAC had not written yet -- this is NX-01";
+}
+
+TEST_F(RxRing, DeliversTheFrameOnceTheContextDescriptorArrives) {
+    /* The other half of NX-01: deferring must be a retry, not a drop. */
+    auto frame = make_frame(80);
+    eth_->deliver_frame_ts_pending(frame.data(), frame.size());
+    ETHHW_ProcessRx(eth_->eth());
+    ASSERT_EQ(EthModel::rx_events().size(), 0u);
+
+    eth_->complete_pending_ts(0x2222u, 123456789u);
+    ETHHW_ProcessRx(eth_->eth());
+
+    ASSERT_EQ(EthModel::rx_events().size(), 1u) << "the deferred frame was never picked up";
+    const auto &e = EthModel::rx_events()[0];
+    EXPECT_EQ(e.size, 80u);
+    EXPECT_EQ(e.ts_s, 0x2222u);
+    EXPECT_EQ(e.ts_ns, 123456789u);
+    EXPECT_NE(e.bd_ctx, nullptr);
+}
+
+TEST_F(RxRing, DoesNotReadTheNextFrameAsATimestamp) {
+    /* The third branch of NX-01, and the one mutation testing caught me leaving untested:
+     * checking that the context slot is application-owned is not sufficient, because an
+     * ordinary frame in that slot is application-owned too.
+     *
+     * Built by pending a TSA frame and then letting a normal frame land in the slot its
+     * context descriptor would have used -- so the descriptor after the TSA one is owned by
+     * us, and is emphatically not a context descriptor. Without the CTXT test the driver
+     * reads that frame's DES0/DES1 as a time AND swallows the frame, because it steps
+     * bd_next past it. Both halves are asserted. */
+    auto stamped = make_frame(80, 0);
+    auto ordinary = make_frame(64, 100);
+    eth_->deliver_frame_ts_pending(stamped.data(), stamped.size());
+    eth_->deliver_frame(ordinary.data(), ordinary.size());
+
+    ETHHW_ProcessRx(eth_->eth());
+
+    ASSERT_EQ(EthModel::rx_events().size(), 2u)
+        << "the following frame was consumed as if it were a context descriptor";
+
+    const auto &first = EthModel::rx_events()[0];
+    EXPECT_EQ(first.size, 80u);
+    EXPECT_EQ(first.ts_ns, 0u) << "another frame's descriptor was read as a timestamp";
+    EXPECT_EQ(first.ts_s, 0u);
+    EXPECT_EQ(first.bd_ctx, nullptr);
+
+    EXPECT_EQ(EthModel::rx_events()[1].size, 64u);
+    EXPECT_EQ(static_cast<const std::uint8_t *>(EthModel::rx_events()[1].payload)[0], 100);
+}
+
+TEST_F(RxRing, DoesNotMistakeAStrayContextDescriptorForAFrame) {
+    /* A context descriptor carries CTXT and no length. Delivered as if it were a frame it
+     * becomes a zero-length "packet" handed to the stack, and its buffer address is never
+     * meaningful. Skipping it is not enough on its own -- it must also be returned to the
+     * DMA, or the ring quietly loses a descriptor every time one appears (the F71 lesson). */
+    eth_->deliver_stray_context_descriptor(0x3333u, 555u);
+
+    ETHHW_ProcessRx(eth_->eth());
+
+    EXPECT_EQ(EthModel::rx_events().size(), 0u)
+        << "a context descriptor was delivered upward as a frame";
+    EXPECT_TRUE(eth_->rx_ring()[0].desc.DES3 & ETH_DMARXNDESCRF_OWN)
+        << "the stray context descriptor was skipped but not returned to the DMA";
+}
+
 TEST_F(RxRing, DoesNotRedeliverAFrameStillInFlight) {
     /* Finding F61, measured at 57% of all frames under ordinary PTP traffic.
      *
