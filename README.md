@@ -218,7 +218,14 @@ equivalent (e.g. GtkTerm); on Linux the device shows up as `/dev/ttyACMx`.
 
 ### PPS signal
 
-The 1PPS signal is emitted on **`PG8`** (ETH_PPS_OUT, AF11).
+The 1PPS signal is emitted on **`PG8`** (ETH_PPS_OUT, AF11). `ptp pps <freq>` sets it to the
+nearest power of two from 1 Hz to 16384 Hz; `ptp pps 0` stops it.
+
+> [!NOTE]
+> "Stops it" needed a fix. The MAC's fixed-frequency PPS mode has no *disabled* encoding —
+> `PPSCTRL = 0b0000` is the **1 Hz** code — so `ptp pps 0` used to leave the pin toggling once a
+> second while the CLI reported it off. Stopping the output means leaving that mode entirely.
+> See NX-09 in [`docs/review_v1_opus_5p0.md`](docs/review_v1_opus_5p0.md).
 
 ## Test environment
 

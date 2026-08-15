@@ -482,6 +482,31 @@ I have not confirmed this against RM0481 (no copy available here) and the enum's
 are clearly correct, so this is flagged for **verification on the bench with a scope on PG8**
 rather than asserted. If confirmed it is a one-line fix and a one-line message change.
 
+> **✅ ADDRESSED — and it was real.** Verified by reading `MACPPSCR` over SWD rather than with a
+> scope, which is weaker evidence but sufficient here because the register tells the whole story:
+>
+> | Command | CLI said | `MACPPSCR` |
+> |---|---|---|
+> | `ptp pps 1` | `PPS frequency: 1 Hz` | `0x61` — fixed-frequency mode, `PPSCTRL` = 1 |
+> | `ptp pps 0` *(before)* | `PPS output is turned off.` | `0x60` — **the same mode, divider 0**, which is the 1 Hz code |
+>
+> There is no "off" encoding in `PPSCTRL`: `0b0000` is 1 Hz. The pin was still toggling.
+>
+> The fix is not the one-liner I guessed. Stopping the output means *leaving* fixed-frequency
+> mode — setting `PPSEN0` and issuing the pulse-train STOP command — which
+> `ETHHW_StopPTPPPSPulseTrain()` already did for the other PPS mode, so
+> `ptphw_set_pps_freq(0)` now calls it. Reversible, because writing a frequency clears `PPSEN0`
+> again. After:
+>
+> | Command | `MACPPSCR` |
+> |---|---|
+> | `ptp pps 1` | `0x61` — 1 Hz |
+> | `ptp pps 0` | `0x70` — **command mode, STOP consumed**: the output is stopped |
+> | `ptp pps 8` | `0x64` — back in fixed-frequency mode, `PPSCTRL` = 4 → 2³ = 8 Hz |
+>
+> **Not scoped.** The evidence is the register transition, not a trace of PG8. A scope would
+> settle it beyond doubt and is the right next step if anyone has one on the bench.
+
 ### NX-10 — `NX_LINK_DISABLE` does not stop the MAC
 
 **Priority: Low** · `Drivers/EthDrv/eth_drv_netxduo.c:403-406`
@@ -1430,7 +1455,7 @@ how, and for the evidence.
 | [NX-06](#nx-06--the-receive-queue-drop-path-is-the-only-uninstrumented-one) | ✅ P2 | Gap | `ETHHW_ReadCallback` drops events on a full queue with no counter | `eth_drv_netxduo.c:687-696` | Already documented as the drop path that bites under load (`architecture.md:335`). Two-line fix in a driver built around counters |
 | [NX-07](#nx-07--rx-packet-length-is-masked-to-14-bits-but-the-field-is-15) | ✅ P3 | Latent | RDES3 length masked `0x3FFF`; `ETH_DMARXNDESCWBF_PL` is `0x7FFF` | `mac_drv.c:466` | Unreachable at MTU 1500. The adjacent TX `& 0x3FFF` **is** correct, which makes the difference easy to miss |
 | [NX-08](#nx-08--receive-queue-leaked-if-the-receive-thread-fails-to-start) | ✅ P3 | Defect | RX queue re-created and leaked if `osThreadNew` failed on a previous `NX_LINK_INITIALIZE` | `eth_drv_netxduo.c:356-373` | Defeats the `rx_started` guard it sits inside |
-| [NX-09](#nx-09--ptp-pps-0-reports-off-but-may-leave-the-output-running-at-1-hz) | P3 | Suspect | `ptp pps 0` writes `PPSCTRL=0`, likely 1 Hz rather than off, while reporting "turned off" | `ptp_port_stm32h563.c:35-40,88-92` | **Needs bench confirmation** — scope on PG8. Not asserted; RM0481 not available to this review |
+| [NX-09](#nx-09--ptp-pps-0-reports-off-but-may-leave-the-output-running-at-1-hz) | ✅ P3 | **Confirmed** | `ptp pps 0` writes `PPSCTRL=0`, likely 1 Hz rather than off, while reporting "turned off" | `ptp_port_stm32h563.c:35-40,88-92` | **Needs bench confirmation** — scope on PG8. Not asserted; RM0481 not available to this review |
 | [NX-10](#nx-10--nx_link_disable-does-not-stop-the-mac) | ✅ P3 | Gap | `NX_LINK_DISABLE` leaves `RE`/`TE`/`SR`/`ST` set | `eth_drv_netxduo.c:403-406` | Unreachable today; becomes a bug with any link-flap recovery |
 | [AR-01](#ar-01--every-frame-is-copied-twice-on-transmit-and-once-on-receive) | Opp (M) | Arch | Two copies per TX frame, one per RX; NetX Duo's zero-copy is unused | driver + `mac_drv.c` | 48 × 1 528 B = 73 KB of SRAM3 exists only to be copied out of and into. Crosses the `mac_drv.c` boundary this port kept unchanged |
 | [AR-02](#ar-02--the-pending-timestamp-registry-could-key-on-the-message-instead-of-the-pointer) | Opp (M) | Arch | TX-timestamp registry keys on a recycled pointer; keying on `(msgType, sequenceId, portIdentity)` removes the ABA hazard structurally | `ptp_tx_registry.cpp` | Current design is correct and well-tested; recorded because it rests on three invariants a future drop path could break |

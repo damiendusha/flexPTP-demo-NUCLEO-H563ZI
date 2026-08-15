@@ -32,12 +32,24 @@ void ptphw_set_pps_freq(double freq) {
             }
 
             sFreq = exp2(fc_exp - 1);
-        } else {
-            sFreq = 0;
-            fc_exp = 0;
-        }
 
-        ETHHW_SetPTPPPSFreq(ETH, fc_exp);
+            // Writing the frequency also clears PPSEN0, so this returns the pin to
+            // fixed-frequency mode after a ptphw_set_pps_freq(0).
+            ETHHW_SetPTPPPSFreq(ETH, fc_exp);
+        } else {
+            /* Zero means OFF, and writing PPSCTRL = 0 does not do that.
+             *
+             * In fixed-frequency mode the PPSCTRL field has no "disabled" encoding: 0b0000 is
+             * the 1 Hz code, so `ptp pps 0` used to leave PG8 toggling once a second while the
+             * CLI reported "PPS output is turned off". Measured over SWD: MACPPSCR went
+             * 0x61 (1 Hz) -> 0x60, a change of the divider and nothing else (finding NX-09).
+             *
+             * Stopping the pin means leaving fixed-frequency mode: set PPSEN0 and issue the
+             * pulse-train STOP command, which is exactly what ETHHW_StopPTPPPSPulseTrain()
+             * does. Reversible, because the branch above clears PPSEN0 again. */
+            sFreq = 0;
+            ETHHW_StopPTPPPSPulseTrain(ETH);
+        }
 
 #elif defined(PPS_PULSETRAIN)
         // convert to integer (integer only!)
