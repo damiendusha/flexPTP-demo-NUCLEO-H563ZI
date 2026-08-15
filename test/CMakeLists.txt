@@ -209,6 +209,19 @@ if (EXISTS ${THREADX_DIR}/common/inc/tx_api.h)
     target_compile_options(host_cmsis_rtos PRIVATE -w)
     target_link_libraries(host_cmsis_rtos PUBLIC host_threadx)
 
+    # The console FIFO. Real semaphores and a real critical section, because a fake of either
+    # would be a fake of the thing under test (TS-01). Its own binary for the same reason
+    # test_rtos_context is: it enters a kernel that never returns.
+    add_executable(test_blocking_fifo test_blocking_fifo.cpp
+                   ${REPO_ROOT}/Modules/blocking_io/blocking_fifo.c)
+    target_include_directories(test_blocking_fifo PRIVATE
+        ${REPO_ROOT}/Modules/blocking_io
+        ${CMAKE_CURRENT_LIST_DIR}/host)          # cmsis_compiler.h: PRIMASK, __get_IPSR
+    target_link_libraries(test_blocking_fifo PRIVATE host_cmsis_rtos GTest::gtest)
+    target_compile_options(test_blocking_fifo PRIVATE -Wall -Wextra)
+    add_test(NAME BlockingFifo COMMAND test_blocking_fifo)
+    set_tests_properties(BlockingFifo PROPERTIES TIMEOUT 30)
+
     add_executable(test_rtos_context test_rtos_context.cpp)
     target_link_libraries(test_rtos_context PRIVATE host_cmsis_rtos GTest::gtest)
     target_compile_options(test_rtos_context PRIVATE -Wall -Wextra)

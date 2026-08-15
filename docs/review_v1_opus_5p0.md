@@ -614,6 +614,22 @@ indices; `get_used()` across the `pushedTotal` wrap; a push that wraps the ring 
 blocking push that unblocks on a pop; `bfifo_push_all` with a payload larger than the FIFO; and
 the interleaving where a second writer enters while the first is mid-push.
 
+> **✅ ADDRESSED** — `test/test_blocking_fifo.cpp`, 13 cases, linked against the real ThreadX
+> kernel and ST's real CMSIS-RTOS2 wrapper. Every case above except the last: the second-writer
+> interleaving needs the ISR producer, and `__get_IPSR()` is 0 on the host, so that half stays
+> on the bench and the file says so.
+>
+> Two shortcuts worth naming. The 2³² wrap test sets `pushedTotal`/`poppedTotal` directly —
+> reaching it honestly would take 4 GB through a console FIFO — which is white-box, and the
+> alternative was not testing the property at all. And `TheCriticalSectionRestoresPrimaskRather
+> ThanEnablingIt` uses the host shim's `host_primask`, so it pins the save/restore discipline
+> rather than real interrupt masking.
+>
+> **Evidence.** Mutation: reverting `bfifo_get_used()` to the index comparison (F67/N1) fails
+> **4** tests — and one of them fails *by timing out*, because a full FIFO reporting empty
+> stalls `bfifo_push_all()` against its consumer. That is the failure the board actually
+> showed. Host suite 85/85.
+
 ### TS-02 — the CLI tokenizer has no automated coverage
 
 **Priority: High** · `Src/cliutils/cli.c:82-200`
@@ -1264,7 +1280,7 @@ how, and for the evidence.
 | [AR-05](#ar-05--the-eth_stack-switch-is-advertised-as-easier-than-it-is) | P3 | Doc/Arch | README calls the EtherLib switch easy; design_doc says the files have never been compiled | `README.md:263-271` | Align the two; see TS-08 |
 | [AR-06](#ar-06--no-watchdog-and-every-failure-path-halts-forever) | P3 | Decision | No IWDG; all failure paths halt | `main.c`, `serial_io.c` | Defensible for a bench demo — but undocumented as a choice |
 | [AR-07](#ar-07--equal-priority-scheduling-semantics-changed-with-the-kernel) | P3 | Doc | Equal-priority round-robin quantum changed 1 ms → 4 ms with the kernel swap | `cmsis_os2.c:116,923` | Checked expecting starvation; there is none. `RTOS2_DEFAULT_TIME_SLICE` is overridable |
-| [TS-01](#ts-01--blocking_fifoc-has-no-automated-coverage-at-all) | **P1** | Test gap | `blocking_fifo.c` untested despite carrying F67 (N1, N7) and wrap-dependent arithmetic | `blocking_fifo.c` | Cheapest high-value test in the tree — the real-ThreadX host target already exists |
+| [TS-01](#ts-01--blocking_fifoc-has-no-automated-coverage-at-all) | ✅ **P1** | Test gap | `blocking_fifo.c` untested despite carrying F67 (N1, N7) and wrap-dependent arithmetic | `blocking_fifo.c` | Cheapest high-value test in the tree — the real-ThreadX host target already exists |
 | [TS-02](#ts-02--the-cli-tokenizer-has-no-automated-coverage) | **P1** | Test gap | CLI tokenizer untested despite F74 (N8, N12: one-byte overflow, shared `strtok` state) | `cli.c:82-200` | Include the `ptp servo st` / `ptp servo stm` prefix-matching case |
 | [TS-03](#ts-03--the-dma-model-cannot-express-a-late-context-descriptor) | ✅ **P1** | Test gap | DMA model always writes a complete context descriptor, so NX-01 is unreachable | `eth_model.cpp:100-119` | Add `deliver_frame_ts_pending()` / `_no_ctxt()`. Write the tests **before** the NX-01 fix so it is mutation-verified |
 | [TS-04](#ts-04--drv_sends-framing-logic-is-untested) | P2 | Test gap | `drv_send()` untested — the function with the port's highest defect density | `eth_drv_netxduo.c:469-616` | Most important property: **every** drop path cancels the pending timestamp |

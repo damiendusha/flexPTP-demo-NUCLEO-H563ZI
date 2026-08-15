@@ -146,6 +146,7 @@ restored and verified byte-identical:
 | `ptp_tx_registry_take()` reads instead of clearing (**the ABA hazard**) | **5 tests fail** |
 | `ptp_tx_registry_cancel()` does nothing (the send-failure leak) | 1 test fails |
 | Drop the codec's headroom precondition | 1 test fails |
+| Derive FIFO occupancy from the two indices (**F67/N1**) | 4 `Fifo` tests fail, one by timing out |
 | Mark the NSD sockets created only once the whole sequence succeeded (**NX-02**) | 3 tests fail |
 | Leave the transport set across an NSD teardown (**NX-02**) | 4 tests fail |
 | Drop the context descriptor's `OWN` check (**NX-01**) | 2 `RxRing` tests fail |

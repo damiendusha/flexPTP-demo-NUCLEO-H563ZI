@@ -113,6 +113,19 @@ reason.
 Before this extraction the network-stack driver had **zero** automated coverage. That is what
 the exercise bought, more than any individual assertion.
 
+### The console FIFO
+
+| Binary | Cases | The property that matters |
+|---|---|---|
+| `test_blocking_fifo` | 13 | **F67 (N1, N7).** Occupancy is a *modular difference of two free-running totals*, not a comparison of two indices — so a FIFO filled exactly reads as full rather than empty, and the arithmetic survives the 2³² wrap. Neither is eyeballable, and neither had any coverage |
+
+It links the **real kernel** rather than a fake, for the reason tier 2 does: the FIFO *is*
+semaphores and a critical section, so a fake of either would be a fake of the thing under test.
+`osSemaphoreAcquire()` really blocks, and the oversized-payload test really runs a consumer
+thread. What it cannot reach is the ISR producer — `__get_IPSR()` is 0 on the host, so
+`bfifo_push()`'s "may not wait here" branch stays on the bench, exactly as for the
+transmit-timestamp path.
+
 ## Tier 2 — real ThreadX on the host
 
 `test_rtos_context.cpp` links **real ThreadX** (its `ports/linux/gnu` target) and **the real
@@ -217,6 +230,7 @@ reintroduced, the suite re-run, the source restored and verified byte-identical.
 | `ptp_tx_registry_take()` reads instead of clearing | 5 tests fail |
 | `ptp_tx_registry_cancel()` does nothing | 1 test fails |
 | Drop the codec's headroom precondition | 1 test fails |
+| Derive FIFO occupancy from the two indices (**F67/N1**) | 4 `Fifo` tests fail — one of them by *timing out*, because a full FIFO reporting empty stalls the blocking push |
 | Endpoint teardown stops zeroing | 1 test fails |
 | Widen the RFC 1112 mask from 23 to 24 bits | 1 test fails — *but only after the test was fixed* |
 | Assert the timer-thread blocking put SUCCEEDS (**F80** inverted) | `RtosContext.BlockingEnqueueFromATimerCallbackIsRejected` fails, reporting −2 vs 0 |
