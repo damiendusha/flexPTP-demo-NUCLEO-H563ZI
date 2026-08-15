@@ -729,6 +729,25 @@ most — that **every** drop path calls `eth_drv_cancel_tx_timestamp()`. That la
 the whole registry design rests on, and nothing checks that a newly-added `return` honours it.
 See [CX-05](#cx-05--ethernetframer).
 
+> **✅ ADDRESSED, in part, and the part matters** — `Drivers/EthDrv/eth_framer.{h,cpp}` +
+> `test/test_eth_framer.cpp`, 9 cases, with [CX-05](#cx-05--ethernetframer).
+>
+> Three of the six things listed above were liftable and are now tested: the EtherType mapping,
+> the msw/lsw split (one expected byte array), and the saturating chain append.
+>
+> **Three were not, and pretending otherwise would have produced an abstraction harder to read
+> than the code it replaced:** `RAW_PACKET_SEND` not getting a second header, the headroom
+> check, and the cancel-on-every-drop-path invariant are all statements about `NX_PACKET`
+> ownership. They stay in the driver and stay on the bench. The last one — that every `return`
+> in `drv_send()` cancels the pending timestamp — remains the most fragile thing in the port,
+> and this finding does not close it; see [AR-02](#ar-02--the-pending-timestamp-registry-could-key-on-the-message-instead-of-the-pointer)
+> for the change that would make it unnecessary.
+>
+> **Evidence.** Three mutations, all caught: swapping the destination msw/lsw halves (1),
+> off-by-one in the append (2), transposing ARP and RARP (1). Host suite 95/95. Hardware `S8`
+> **12/12** — which is the real check on the refactor, since ARP, DHCP, ICMP and PTP-over-UDP
+> all go through the rewritten path.
+
 ### TS-05 — the HIL `threads` check does not assert the priorities that matter
 
 **Priority: Medium** · `tools/hil/checks.py:280-295`
@@ -988,6 +1007,13 @@ std::uint32_t flatten(const ChainView &chain, std::span<std::uint8_t> out);  // 
 The msw/lsw byte-order split — twelve hand-written shifts at `eth_drv_netxduo.c:527-538`, written
 out longhand precisely *because* getting it wrong "produces a MAC that looks plausible in a
 debugger and is wrong on the wire" — becomes one test with one expected byte array.
+
+> **✅ ADDRESSED** — built as three `extern "C"` functions rather than the sketch above:
+> `eth_framer_ethertype()`, `eth_framer_write_header()` and `eth_framer_append()`. No span, no
+> chain view — the driver keeps its `NX_PACKET` walk and calls the saturating append per chunk,
+> which is a smaller change to the file with the finding history and leaves the ownership rules
+> where they are. The unit depends on nothing, not even `nx_link.h`: the EtherType constants are
+> its own, so a test of the framing is not a test of NetX Duo's headers.
 
 ### CX-06 — `LinkState` as a pure transition function
 
@@ -1398,7 +1424,7 @@ how, and for the evidence.
 | [TS-01](#ts-01--blocking_fifoc-has-no-automated-coverage-at-all) | ✅ **P1** | Test gap | `blocking_fifo.c` untested despite carrying F67 (N1, N7) and wrap-dependent arithmetic | `blocking_fifo.c` | Cheapest high-value test in the tree — the real-ThreadX host target already exists |
 | [TS-02](#ts-02--the-cli-tokenizer-has-no-automated-coverage) | ✅ **P1** | Test gap | CLI tokenizer untested despite F74 (N8, N12: one-byte overflow, shared `strtok` state) | `cli.c:82-200` | Include the `ptp servo st` / `ptp servo stm` prefix-matching case |
 | [TS-03](#ts-03--the-dma-model-cannot-express-a-late-context-descriptor) | ✅ **P1** | Test gap | DMA model always writes a complete context descriptor, so NX-01 is unreachable | `eth_model.cpp:100-119` | Add `deliver_frame_ts_pending()` / `_no_ctxt()`. Write the tests **before** the NX-01 fix so it is mutation-verified |
-| [TS-04](#ts-04--drv_sends-framing-logic-is-untested) | P2 | Test gap | `drv_send()` untested — the function with the port's highest defect density | `eth_drv_netxduo.c:469-616` | Most important property: **every** drop path cancels the pending timestamp |
+| [TS-04](#ts-04--drv_sends-framing-logic-is-untested) | ✅ P2 | Test gap | `drv_send()` untested — the function with the port's highest defect density | `eth_drv_netxduo.c:469-616` | Most important property: **every** drop path cancels the pending timestamp |
 | [TS-05](#ts-05--the-hil-threads-check-does-not-assert-the-priorities-that-matter) | ✅ P2 | Test gap | HIL `threads` check omits `eth ip` (16), `rx` (24), `ptpts` (24) and their presence | `checks.py:280-295` | `architecture.md` presents that table as the spec; four dictionary entries close it |
 | [TS-06](#ts-06--ci-verifies-two-of-the-four-submodule-patches) | ✅ P2 | Test gap | CI verifies patches 0001 and 0002 only; **0004 is the silent one** | `ci.yml:59-62` | Without 0004 no master is ever selected. Loop over `build.sh`'s existing `SUBMODULE_PATCHES` list |
 | [TS-07](#ts-07--no-test-of-the-nsd-lifecycle) | ✅ P2 | Test gap | No lifecycle test for `ptp_nsd_init` teardown / transport switch / re-init | `nsd_netxduo.c` | The state machine holding NX-02. Needs a fake, not a real `NX_IP` |
@@ -1409,7 +1435,7 @@ how, and for the evidence.
 | [CX-02](#cx-02--bytefifo-with-an-injected-critical-section-policy) | Opp (H) | C++ | `ByteFifo<Crit>` with an injectable critical section | `blocking_fifo.c` → C++ | An instrumented `Crit` makes the F67/N7 mid-push interleaving an actual test. Pairs with TS-01 |
 | [CX-03](#cx-03--tokenizer-and-commandtable) | Opp (M) | C++ | `Tokenizer` over `string_view` + `CommandTable` | `cli.c` → C++ | Makes the F74/N8 shared-state defect unrepresentable rather than fixed. Pairs with TS-02 |
 | [CX-04](#cx-04--nsdlifecycle-over-an-injected-stack-interface) | ✅ Opp (M) | C++ | `NsdLifecycle` over a five-call stack interface | `nsd_netxduo.c` → C++ | Makes NX-02 a red test before a fix. Cold path, so dispatch cost is irrelevant |
-| [CX-05](#cx-05--ethernetframer) | Opp (M) | C++ | `EthernetFramer`: ethertype selection, header write, chain flatten | `eth_drv_netxduo.c` → C++ | Twelve hand-written byte shifts become one expected-array test. Pairs with TS-04 |
+| [CX-05](#cx-05--ethernetframer) | ✅ Opp (M) | C++ | `EthernetFramer`: ethertype selection, header write, chain flatten | `eth_drv_netxduo.c` → C++ | Twelve hand-written byte shifts become one expected-array test. Pairs with TS-04 |
 | [CX-06](#cx-06--linkstate-as-a-pure-transition-function) | Opp (L) | C++ | `LinkDecision next(prev, phy_status)` | `eth_drv_netxduo.c:220-269` | Pins the first-poll `DOWN` suppression rule |
 | [CX-07](#cx-07--make-the-c-rules-enforced-rather-than-documented) | Opp (L) | C++ | Assert in CI that the image has no `operator new` / `__cxa_throw` | `cpp_support.cpp:22-30` | Makes the no-allocation rule observable, as `cpp_ctor` does for static init. Cannot assert "no `malloc`" — see NX-03 |
 | [DC-01](#dc-01--the-interrupt-priority-table-is-wrong-in-two-rows) | ✅ P2 | Doc | Interrupt table: SVC and SysTick priorities both wrong | `architecture.md:352,354` | Consequence of NX-04 |

@@ -31,6 +31,7 @@
    port's hardware timestamps. */
 #include "nx_link.h"
 
+#include "eth_framer.h"
 #include "mac_drv.h"
 #include "phy_drv/phy_common.h"
 #include "flexptp_nsd/ptp_tx_registry.h"
@@ -494,19 +495,22 @@ static void drv_send(NX_IP_DRIVER *request) {
     }
 
     if (request->nx_ip_driver_command != NX_LINK_RAW_PACKET_SEND) {
-        USHORT ethertype;
+        /* NetX Duo's command -> what the frame carries. One line per case, where a reader can
+           see it; the EtherType values themselves are eth_framer.cpp's, which depends on
+           nothing so that a test of the framing is not a test of NetX Duo's headers. */
+        EthFramerPayload payload;
         switch (request->nx_ip_driver_command) {
         case NX_LINK_ARP_SEND:
         case NX_LINK_ARP_RESPONSE_SEND:
-            ethertype = NX_LINK_ETHERNET_ARP;
+            payload = ETH_FRAMER_PAYLOAD_ARP;
             break;
         case NX_LINK_RARP_SEND:
-            ethertype = NX_LINK_ETHERNET_RARP;
+            payload = ETH_FRAMER_PAYLOAD_RARP;
             break;
         default:
-            ethertype = (packet->nx_packet_ip_version == NX_IP_VERSION_V6)
-                            ? NX_LINK_ETHERNET_IPV6
-                            : NX_LINK_ETHERNET_IP;
+            payload = (packet->nx_packet_ip_version == NX_IP_VERSION_V6)
+                          ? ETH_FRAMER_PAYLOAD_IPV6
+                          : ETH_FRAMER_PAYLOAD_IPV4;
             break;
         }
 
@@ -523,23 +527,16 @@ static void drv_send(NX_IP_DRIVER *request) {
         packet->nx_packet_prepend_ptr -= NX_LINK_ETHERNET_HEADER_SIZE;
         packet->nx_packet_length += NX_LINK_ETHERNET_HEADER_SIZE;
 
-        /* Big-endian on the wire, written byte by byte. The destination comes from the
-           request's msw/lsw pair, the source from the interface's. */
-        uint8_t *h = packet->nx_packet_prepend_ptr;
-        h[0] = (uint8_t)(request->nx_ip_driver_physical_address_msw >> 8);
-        h[1] = (uint8_t)(request->nx_ip_driver_physical_address_msw);
-        h[2] = (uint8_t)(request->nx_ip_driver_physical_address_lsw >> 24);
-        h[3] = (uint8_t)(request->nx_ip_driver_physical_address_lsw >> 16);
-        h[4] = (uint8_t)(request->nx_ip_driver_physical_address_lsw >> 8);
-        h[5] = (uint8_t)(request->nx_ip_driver_physical_address_lsw);
-        h[6] = (uint8_t)(drv_interface->nx_interface_physical_address_msw >> 8);
-        h[7] = (uint8_t)(drv_interface->nx_interface_physical_address_msw);
-        h[8] = (uint8_t)(drv_interface->nx_interface_physical_address_lsw >> 24);
-        h[9] = (uint8_t)(drv_interface->nx_interface_physical_address_lsw >> 16);
-        h[10] = (uint8_t)(drv_interface->nx_interface_physical_address_lsw >> 8);
-        h[11] = (uint8_t)(drv_interface->nx_interface_physical_address_lsw);
-        h[12] = (uint8_t)(ethertype >> 8);
-        h[13] = (uint8_t)(ethertype);
+        /* The destination comes from the request's msw/lsw pair, the source from the
+           interface's. Both splits, and the big-endian layout, are eth_framer's -- and
+           host-tested, because a wrong split produces a MAC that looks plausible in a debugger
+           and is wrong on the wire (TS-04). */
+        eth_framer_write_header(packet->nx_packet_prepend_ptr,
+                                request->nx_ip_driver_physical_address_msw,
+                                request->nx_ip_driver_physical_address_lsw,
+                                drv_interface->nx_interface_physical_address_msw,
+                                drv_interface->nx_interface_physical_address_lsw,
+                                eth_framer_ethertype(payload));
     }
 
     /* Bounded, and reported. The lwIP driver learned this as N14: a frame that cannot be sent
@@ -555,15 +552,14 @@ static void drv_send(NX_IP_DRIVER *request) {
         return;
     }
 
-    /* Flatten the chain. */
+    /* Flatten the chain. eth_framer_append() saturates at the buffer and returns the new
+       offset, so a chain whose declared length disagrees with its contents cannot walk off the
+       end -- and the saturation is host-tested rather than argued about. */
     ULONG offset = 0;
     for (NX_PACKET *p = packet; p != NX_NULL; p = p->nx_packet_next) {
-        ULONG chunk = (ULONG)(p->nx_packet_append_ptr - p->nx_packet_prepend_ptr);
-        if ((offset + chunk) > ETH_BUFFER_SIZE) {
-            chunk = ETH_BUFFER_SIZE - offset;
-        }
-        memcpy(&tx_concat_buf[offset], p->nx_packet_prepend_ptr, chunk);
-        offset += chunk;
+        const ULONG chunk = (ULONG)(p->nx_packet_append_ptr - p->nx_packet_prepend_ptr);
+        offset = eth_framer_append(tx_concat_buf, ETH_BUFFER_SIZE, (uint32_t)offset,
+                                   p->nx_packet_prepend_ptr, (uint32_t)chunk);
         if (offset >= ETH_BUFFER_SIZE) {
             break;
         }

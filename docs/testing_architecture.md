@@ -83,6 +83,7 @@ produce ARM objects.
 |---|---|---|
 | `test_rx_ring` | 13 | Receive descriptor state machine: re-delivery (**F61**), the RBU tail-pointer restart (**F71**), copy-pointer advance (**F58**), and the data/context descriptor pairing rules (**NX-01**) |
 | `test_tx_ring` | 10 | Transmit completion ordering, including across the 16-bit counter wrap; dropped-vs-sent accounting (**F75**); the per-pass count reset (**F57**) |
+| `test_eth_framer` | 9 | The framing decisions lifted out of `drv_send()` (**TS-04**): EtherType mapping, the msw/lsw address split, and the saturating chain append. A mistake in any of them produces a frame that is perfectly formed and wrong — measured during bring-up as "tx: 16 sent, 0 dropped" against a host that received nothing |
 | `test_host_harness` | 6 | The harness itself — 32-bit arena and function-pointer round-trips. These fail *first* and say why, because if they regress the driver tests corrupt memory rather than failing cleanly |
 
 `mac_drv.c` required **no changes at all** to become testable: 97 of its 98 register accesses
@@ -233,6 +234,9 @@ reintroduced, the suite re-run, the source restored and verified byte-identical.
 | `ptp_tx_registry_take()` reads instead of clearing | 5 tests fail |
 | `ptp_tx_registry_cancel()` does nothing | 1 test fails |
 | Drop the codec's headroom precondition | 1 test fails |
+| Swap the msw/lsw halves of the destination MAC (**TS-04**) | 1 `EthFramer` test fails |
+| Off-by-one in the saturating chain append | 2 `EthFramer` tests fail |
+| Transpose the ARP and RARP EtherTypes | 1 `EthFramer` test fails |
 | Derive FIFO occupancy from the two indices (**F67/N1**) | 4 `Fifo` tests fail — one of them by *timing out*, because a full FIFO reporting empty stalls the blocking push |
 | `strncpy` without the terminator (**F74/N12**) | 1 `Cli` test fails |
 | Shrink the CLI line-copy buffer by one (**F74/N8**) | 1 `Cli` test fails |

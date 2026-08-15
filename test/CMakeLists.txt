@@ -127,6 +127,17 @@ add_unit_test(test_ptp_ts_codec)
 add_unit_test(test_ptp_endpoint)
 add_unit_test(test_ptp_nsd_lifecycle)
 
+# The framing decisions lifted out of drv_send() (TS-04/CX-05). Depends on nothing, like the
+# NSD units, so it gets its own tiny library rather than joining ptp_units.
+add_library(eth_framer STATIC ${REPO_ROOT}/Drivers/EthDrv/eth_framer.cpp)
+target_include_directories(eth_framer PUBLIC ${REPO_ROOT}/Drivers/EthDrv)
+target_compile_options(eth_framer PRIVATE -Wall -Wextra)
+
+add_executable(test_eth_framer test_eth_framer.cpp)
+target_link_libraries(test_eth_framer PRIVATE eth_framer GTest::gtest_main)
+target_compile_options(test_eth_framer PRIVATE -Wall -Wextra)
+gtest_discover_tests(test_eth_framer PROPERTIES TIMEOUT 10)
+
 # Header-only, so it needs no library -- just Src/ on the include path, which HOST_INCLUDES
 # already provides via ptp_units' PUBLIC directories? It does not: ptp_units exports only
 # Src/flexptp_nsd. Point at Src/ explicitly.

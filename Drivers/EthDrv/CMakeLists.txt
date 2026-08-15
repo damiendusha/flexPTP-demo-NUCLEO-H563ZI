@@ -11,6 +11,10 @@ elseif(ETH_STACK STREQUAL "NETXDUO")
     set(ETH_DRV_SRC
         eth_drv_netxduo.c
         eth_drv_netxduo.h
+        # The framing decisions lifted out of drv_send() so they could be tested (TS-04).
+        # C++ per the rules in Src/cpp_support.cpp; depends on nothing but stdint.
+        eth_framer.cpp
+        eth_framer.h
     )
 elseif(ETH_STACK STREQUAL "NONE")
     # S3-S5 of the ThreadX port: eth_drv_lwip.c was removed with lwIP and eth_drv_netxduo.c
