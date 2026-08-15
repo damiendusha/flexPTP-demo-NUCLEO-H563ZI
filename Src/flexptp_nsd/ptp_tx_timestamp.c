@@ -51,7 +51,7 @@ static osMessageQueueId_t s_queue;
 static osThreadId_t s_thread;
 
 /* Diagnostics. Counted rather than printed: this is an ISR path, and printing from one is
-   what finding F68 was about. Surfaced by `ptp diag ts`. */
+   what finding F68 was about. Reported by `ethinfo`, via eth_drv_report(). */
 static volatile uint32_t s_posted;
 static volatile uint32_t s_dropped;
 static volatile uint32_t s_delivered;

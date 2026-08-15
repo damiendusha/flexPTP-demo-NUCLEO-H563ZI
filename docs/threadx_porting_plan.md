@@ -173,7 +173,7 @@ Named checks, each independently runnable so a stage can assert only what should
 CMSIS-RTOS2 binding silently discards TX timestamps; a sync test alone may still look plausible
 while `t3` is missing. Counting timestamps 1:1 is what makes that failure loud. Instrument the
 count the way F61's investigation did, and keep the counter behind a CLI command
-(`ptp diag ts`) so the check can read it.
+(`ethinfo`) so the check can read it.
 
 ### Baseline first
 

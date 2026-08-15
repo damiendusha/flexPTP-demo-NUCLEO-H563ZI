@@ -1,3 +1,6 @@
+/* The guard name is a leftover: this header was EtherLib-specific in the H743 project it came
+   from. Renaming it is a no-op with a small chance of a duplicate-guard collision, so it is
+   left alone and explained instead. */
 #ifndef SRC_FLEXPTP_OPTIONS_ETHERLIB
 #define SRC_FLEXPTP_OPTIONS_ETHERLIB
 
@@ -39,8 +42,10 @@ typedef struct ip4_addr {
  * from an ISR and ST's wrapper returns osErrorParameter, which flexPTP does not check -- so
  * every transmit timestamp would be silently discarded and the servo would never see t3.
  *
- * That does not bite yet: the S3 stub driver transmits nothing. S6 must defer the callback
- * out of interrupt context before wiring up a real driver. See finding 1 in
+ * That is handled, and the warning above is kept because the hazard is still there in the
+ * binding: Src/flexptp_nsd/ptp_tx_timestamp.c breaks the call chain, posting from the ISR with
+ * timeout 0 and making flexPTP's blocking call from a thread. Remove that file and every
+ * transmit timestamp goes silently missing again. See finding 1 in
  * docs/threadx_netxduo_feasibility.md, and the ptp_ts check in tools/hil/. (F40) */
 #define FLEXPTP_CMSIS_OS2 (1)
 

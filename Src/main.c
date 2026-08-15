@@ -184,10 +184,9 @@ void task_startup(void *arg) {
     // print greetings
     print_welcome_message();
 
-    /* NetX Duo from S4. The Ethernet driver under it is still a stub until S5a, so the IP
-     * thread runs and nothing reaches the wire; a failure here is reported and the CLI
-     * continues, because a board that boots without a network is far more debuggable than
-     * one that does not boot. */
+    /* NetX Duo: packet pool, IP instance, ARP/ICMP/UDP/IGMP, DHCP client and the Ethernet
+     * driver's threads. A failure here is reported and the CLI continues, because a board that
+     * boots without a network is far more debuggable than one that does not boot. */
     (void)init_ethernet();
 
     // initialize commands

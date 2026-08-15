@@ -647,8 +647,14 @@ void ETHHW_ProcessTx(ETH_TypeDef *eth) {
         state->txCntAcked = bd->ext.txCntr;
 
         if (cbPtr != 0) {
-            // Signature must match lwipopts.h's tx_cb and flexPTP's ptp_transmit_cb:
-            // the tag is a void *, carried through the descriptor extension as a uint32_t.
+            /* Signature: void (*)(uint32_t sec, uint32_t nsec, void *tag), with the tag
+               carried through the descriptor extension as a uint32_t.
+               
+               It used to say "must match lwipopts.h's tx_cb". That header was deleted with
+               lwIP in S3; the contract now has exactly one implementation,
+               ptp_tx_timestamp_from_isr() in Src/flexptp_nsd/, and the only thing enforcing
+               the match is this cast -- which is why F48 was a signature drift nobody caught
+               until it stopped compiling. */
             ((void (*)(uint32_t, uint32_t, void *))cbPtr)(ts_s, ts_ns, (void *)cbArg);
         }
     }
@@ -785,11 +791,17 @@ bool ETHHW_Transmit(ETH_TypeDef *eth, const uint8_t *buf, uint16_t len, uint8_t 
     // ETHHW_PrintRingBufStatus(eth, ETHHW_RINGBUF_TX);
 
     /* Bounded, like every other handshake in this driver. This one was left unbounded by the
-     * F54 sweep, and it is the worst place to spin: low_level_output() calls it on
-     * tcpip_thread at priority 40 *while holding the lwIP core lock*, so a stalled TX DMA
-     * would not merely burn the CPU -- it would deadlock every lwIP user behind the lock,
-     * with no watchdog configured to recover. Dropping the frame is the right failure: the
-     * stack is designed for lossy links. */
+     * F54 sweep, and it is the worst place in the driver to spin.
+     *
+     * The reason survived the stack swap intact, so it is restated in the current terms rather
+     * than deleted: NetX Duo calls the driver's send entry with the IP instance's protection
+     * mutex HELD -- nxd_udp_socket_send() takes nx_ip_protection before _nx_ip_packet_send()
+     * and releases it after, and nx_link_ethernet_packet_send() does the same -- so a stalled
+     * TX DMA would not merely burn the calling thread, it would block every other user of that
+     * IP instance behind the mutex, with no watchdog configured to recover. (Under lwIP the
+     * same sentence read "tcpip_thread, holding the core lock".)
+     *
+     * Dropping the frame is the right failure: the stack is designed for lossy links. */
     bool descFree = false;
     for (uint32_t i = 0; i < ETHHW_HW_TIMEOUT_SPINS; i++) {
         if (ETHHW_DESC_OWNED_BY_APPLICATION(bd)) {

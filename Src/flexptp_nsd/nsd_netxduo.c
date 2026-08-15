@@ -382,11 +382,13 @@ void ptp_nsd_igmp_join_leave(bool join) {
     }
 
     /* One group, chosen by delay mechanism, exactly as nsd_lwip.c did: 224.0.1.129 for E2E,
-       224.0.0.107 for peer delay. PTP_IGMP_* are the ip4_addr structs from
-       Inc/flexptp_options.h; NetX Duo wants a host-order ULONG. */
-    /* The endpoint unit returns host byte order, which is what NetX Duo's IP_ADDRESS() form
-       is -- so no swap here, unlike the flexPTP constants it replaced (those are stored
-       little-endian, 0x810100E0 for 224.0.1.129, matching flexPTP's own lwIP branch). */
+       224.0.0.107 for peer delay.
+       
+       The address comes from the endpoint unit, in HOST byte order, which is the form
+       NetX Duo's IP_ADDRESS() macro produces and nx_igmp_multicast_join() expects -- so there
+       is no swap here. The PTP_IGMP_* constants in Inc/flexptp_options.h that this replaced
+       are stored little-endian (0x810100E0 for 224.0.1.129), matching flexPTP's own lwIP
+       branch, and are not used on this path. */
     PtpEndpoint ep;
     resolve_endpoint(&ep);
     ULONG group = ep.ipv4_group;

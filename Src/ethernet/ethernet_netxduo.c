@@ -5,8 +5,9 @@
  * an IP instance that OWNS its interface and its driver from the moment nx_ip_create()
  * returns. There is no separate "add the interface" step for interface 0.
  *
- * Stage S4 wires everything except the driver, which is a stub -- see nx_driver_stub() at the
- * bottom. The IP thread runs, the pool exists, and nothing reaches the wire.
+ * The Ethernet driver under it is Drivers/EthDrv/eth_drv_netxduo.c, wired in at nx_ip_create()
+ * below. S4 had a stub here instead, which is why parts of this file are written as though the
+ * wire were unreachable; it was replaced in S5a and everything reaches the wire now.
  */
 
 #include "ethernet_netxduo.h"

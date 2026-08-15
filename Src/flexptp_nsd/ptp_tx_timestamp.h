@@ -14,7 +14,7 @@ bool ptp_tx_timestamp_init(void);
  *  See the file header of ptp_tx_timestamp.c for why calling flexPTP directly is not. */
 void ptp_tx_timestamp_from_isr(uint32_t ts_s, uint32_t ts_ns, void *tag);
 
-/** Counters for the `ptp diag ts` CLI command. Any pointer may be NULL. */
+/** Counters reported by `ethinfo`. Any pointer may be NULL. */
 void ptp_tx_timestamp_stats(uint32_t *posted, uint32_t *delivered, uint32_t *dropped);
 
 #endif /* SRC_FLEXPTP_NSD_PTP_TX_TIMESTAMP_H */

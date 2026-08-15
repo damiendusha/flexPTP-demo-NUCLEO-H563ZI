@@ -1075,6 +1075,10 @@ There is no `nx_driver_stub()` in the file, and the driver has not been a stub s
 line 63 of the same file says correctly. A reader who stops at the header comes away believing
 this firmware has no network.
 
+> **✅ ADDRESSED** — the header now names the real driver and says where the stack was wired in,
+> while keeping the fact that S4 had a stub (it explains why parts of the file are phrased as
+> though the wire were unreachable).
+
 ### DC-04 — `main.c` says the Ethernet driver is still a stub
 
 **Priority: Low** · `Src/main.c:187-190`
@@ -1082,6 +1086,9 @@ this firmware has no network.
 > *"NetX Duo from S4. The Ethernet driver under it is still a stub until S5a…"*
 
 Same issue, in the file most likely to be read first.
+
+> **✅ ADDRESSED** — replaced with what `init_ethernet()` actually brings up, keeping the
+> "report and continue" rationale, which is still the right call.
 
 ### DC-05 — the driver's default case describes features it now handles explicitly
 
@@ -1093,6 +1100,11 @@ Same issue, in the file most likely to be read first.
 Both arrived. Both have their own `case` labels 15 lines above. The `default` is now a genuine
 catch-all and should say what it is catching and why `NX_SUCCESS` is the right answer for an
 unknown command.
+
+> **✅ ADDRESSED** — the comment now says what falls through (`GET_INTERFACE_TYPE`, the IPv6 and
+> PPP commands, anything a future NetX Duo adds) and why `NX_SUCCESS` is right: the stack marks
+> an interface broken on a driver error, and refusing a command this firmware does not need is
+> not a reason to take the link down.
 
 ### DC-06 — three `mac_drv.c` comments are written in terms of a deleted stack
 
@@ -1110,6 +1122,12 @@ stalled TX DMA would block every IP user behind that mutex instead. The comment 
 for a bound that is still needed, using a system that is gone. Rewriting it in NetX Duo terms
 preserves the argument and makes it checkable.
 
+> **✅ ADDRESSED** — all three rewritten in current terms rather than deleted, because two of the
+> three arguments survive the stack swap intact. The bounded-wait rationale now names
+> `nx_ip_protection` and the call sites that hold it, keeping the lwIP sentence in parentheses as
+> history. The `tx_cb` comment states the signature outright and notes that the only thing
+> enforcing it is the cast — which is why F48 went unnoticed until it stopped compiling.
+
 ### DC-07 — three references to a CLI command that does not exist
 
 **Priority: Low** · `Src/flexptp_nsd/ptp_tx_timestamp.c:54`, `ptp_tx_timestamp.h:17`,
@@ -1119,6 +1137,8 @@ All three say the transmit-timestamp counters are *"Surfaced by `ptp diag ts`"*.
 `ptp diag` command — `cmd_init()` registers `osinfo`, `flexptp` and `ethinfo`, and the counters
 are printed by `ethinfo` via `eth_drv_report()`. The porting plan's instance is the one that
 matters, because it describes the mechanism a HIL check depends on.
+
+> **✅ ADDRESSED** — all three now say `ethinfo`.
 
 ### DC-08 — `flexptp_options.h` describes the transmit-timestamp deferral as future work
 
@@ -1132,6 +1152,11 @@ excellent and should stay — it is the sharpest hazard in the port — but it s
 solution rather than schedule it. (Cosmetic, same file: the include guard is still
 `SRC_FLEXPTP_OPTIONS_ETHERLIB`.)
 
+> **✅ ADDRESSED** — the warning stays and now points at `ptp_tx_timestamp.c`, with the part that
+> matters spelled out: delete that file and every transmit timestamp goes silently missing again.
+> The guard name is left alone and explained — renaming it is a no-op with a small chance of a
+> collision.
+
 ### DC-09 — the IGMP comment keeps a superseded first paragraph
 
 **Priority: Low** · `Src/flexptp_nsd/nsd_netxduo.c:328-336`
@@ -1139,6 +1164,9 @@ solution rather than schedule it. (Cosmetic, same file: the include guard is sti
 Two consecutive comment blocks, the first describing `PTP_IGMP_*` constants from
 `flexptp_options.h` and byte order, the second correcting it to say the endpoint unit returns host
 order. The code uses only the second. The first reads as current until you reach the second.
+
+> **✅ ADDRESSED** — merged into one block that states the current behaviour first and keeps the
+> `PTP_IGMP_*` constants as the contrast they were meant to be.
 
 ### DC-10 — `README.md` overstates the `ETH_STACK` switch
 
@@ -1345,13 +1373,13 @@ how, and for the evidence.
 | [CX-07](#cx-07--make-the-c-rules-enforced-rather-than-documented) | Opp (L) | C++ | Assert in CI that the image has no `operator new` / `__cxa_throw` | `cpp_support.cpp:22-30` | Makes the no-allocation rule observable, as `cpp_ctor` does for static init. Cannot assert "no `malloc`" — see NX-03 |
 | [DC-01](#dc-01--the-interrupt-priority-table-is-wrong-in-two-rows) | ✅ P2 | Doc | Interrupt table: SVC and SysTick priorities both wrong | `architecture.md:352,354` | Consequence of NX-04 |
 | [DC-02](#dc-02--release-drops-two-checks-the-architecture-document-presents-as-unconditional) | ✅ P2 | Doc | `TX_ENABLE_STACK_CHECKING` presented as unconditional; it is Debug-only | `architecture.md:369-372` | Should also state `NX_DISABLE_ERROR_CHECKING` in Release |
-| [DC-03](#dc-03--ethernet_netxduoc-still-describes-the-s4-stub-driver-and-contradicts-itself-55-lines-later) | P3 | Doc | File header describes a stub driver and a `nx_driver_stub()` that does not exist | `ethernet_netxduo.c:8-9` | Contradicted by line 63 of the same file |
-| [DC-04](#dc-04--mainc-says-the-ethernet-driver-is-still-a-stub) | P3 | Doc | "The Ethernet driver … is still a stub until S5a" | `main.c:187-190` | In the file most likely to be read first |
-| [DC-05](#dc-05--the-drivers-default-case-describes-features-it-now-handles-explicitly) | P3 | Doc | `default:` comment says multicast/deferred "arrive in S5c"; both have `case` labels above | `eth_drv_netxduo.c:667-671` | |
-| [DC-06](#dc-06--three-mac_drvc-comments-are-written-in-terms-of-a-deleted-stack) | P2 | Doc | Three comments argue in lwIP terms: `pbuf->time_s`, `lwipopts.h`'s `tx_cb`, and the whole bounded-wait rationale | `mac_drv.c:459,586,723-728` | The 723-728 hazard is still real under NetX Duo (`nx_ip_protection` held across the driver call) — rewrite, do not delete |
-| [DC-07](#dc-07--three-references-to-a-cli-command-that-does-not-exist) | P3 | Doc | `ptp diag ts` does not exist; the counters are printed by `ethinfo` | `ptp_tx_timestamp.{c:54,h:17}`, `threadx_porting_plan.md:176` | The porting-plan instance describes a HIL dependency |
-| [DC-08](#dc-08--flexptp_optionsh-describes-the-transmit-timestamp-deferral-as-future-work) | P3 | Doc | "S6 must defer the callback…" — S6 shipped and the deferral exists | `flexptp_options.h:42-44` | Keep the warning, point it at `ptp_tx_timestamp.c`. Also: stale include-guard name |
-| [DC-09](#dc-09--the-igmp-comment-keeps-a-superseded-first-paragraph) | P3 | Doc | Superseded first paragraph precedes its own correction | `nsd_netxduo.c:328-336` | |
+| [DC-03](#dc-03--ethernet_netxduoc-still-describes-the-s4-stub-driver-and-contradicts-itself-55-lines-later) | ✅ P3 | Doc | File header describes a stub driver and a `nx_driver_stub()` that does not exist | `ethernet_netxduo.c:8-9` | Contradicted by line 63 of the same file |
+| [DC-04](#dc-04--mainc-says-the-ethernet-driver-is-still-a-stub) | ✅ P3 | Doc | "The Ethernet driver … is still a stub until S5a" | `main.c:187-190` | In the file most likely to be read first |
+| [DC-05](#dc-05--the-drivers-default-case-describes-features-it-now-handles-explicitly) | ✅ P3 | Doc | `default:` comment says multicast/deferred "arrive in S5c"; both have `case` labels above | `eth_drv_netxduo.c:667-671` | |
+| [DC-06](#dc-06--three-mac_drvc-comments-are-written-in-terms-of-a-deleted-stack) | ✅ P2 | Doc | Three comments argue in lwIP terms: `pbuf->time_s`, `lwipopts.h`'s `tx_cb`, and the whole bounded-wait rationale | `mac_drv.c:459,586,723-728` | The 723-728 hazard is still real under NetX Duo (`nx_ip_protection` held across the driver call) — rewrite, do not delete |
+| [DC-07](#dc-07--three-references-to-a-cli-command-that-does-not-exist) | ✅ P3 | Doc | `ptp diag ts` does not exist; the counters are printed by `ethinfo` | `ptp_tx_timestamp.{c:54,h:17}`, `threadx_porting_plan.md:176` | The porting-plan instance describes a HIL dependency |
+| [DC-08](#dc-08--flexptp_optionsh-describes-the-transmit-timestamp-deferral-as-future-work) | ✅ P3 | Doc | "S6 must defer the callback…" — S6 shipped and the deferral exists | `flexptp_options.h:42-44` | Keep the warning, point it at `ptp_tx_timestamp.c`. Also: stale include-guard name |
+| [DC-09](#dc-09--the-igmp-comment-keeps-a-superseded-first-paragraph) | ✅ P3 | Doc | Superseded first paragraph precedes its own correction | `nsd_netxduo.c:328-336` | |
 | [DC-10](#dc-10--readmemd-overstates-the-eth_stack-switch) | P3 | Doc | README/design_doc disagree on the EtherLib switch | `README.md:263-271` | Same as AR-05 |
 | [DS-01](#ds-01--port_reviewmds-table-of-contents-omits-its-largest-section) | P2 | Self-consistency | `port_review.md` TOC omits "Second-Review Findings" (F67–F80, 620 lines) | `port_review.md:22-34` | Includes F80, the finding that required patch 0004 |
 | [DS-02](#ds-02--the-disposition-summary-claims-completeness-it-does-not-have) | P2 | Self-consistency | Disposition Summary stops at F66 yet says "Every finding is tracked"; both phase tables likewise | `port_review.md:78-95,119-195` | 14 findings with no disposition row and no phase attribution |

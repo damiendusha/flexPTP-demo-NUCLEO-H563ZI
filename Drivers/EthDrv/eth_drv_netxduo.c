@@ -667,8 +667,11 @@ VOID nx_h563_eth_driver(NX_IP_DRIVER *request) {
         break;
 
     default:
-        /* Multicast join/leave and deferred processing arrive in S5c. Reported as handled so
-           the stack does not mark the interface broken in the meantime. */
+        /* Every command this driver implements has its own case above. NX_SUCCESS rather than
+           an error for the rest -- NX_LINK_GET_INTERFACE_TYPE, the IPv6 and PPP commands, and
+           anything a future NetX Duo adds -- because the stack marks an interface broken on a
+           driver error, and refusing a command this firmware does not need is not a reason to
+           take the link down. */
         request->nx_ip_driver_status = NX_SUCCESS;
         break;
     }
