@@ -356,6 +356,30 @@ Three consequences:
 constant, the comment and the table agree. If 4 is kept, note in `architecture.md` why the tick
 sits above Ethernet.
 
+> **✅ ADDRESSED** — `Startup/tx_initialize_low_level.S`, `Src/cmds.c`, `tools/hil/checks.py`,
+> `docs/architecture.md`. Together with [DC-01](#dc-01--the-interrupt-priority-table-is-wrong-in-two-rows).
+>
+> **Kept at 4, deliberately.** The tick drives the timer thread, which is where flexPTP's
+> heartbeat runs — and F80 is the finding about that heartbeat not arriving. Keeping it ahead
+> of a long receive burst bounds that latency. Nothing depended on the old ordering: ThreadX
+> masks with PRIMASK rather than BASEPRI so there is no ceiling for kernel calls, and PendSV at
+> 15 cannot preempt the ETH ISR whatever the tick does.
+>
+> The three SHPR words are now named constants with the reasoning per exception, and the
+> file's self-contradicting comment ("mirrors … PendSV/SysTick at 15", above an instruction
+> setting SysTick to 4) is gone.
+>
+> **The real fix is that it is now checked, not documented.** `osinfo` reads all nine
+> priorities back out of the registers via `NVIC_GetPriority()`, and a new `irq_prio` HIL check
+> asserts them against the table. A priority set in three places by three components — ST's
+> HAL, this project's assembly, the drivers — with the last writer silently winning is exactly
+> what drifts.
+>
+> **Evidence.** The board reports `MemManage 0, BusFault 0, UsageFault 0, SVCall 15, PendSV 15,
+> SysTick 4, ETH 7, USART3 12, GPDMA1_Ch0 12` — confirming the assembly reading and the finding.
+> Hardware `S8` **11/11** with the new check. The check was itself mutation-tested: asserting
+> the documented-but-wrong `SysTick: 15` makes it fail with `SysTick is 4, expected 15`.
+
 ### NX-05 — unchecked length arithmetic on the 802.3 receive path
 
 **Priority: Low** · `Src/flexptp_nsd/nsd_netxduo.c:197-206`
@@ -956,6 +980,10 @@ of a system that no longer exists**.
 overwrites it. See [NX-04](#nx-04--systick-and-svcall-run-at-priorities-the-documentation-does-not-state).
 The same section's neighbouring claim — "ETH (7) preempts the console (12)" — remains true.
 
+> **✅ ADDRESSED** — the table now has all nine rows with the measured values, says why SysTick
+> sits above Ethernet, and warns that `TICK_INT_PRIORITY` is not the setting. Verified by the
+> `irq_prio` check rather than by re-reading, which is the part that keeps it true.
+
 ### DC-02 — Release drops two checks the architecture document presents as unconditional
 
 **Priority: Medium** · `docs/architecture.md:369-372`
@@ -1222,7 +1250,7 @@ how, and for the evidence.
 | [NX-01](#nx-01--the-receive-timestamp-is-read-from-a-context-descriptor-that-may-not-have-been-written) | ✅ **P1** | Defect | RX timestamp read from a context descriptor without checking `OWN` or `CTXT` | `mac_drv.c:471-483` | ST's HAL checks both and retries (`stm32h5xx_hal_eth.c:1130-1148`). Yields a plausible wrong `t2`, and can deliver a context descriptor upward as a frame. Invisible to the host suite — see TS-03 |
 | [NX-02](#nx-02--partial-failure-in-ptp_nsd_init-leaks-created-sockets) | ✅ **P1** | Defect | Partial failure in `ptp_nsd_init()` leaks created UDP sockets; `s_tp`/`s_dm` left stale | `nsd_netxduo.c:265-293` | Debug → PTP permanently dead (`NX_PTR_ERROR`). Release → `nx_ip_udp_created_sockets_ptr` list corruption, because `NX_DISABLE_ERROR_CHECKING` removes the guard |
 | [NX-03](#nx-03--the-newlib-heap-and-the-threadx-byte-pools-are-not-disjoint) | ✅ **P1** | Defect | `_sbrk` can allocate into the ThreadX byte pools after 2 560 bytes; the linker script claims the two are disjoint | `sysmem.c:56-72`, `.ld:200-211` | `atof`→`strtod`→`_Balloc`→`_malloc_r` all linked; reachable from `ptp pps` and the servo CLI. One-line fix: bound against `__RAM_segment_used_end__` |
-| [NX-04](#nx-04--systick-and-svcall-run-at-priorities-the-documentation-does-not-state) | P2 | Defect/Doc | SysTick runs at priority 4 (not 15) and SVCall at 15 (not 0); changed silently from the FreeRTOS build | `tx_initialize_low_level.S:119-128` | SysTick now preempts ETH. Not unsafe (PRIMASK critical sections) but undocumented; the file's own comment contradicts its code |
+| [NX-04](#nx-04--systick-and-svcall-run-at-priorities-the-documentation-does-not-state) | ✅ P2 | Defect/Doc | SysTick runs at priority 4 (not 15) and SVCall at 15 (not 0); changed silently from the FreeRTOS build | `tx_initialize_low_level.S:119-128` | SysTick now preempts ETH. Not unsafe (PRIMASK critical sections) but undocumented; the file's own comment contradicts its code |
 | [NX-05](#nx-05--unchecked-length-arithmetic-on-the-8023-receive-path) | P3 | Defect | `nx_packet_length - header_size` can underflow; chained L2 packet dropped silently | `nsd_netxduo.c:197-206` | Contained by flexPTP's `MIN(len, 128)` clamp — verified in `task_ptp.c:486`. NetX Duo does **not** validate the length itself |
 | [NX-06](#nx-06--the-receive-queue-drop-path-is-the-only-uninstrumented-one) | P2 | Gap | `ETHHW_ReadCallback` drops events on a full queue with no counter | `eth_drv_netxduo.c:687-696` | Already documented as the drop path that bites under load (`architecture.md:335`). Two-line fix in a driver built around counters |
 | [NX-07](#nx-07--rx-packet-length-is-masked-to-14-bits-but-the-field-is-15) | P3 | Latent | RDES3 length masked `0x3FFF`; `ETH_DMARXNDESCWBF_PL` is `0x7FFF` | `mac_drv.c:466` | Unreachable at MTU 1500. The adjacent TX `& 0x3FFF` **is** correct, which makes the difference easy to miss |
@@ -1253,7 +1281,7 @@ how, and for the evidence.
 | [CX-05](#cx-05--ethernetframer) | Opp (M) | C++ | `EthernetFramer`: ethertype selection, header write, chain flatten | `eth_drv_netxduo.c` → C++ | Twelve hand-written byte shifts become one expected-array test. Pairs with TS-04 |
 | [CX-06](#cx-06--linkstate-as-a-pure-transition-function) | Opp (L) | C++ | `LinkDecision next(prev, phy_status)` | `eth_drv_netxduo.c:220-269` | Pins the first-poll `DOWN` suppression rule |
 | [CX-07](#cx-07--make-the-c-rules-enforced-rather-than-documented) | Opp (L) | C++ | Assert in CI that the image has no `operator new` / `__cxa_throw` | `cpp_support.cpp:22-30` | Makes the no-allocation rule observable, as `cpp_ctor` does for static init. Cannot assert "no `malloc`" — see NX-03 |
-| [DC-01](#dc-01--the-interrupt-priority-table-is-wrong-in-two-rows) | P2 | Doc | Interrupt table: SVC and SysTick priorities both wrong | `architecture.md:352,354` | Consequence of NX-04 |
+| [DC-01](#dc-01--the-interrupt-priority-table-is-wrong-in-two-rows) | ✅ P2 | Doc | Interrupt table: SVC and SysTick priorities both wrong | `architecture.md:352,354` | Consequence of NX-04 |
 | [DC-02](#dc-02--release-drops-two-checks-the-architecture-document-presents-as-unconditional) | P2 | Doc | `TX_ENABLE_STACK_CHECKING` presented as unconditional; it is Debug-only | `architecture.md:369-372` | Should also state `NX_DISABLE_ERROR_CHECKING` in Release |
 | [DC-03](#dc-03--ethernet_netxduoc-still-describes-the-s4-stub-driver-and-contradicts-itself-55-lines-later) | P3 | Doc | File header describes a stub driver and a `nx_driver_stub()` that does not exist | `ethernet_netxduo.c:8-9` | Contradicted by line 63 of the same file |
 | [DC-04](#dc-04--mainc-says-the-ethernet-driver-is-still-a-stub) | P3 | Doc | "The Ethernet driver … is still a stub until S5a" | `main.c:187-190` | In the file most likely to be read first |

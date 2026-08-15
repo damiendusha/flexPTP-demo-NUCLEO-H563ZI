@@ -153,8 +153,8 @@ session, and it is fully covered.
 ## Tier 3 — hardware in the loop
 
 `tools/hil/` drives the board's serial CLI from the host over pyserial, with OpenOCD for flash
-and reset. Ten named checks, grouped into per-stage sets so that a partially-ported firmware can
-still be tested against the subset that is meaningful at that point.
+and reset. Eleven named checks, grouped into per-stage sets so that a partially-ported firmware
+can still be tested against the subset that is meaningful at that point.
 
 | Check | Asserts |
 |---|---|
@@ -163,6 +163,7 @@ still be tested against the subset that is meaningful at that point.
 | `osinfo` | Kernel version and free memory |
 | `cpp_ctor` | Static C++ constructors ran before `main` |
 | `threads` | Expected thread set exists at expected priorities |
+| `irq_prio` | Exception and interrupt priorities match the documented table (**NX-04**) |
 | `dhcp` | Address acquired |
 | `ping` | Round-trip from the host, loss and latency |
 | `ptp_start` | Addend programmed to the computed nominal |

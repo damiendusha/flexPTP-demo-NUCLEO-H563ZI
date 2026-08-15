@@ -118,13 +118,47 @@ _tx_initialize_low_level:
 
     /* Configure handler priorities.
      *
-     * SVCall and PendSV must both sit at the lowest priority (0xFF); the kernel relies on
-     * it. This mirrors what the FreeRTOS port did with PendSV/SysTick at 15.  */
-    LDR     r1, =0x00000000                         // Rsrv, UsgF, BusF, MemM
+     * These four numbers are the exception half of docs/architecture.md's interrupt table, and
+     * they are the LAST writer: HAL_Init() -> HAL_InitTick(TICK_INT_PRIORITY) has already set
+     * SysTick to 15 by the time tx_kernel_enter() gets here, and this overrides it. That is
+     * worth stating because the table said 15 for two years and the board ran at 4
+     * (finding NX-04), and because TICK_INT_PRIORITY in Inc/stm32h5xx_hal_conf.h looks like
+     * the setting and is not.
+     *
+     * __NVIC_PRIO_BITS is 4 on this part, so a priority N is encoded as N << 4.
+     *
+     *   MemManage / BusFault / UsageFault  0  -- the fault reporters in Src/main.c. Highest,
+     *                                            so a fault is diagnosed rather than queued
+     *                                            behind whatever was running.
+     *   SVCall                            15  -- unused here; resolves to Default_Handler.
+     *   PendSV                            15  -- REQUIRED lowest: the context switch must not
+     *                                            preempt an ISR that is still running.
+     *   SysTick                            4  -- above ETH (7) and the console (12), so the
+     *                                            kernel tick and therefore the timer thread
+     *                                            stay prompt under Ethernet load. Deliberate,
+     *                                            and a real change from the FreeRTOS build
+     *                                            where the tick sat at 15 below both. Nothing
+     *                                            depends on the old ordering: ThreadX masks
+     *                                            with PRIMASK rather than BASEPRI, so there is
+     *                                            no priority ceiling for kernel calls, and
+     *                                            PendSV at 15 cannot preempt the ETH ISR
+     *                                            whatever the tick does. The tick handler is
+     *                                            HAL_IncTick + _tx_timer_interrupt; keeping it
+     *                                            ahead of a long receive burst is what bounds
+     *                                            latency to the timer thread, which is where
+     *                                            flexPTP's heartbeat runs (F80).
+     *
+     * `osinfo` prints all six back out of the registers, and the irq_prio check in tools/hil/
+     * asserts them, so the table cannot drift from the silicon again.  */
+    .equ SHPR_MEM_BUS_USG,  0x00000000              // UsgF 0, BusF 0, MemM 0
+    .equ SHPR_SVCALL,       0xFF000000              // SVCl 15
+    .equ SHPR_SYST_PENDSV,  0x40FF0000              // SysT 4, PnSV 15
+
+    LDR     r1, =SHPR_MEM_BUS_USG                   // Rsrv, UsgF, BusF, MemM
     STR     r1, [r0, #0xD18]                        // Setup System Handlers 4-7 Priority Registers
-    LDR     r1, =0xFF000000                         // SVCl, Rsrv, Rsrv, Rsrv
+    LDR     r1, =SHPR_SVCALL                        // SVCl, Rsrv, Rsrv, Rsrv
     STR     r1, [r0, #0xD1C]                        // Setup System Handlers 8-11 Priority Registers
-    LDR     r1, =0x40FF0000                         // SysT, PnSV, Rsrv, DbgM
+    LDR     r1, =SHPR_SYST_PENDSV                   // SysT, PnSV, Rsrv, DbgM
     STR     r1, [r0, #0xD20]                        // Setup System Handlers 12-15 Priority Registers
 
     /* Return to caller.  */

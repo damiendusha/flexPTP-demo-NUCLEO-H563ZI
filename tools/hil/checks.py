@@ -206,6 +206,62 @@ def check_cpp_ctor(board: Board, ctx: Context) -> CheckResult:
     return CheckResult("cpp_ctor", Status.PASS, m.group(1), {"marker": m.group(1)})
 
 
+# The exception and interrupt priorities docs/architecture.md documents, as the firmware must
+# actually hold them.
+#
+# Asserted exactly, because every one of them is a decision:
+#
+#   fault handlers at 0    a fault must be diagnosed, not queued behind whatever was running
+#   PendSV at 15           REQUIRED lowest -- the context switch must not preempt a live ISR
+#   SysTick at 4           above ETH, so the kernel tick and the timer thread stay prompt under
+#                          Ethernet load. NOT TICK_INT_PRIORITY (15): HAL_Init() sets that and
+#                          tx_initialize_low_level.S then overrides it, which is why the table
+#                          said 15 for two years while the board ran at 4 (NX-04)
+#   ETH 7 above console 12 heavy CLI output must not delay Ethernet servicing
+EXPECTED_IRQ_PRIORITIES = {
+    "MemManage": 0,
+    "BusFault": 0,
+    "UsageFault": 0,
+    "SVCall": 15,
+    "PendSV": 15,
+    "SysTick": 4,
+    "ETH": 7,
+    "USART3": 12,
+    "GPDMA1_Ch0": 12,
+}
+
+
+def check_irq_prio(board: Board, ctx: Context) -> CheckResult:
+    """Interrupt priorities match the documented table.
+
+    Exists because two of that table's six exception rows were wrong and nothing checked them
+    (finding NX-04). A priority table that is only ever read is a table that drifts: the values
+    are set in three different places -- ST's HAL, this project's assembly, and the drivers --
+    and the last writer wins without saying so.
+    """
+    out = board.cmd("osinfo", quiet=1.2, timeout=10)
+    if "Interrupt priorities:" not in out:
+        return CheckResult(
+            "irq_prio", Status.SKIP, "osinfo does not report priorities (added after S8)"
+        )
+
+    found = {m.group(1): int(m.group(2))
+             for m in re.finditer(r"^\s+(\S+)\s+pri=(\d+)\s*$", out, re.M)}
+    data = {"priorities": found}
+
+    missing = [n for n in EXPECTED_IRQ_PRIORITIES if n not in found]
+    if missing:
+        return CheckResult("irq_prio", Status.FAIL, "not reported: " + ", ".join(missing), data)
+
+    wrong = [f"{n} is {found[n]}, expected {want}"
+             for n, want in EXPECTED_IRQ_PRIORITIES.items() if found[n] != want]
+    if wrong:
+        return CheckResult("irq_prio", Status.FAIL, "; ".join(wrong), data)
+
+    return CheckResult("irq_prio", Status.PASS,
+                       f"{len(EXPECTED_IRQ_PRIORITIES)} priorities as documented", data)
+
+
 def check_ptp_start(board: Board, ctx: Context) -> CheckResult:
     """flexPTP starts and the timestamp clock is programmed plausibly.
 
@@ -547,6 +603,7 @@ ALL_CHECKS = {
     "osinfo": check_osinfo,
     "cpp_ctor": check_cpp_ctor,
     "threads": check_threads,
+    "irq_prio": check_irq_prio,
     "ptp_start": check_ptp_start,
     "dhcp": check_dhcp,
     "ping": check_ping,

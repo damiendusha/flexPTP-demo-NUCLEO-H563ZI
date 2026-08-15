@@ -147,7 +147,7 @@ The first run downloads GoogleTest via `FetchContent`, so it needs network once.
 
 ### Hardware in the loop — board required
 
-Drives the board's serial CLI from the host, with OpenOCD for flash and reset. Ten checks,
+Drives the board's serial CLI from the host, with OpenOCD for flash and reset. Eleven checks,
 from PHY identification through DHCP and ping to a bounded PTP offset in `SLAVE`.
 
 ```bash

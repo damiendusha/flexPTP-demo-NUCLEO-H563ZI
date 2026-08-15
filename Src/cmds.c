@@ -121,6 +121,36 @@ CMD_FUNCTION(os_info) {
         timer = timer->tx_timer_created_next;
     }
 
+    /* Interrupt priorities, read back out of the registers.
+     *
+     * The same argument as the thread enumeration above, and for the same reason: this
+     * firmware has an interrupt priority table in docs/architecture.md, two of its six rows
+     * were wrong, and nothing checked it (finding NX-04). The values are not where you would
+     * guess either -- HAL_Init() sets SysTick from TICK_INT_PRIORITY and then
+     * tx_initialize_low_level.S overrides it, so the header that looks like the setting is
+     * not the setting.
+     *
+     * Printed as the priority NUMBER, i.e. the register byte shifted down by
+     * (8 - __NVIC_PRIO_BITS), which is what NVIC_SetPriority takes and what the table quotes.
+     * Asserted by the irq_prio check in tools/hil/. */
+    MSG("Interrupt priorities:\n");
+    {
+        static const struct {
+            IRQn_Type irq;
+            const char *name;
+        } kIrqs[] = {
+            {MemoryManagement_IRQn, "MemManage"}, {BusFault_IRQn, "BusFault"},
+            {UsageFault_IRQn, "UsageFault"},      {SVCall_IRQn, "SVCall"},
+            {PendSV_IRQn, "PendSV"},              {SysTick_IRQn, "SysTick"},
+            {ETH_IRQn, "ETH"},                    {USART3_IRQn, "USART3"},
+            {GPDMA1_Channel0_IRQn, "GPDMA1_Ch0"},
+        };
+
+        for (unsigned i = 0; i < (sizeof(kIrqs) / sizeof(kIrqs[0])); i++) {
+            MSG("  %s pri=%u\n", kIrqs[i].name, (unsigned)NVIC_GetPriority(kIrqs[i].irq));
+        }
+    }
+
     /* %u, not %lu: embfmt mishandles the 'l' length modifier here and printed
        "C++867591983928594" for a value of 202002. unsigned long is 32-bit on this target so
        the cast is lossless. Same family as F60/F66. */

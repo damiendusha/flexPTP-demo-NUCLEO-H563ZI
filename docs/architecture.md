@@ -349,12 +349,29 @@ first thing to instrument is the queue, not the pool.
 
 | Interrupt | IRQn | Vector idx | Priority | Handler | Defined in |
 |---|---|---|---|---|---|
-| SVC | −5 | 11 | 0 | `SVC_Handler` | unused — resolves to `Default_Handler` |
-| PendSV | −2 | 14 | 15 (set by port) | `PendSV_Handler` | ThreadX `tx_thread_schedule.S` |
-| SysTick | −1 | 15 | 15 (`TICK_INT_PRIORITY`) | `SysTick_Handler` | `Startup/tx_initialize_low_level.S` — **ours** |
+| MemManage | −12 | 4 | **0** | `MemManage_Handler` | `Src/main.c` — reports and halts |
+| BusFault | −11 | 5 | **0** | `BusFault_Handler` | `Src/main.c` — reports and halts |
+| UsageFault | −10 | 6 | **0** | `UsageFault_Handler` | `Src/main.c` — reports and halts |
+| SVC | −5 | 11 | **15** | `SVC_Handler` | unused — resolves to `Default_Handler` |
+| PendSV | −2 | 14 | **15** | `PendSV_Handler` | ThreadX `tx_thread_schedule.S` |
+| SysTick | −1 | 15 | **4** | `SysTick_Handler` | `Startup/tx_initialize_low_level.S` — **ours** |
 | **ETH** | 106 | 122 | **7** | `ETH_IRQHandler` | `eth_drv_netxduo.c` |
 | **USART3** | 60 | 76 | **12** | `USART3_IRQHandler` | `serial_io.c` |
 | **GPDMA1 Ch0** | 27 | 43 | **12** | `GPDMA1_Channel0_IRQHandler` | `serial_io.c` |
+
+**These are read back from the registers by `osinfo` and asserted by the `irq_prio` check in
+`tools/hil/`**, which is new, and which exists because two rows of this table were wrong for the
+life of the port (finding NX-04). `SysTick` in particular is **not** `TICK_INT_PRIORITY`:
+`HAL_Init()` sets that (15) and `_tx_initialize_low_level` then overrides it, so the header that
+looks like the setting is not the setting. A priority set in three places by three different
+components is exactly the sort of thing that must be checked rather than documented.
+
+**Why SysTick sits above Ethernet.** It is a real change from the FreeRTOS build, where the tick
+was at 15 below both peripherals, and it is deliberate: the tick drives the timer thread, which
+is where flexPTP's heartbeat runs, and F80 is the finding about that heartbeat not arriving.
+Nothing depends on the old ordering — ThreadX masks with PRIMASK rather than BASEPRI so there is
+no ceiling for kernel calls, and PendSV at 15 cannot preempt the ETH ISR whatever the tick does.
+The handler itself is `HAL_IncTick` plus `_tx_timer_interrupt`.
 
 **`HardFault`, `MemManage`, `BusFault` and `UsageFault` report and halt** — they are naked
 handlers in `Src/main.c` that recover the exception frame, print `CFSR`, `HFSR`, the faulting
