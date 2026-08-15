@@ -16,6 +16,10 @@
 /* ST's wrapper has a hard #error on anything else (cmsis_os2.c:134). It maps CMSIS
    priorities as tx_priority = osPriorityISR - cmsis_priority, and osPriorityISR is 56, so
    the ThreadX scale has to be at least that deep. osPriorityNormal (24) becomes 32. */
+/* #undef first: several ThreadX ports define this unconditionally in tx_port.h BEFORE they
+   include this file -- the Linux port sets 32 at tx_port.h:52, the value arriving here at :92.
+   Redefining silently works, and warns; undefining says the override is deliberate. */
+#undef TX_MAX_PRIORITIES
 #define TX_MAX_PRIORITIES 64
 
 /* --- Tick rate ------------------------------------------------------------------------ */

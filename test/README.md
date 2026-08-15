@@ -94,6 +94,32 @@ NetX Duo, not even the fakes in `host/`. The registry keys on `const void *` rat
 | `ptp_ts_codec` | The 12-byte headroom precondition. Below it the three ULONGs were never written, so what is there is payload; returning zeroed-and-false beats a plausible wrong time (the F59 lesson) |
 | `ptp_endpoint` | Five cases of transport × delay mechanism. A wrong destination presents as "no response received", not as a routing bug |
 
+## Context rules, on a real ThreadX kernel
+
+`test_rtos_context.cpp` links **real ThreadX** (its Linux port) and **the real CMSIS-RTOS2
+wrapper** — the same two components the firmware runs — and asserts the rule this port kept
+breaking:
+
+```
+From a real osTimer callback (i.e. ThreadX's timer thread):
+  osMessageQueuePut(q, &m, 0, osWaitForever)  ->  -2   (osErrorTimeout)   MUST fail
+  osMessageQueuePut(q, &m, 0, 0U)             ->   0   (osOK)             MUST succeed
+```
+
+That is F80's exact mechanism, reproduced without a board. It works because the restriction
+lives in ThreadX's `common/src/txe_queue_send.c` — `TX_WAIT_ERROR` when the caller is
+`&_tx_timer_thread` — and `common/src` is identical on every port.
+
+`Inc/tx_user.h` is shared with the firmware rather than copied, so the kernel under test is
+configured exactly as the board's. The byte-pool sizes deliberately differ (GoogleTest needs
+more than a 2 KB CLI thread), and `TX_LINUX_MEMORY_SIZE` must stay larger than their sum —
+overrunning it is not an allocation failure but a segfault inside `_tx_byte_pool_create()`.
+
+**What it cannot cover:** the ISR half of the same rule. `IS_IRQ_MODE()` is built from
+`__get_IPSR()`, which the host shim hard-codes to 0 because Linux has no exception context. The
+transmit-timestamp path that `ptp_tx_timestamp.c` guards stays on the bench. The timer-thread
+half is the one that cost a session, and it is fully covered.
+
 ## These tests are known to detect the bugs they name
 
 Characterisation tests that cannot fail are worse than no tests. Both findings pinned here
@@ -111,6 +137,7 @@ restored and verified byte-identical:
 | Drop the codec's headroom precondition | 1 test fails |
 | Endpoint teardown stops zeroing | 1 test fails |
 | Widen the RFC 1112 mask from 23 to 24 bits | 1 test fails — **but only after the test was fixed; see below** |
+| Assert the timer-thread blocking put SUCCEEDS (**F80 inverted**) | `RtosContext.BlockingEnqueueFromATimerCallbackIsRejected` **fails**, reporting −2 vs 0 — proving the kernel really rejects it rather than the test being tautological |
 
 Do the same for any new characterisation test: break the thing, watch it go red, put it back.
 

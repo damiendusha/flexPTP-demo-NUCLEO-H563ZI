@@ -1,5 +1,9 @@
 # S5e — running the real stack on the host
 
+> **Status: C and B are built and passing** (55 host tests). A remains undone, deliberately —
+> see [Recommendation](#recommendation). This document is kept as the reasoning behind that
+> split rather than as an outstanding to-do.
+
 A plan for the one stage of the ThreadX/NetX Duo port that was never started: real ThreadX
 (Linux port) + real NetX Duo + a RAM driver, so the flexPTP network stack driver can be
 exercised in CI with no board attached.
