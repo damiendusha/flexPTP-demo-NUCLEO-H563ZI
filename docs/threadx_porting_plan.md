@@ -93,7 +93,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ pending · ⏸️ optional/deferred
 | **S5e** | *Tier 3:* real ThreadX (`ports/linux`) + real NetX Duo + RAM driver on the host | ⬜ host only | 1–2 d | ⬜ pending |
 | **S6** | NSD: UDP/IPv4 E2E + TX-timestamp deferral fix | ✅ 9/9 vs baseline, `\|offset\| ≤ 3301 ns` | 2–3 d | ✅ **done** |
 | **S7** | 802.3 transport, P2P, all three profile presets | 🔄 TX + switching verified; **RX needs a gPTP/P2P master** | 1–2 d | 🔄 **blocked on host** |
-| **S8** | Cleanup, docs rewrite, CI update, final review | ✅ full regression suite vs S0 baseline | 1.5–2 d | ⬜ pending |
+| **S8** | Cleanup, docs rewrite, CI update, final review | ✅ 10/10 vs baseline | 1.5–2 d | ✅ **done** (review deferred at maintainer's request) |
 | **B1** | *Bonus:* unit-test the F42 TX-ring ordering logic | ⏸️ | 0.5 d | ⏸️ optional |
 
 **Total: 14–20 working days.** Two days above the feasibility estimate, all of it the S1b/S5e

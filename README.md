@@ -22,13 +22,15 @@ cd flexPTP-demo-NUCLEO-H563ZI
 git submodule update --init --recursive
 git -C Modules/embfmt  apply "$PWD/patches/embfmt/0001-formatting-fixes.patch"
 git -C Modules/flexptp apply "$PWD/patches/flexptp/0002-servo-nan-latch-fix.patch"
+git -C Modules/flexptp apply "$PWD/patches/flexptp/0003-generic-netstack-igmp-addresses.patch"
+git -C Modules/flexptp apply "$PWD/patches/flexptp/0004-cmsis-os2-event-enqueue-from-timer-thread.patch"
 ```
 
 `./build.sh` does **both** steps for you, and refuses to build if the patches can be
-neither applied nor confirmed already applied. Use it, or run the four commands above.
+neither applied nor confirmed already applied. Use it, or run the six commands above.
 
 > [!IMPORTANT]
-> The last two commands are not optional. Two submodules carry local bug fixes that git
+> The patch commands are not optional. Two submodules carry local bug fixes that git
 > cannot record for us — the parent repository stores only a submodule's *commit pointer*,
 > so a working-tree change inside `Modules/` is invisible to a clone and is discarded by
 > `git submodule update`. They therefore live in [`patches/`](patches/) and must be applied.
@@ -39,8 +41,10 @@ neither applied nor confirmed already applied. Use it, or run the four commands 
 > |---|---|
 > | `flexptp/0002-servo-nan-latch-fix` | One duplicated `Sync` makes the measured Sync period zero; the Kalman servo computes `0.0/0.0` and NaN latches into its state **permanently**. The clock free-runs at ~18.7 ppm while every visible indicator stays green ([F59](docs/port_review.md)) |
 > | `embfmt/0001-formatting-fixes` | `%ll` conversions dropped, `NaN` printed as a plausible `0.0000`, small `%e` values and any rounding carry misreported ([F60](docs/port_review.md), [F66](docs/port_review.md)) — this is what disguised F59 as a working servo |
+> | `flexptp/0004-cmsis-os2-event-enqueue-from-timer-thread` | The heartbeat is enqueued with `osWaitForever` from ThreadX's timer thread, which that thread may not block in. Every heartbeat is rejected, the BMCA never leaves `INITIALIZING`, and **no master is ever selected** — the clock simply never syncs ([F80](docs/port_review.md)) |
+> | `flexptp/0003-generic-netstack-igmp-addresses` | Not a defect: an extension point so a port supplying its own network stack can provide the two IGMP group addresses. Without it flexPTP `#error`s unless it recognises lwIP, EtherLib or Linux |
 >
-> Both are permanent fixes rather than instrumentation, and both are worth reporting
+> All are permanent fixes rather than instrumentation, and all are worth reporting
 > upstream. See [`patches/flexptp/README.md`](patches/flexptp/README.md) and
 > [`patches/embfmt/README.md`](patches/embfmt/README.md).
 
@@ -182,10 +186,10 @@ optional, and without it only the register view is lost.
 ### Software structure
 
 The project relies on the following large software building blocks:
-- the [FreeRTOS](https://www.freertos.org/) embedded operating system,
-- the [CMSIS RTOS V2](https://arm-software.github.io/CMSIS_6/latest/RTOS2/index.html) module as a wrapper for FreeRTOS,
+- the [Eclipse ThreadX](https://github.com/eclipse-threadx/threadx) embedded operating system,
+- ST's [CMSIS-RTOS2 wrapper for ThreadX](https://github.com/STMicroelectronics/stm32-mw-cmsis-rtos-tx), which is what lets the application and flexPTP stay RTOS-agnostic,
 - [STM32H5xx Hardware Abstraction Layer library](https://github.com/STMicroelectronics/stm32h5xx-hal-driver) (HAL) providing MCU specific functionality,
-- the [Lightweight IP](https://github.com/lwip-tcpip/lwip) (lwip) Ethernet stack extended with PTP timestamp support,
+- the [Eclipse NetX Duo](https://github.com/eclipse-threadx/netxduo) Ethernet stack, whose link layer carries PTP hardware timestamps natively,
 - the [EtherLib](https://gitea.epagris.com/epagris/EtherLib), our in-house developed Ethernet stack,
 - the [embfmt](https://gitea.epagris.com/epagris/embfmt) a printf()-like formatted printer implementation for embedded systems.
 

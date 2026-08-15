@@ -24,7 +24,7 @@ Companion documents: [design_doc.md](design_doc.md) (porting decisions) ·
 
 ## System Overview
 
-A FreeRTOS application on an STM32H563ZI that runs the flexPTP IEEE 1588 stack over lwIP,
+A ThreadX application on an STM32H563ZI that runs the flexPTP IEEE 1588 stack over NetX Duo,
 with a serial CLI for control. The MCU's Ethernet MAC is driven by a project-owned
 register-level driver rather than ST's HAL ETH driver, because PTP hardware timestamping
 needs access to the DMA descriptors that the HAL driver abstracts away.
@@ -32,9 +32,9 @@ needs access to the DMA descriptors that the HAL driver abstracts away.
 | | |
 |---|---|
 | MCU | STM32H563ZI, Cortex-M33, 250 MHz, TrustZone disabled (TZEN=0) |
-| RTOS | FreeRTOS V11.3.0, `ARM_CM33_NTZ` non-secure port, heap_4 |
-| RTOS API | CMSIS-RTOS2 shim for application threads; flexPTP calls FreeRTOS directly |
-| Network stack | lwIP, a development snapshot 34 commits past `STABLE-2_2_1_RELEASE` — its own `init.h` reports **2.2.2-dev**, not 2.2.1 |
+| RTOS | Eclipse ThreadX 6.5.1, `cortex_m33/gnu` port, `TX_SINGLE_MODE_NON_SECURE`, 1 kHz tick |
+| RTOS API | CMSIS-RTOS2 throughout — application **and** flexPTP, over ST's `cmsis_rtos_threadx` wrapper. Memory comes from two ThreadX byte pools, not a heap |
+| Network stack | Eclipse NetX Duo 6.5.1, IPv4 only, TCP and IPv6 compiled out |
 | PTP | flexPTP, Kalman servo, ADDEND clock interface; timestamp clock is `pll1_q_ck` at 250 MHz |
 | Console | USART3 → ST-Link VCP, 115200 8N1, TX via GPDMA |
 | PHY | LAN8742A over RMII |
@@ -86,10 +86,12 @@ source. Two submodules are the exception, and both changes are **permanent bug f
 | **stm32h5xx-hal-driver** | `v1.7.0-8-g0fff6e2` | git submodule | **As-is.** Configured by `Inc/stm32h5xx_hal_conf.h`; 12 of 61 modules enabled |
 | **CMSIS Core (M)** | 5.6 (= CMSIS 5.9.0 content) | in-tree, `Drivers/CMSIS/Include` | **As-is, and already current for CMSIS 5.** Inherited from the H743 project, but verified byte-identical to the final CMSIS 5 release — see the note below. Not a submodule |
 | **CMSIS Device STM32H5xx** | 1.7.0 | in-tree, `Drivers/CMSIS/Device` | **As-is.** From `STMicroelectronics/cmsis_device_h5` |
-| **CMSIS-RTOS2 shim** | ST distribution | in-tree, `Drivers/CMSIS/CMSIS_RTOS_V2` | **Patched — one `#include` directive.** In `cmsis_os2.c`, `#include "stm32h7xx.h"` became `#include "stm32h5xx.h"`. No header file was copied or rewritten; see the note below. Vendored copy, not a submodule, so the edit is in-repo and visible in git history |
-| **FreeRTOS-Kernel** | `V11.3.0` | CMake `FetchContent`, pinned tag | **As-is.** Configured by `Inc/FreeRTOSConfig.h` |
-| **lwIP** | `3d896ba` (`STABLE-2_2_1_RELEASE-34`) — i.e. **2.2.2-dev**, not the 2.2.1 release: `LWIP_VERSION_REVISION` is 2 and `LWIP_VERSION_RC` is `LWIP_RC_DEVELOPMENT` | git submodule | **As-is, but extended.** `Inc/lwipopts.h` injects four fields into `struct pbuf` via lwIP's `LWIP_PBUF_CUSTOM_DATA` hook — a supported extension point, not a patch. See [The PTP Timestamp Path](#the-ptp-timestamp-path) |
-| **flexPTP** | `76aaf67` (`RC1.0-11`) | git submodule | **Patched.** One permanent servo fix (F59, `patches/flexptp/0002-…`), and two external workarounds. (1) `__PRI64_PREFIX=__INT64` compile definition, because flexPTP uses a glibc-internal macro newlib lacks (F47). (2) The STM32H5 hardware port is supplied by this project, since flexPTP ships none |
+| **CMSIS-RTOS2 API header** | ARM | in-tree, `Drivers/CMSIS/CMSIS_RTOS_V2/cmsis_os2.h` | **As-is.** The header is RTOS-agnostic and survived the kernel swap unchanged. ST's FreeRTOS-backed `cmsis_os2.c`, `freertos_os2.h` and `freertos_mpool.h` were removed with FreeRTOS in S3 |
+| **CMSIS-RTOS2 implementation** | [`stm32-mw-cmsis-rtos-tx`](https://github.com/STMicroelectronics/stm32-mw-cmsis-rtos-tx) `v1.4.1` | git submodule | **As-is**, and the one non-MIT component in the tree (SLA0044). No MIT equivalent exists — Eclipse ThreadX ships FreeRTOS, OSEK and POSIX layers but not CMSIS-RTOS2 |
+| **ThreadX** | [`eclipse-threadx/threadx`](https://github.com/eclipse-threadx/threadx) `v6.5.1.202602a_rel` | git submodule | **As-is** (MIT). Configured by `Inc/tx_user.h`. `tx_initialize_low_level.S` is **ours** — Eclipse keeps it in `example_build/` because it is board-specific; see `Startup/tx_initialize_low_level.S` for what changed and what was deliberately left out |
+| **NetX Duo** | [`eclipse-threadx/netxduo`](https://github.com/eclipse-threadx/netxduo) `v6.5.1.202602_rel` | git submodule | **As-is** (MIT). Configured by `Inc/nx_user.h`. Eclipse upstream rather than ST's fork, which is pinned at 6.4.0 and missing published CVE fixes on the IPv4/DHCP receive path this firmware runs — see [threadx_netxduo_feasibility.md](threadx_netxduo_feasibility.md#choosing-the-supply-chain). **`NX_ENABLE_VLAN` is mandatory**: the whole `nx_link` layer, which is the PTP timestamp path, is behind it |
+| **lwIP** | — | **removed in S3** | Replaced by NetX Duo. The `LWIP_PBUF_CUSTOM_DATA` injection it needed is gone with it: NetX Duo carries timestamps in its own API |
+| **flexPTP** | `76aaf67` (`RC1.0-11`) | git submodule | **Patched — three files now.** A servo fix (F59, `0002-…`), a generic network-stack extension point (`0003-…`), and a non-blocking heartbeat enqueue ([F80](port_review.md#f80--flexptps-heartbeat-cannot-be-enqueued-from-threadxs-timer-thread-resolved), `0004-…`). Plus two external workarounds. (1) `__PRI64_PREFIX=__INT64` compile definition, because flexPTP uses a glibc-internal macro newlib lacks (F47). (2) The STM32H5 hardware port is supplied by this project, since flexPTP ships none |
 | **embfmt** | `670a349` | git submodule | **Patched.** Formatted-print backend for `MSG()`. `%ll` conversions were dropped entirely and NaN printed as `0.0000`; see [F60](port_review.md#f60--embfmt-drops-ll-conversions-and-renders-nan-as-00000-resolved) and `patches/embfmt/` |
 | **EtherLib** | `ec35be5` | git submodule | **Present but not compiled.** Alternative to lwIP, selectable via the `ETH_STACK` CMake variable |
 
@@ -193,6 +195,11 @@ Two boundaries are worth calling out:
 - **`flexptp_options.h` is the whole flexPTP configuration surface.** It selects the OS
   binding, the clock interface, the servo, and the print/CLI macros, and it is where the
   hardware port is wired in. flexPTP has no other configuration input.
+- **`ptp_tx_timestamp.c` exists to break a call chain, not to add a feature.** flexPTP's
+  CMSIS-RTOS2 binding blocks when enqueueing a transmit timestamp, and the MAC delivers that
+  timestamp from `ETH_IRQHandler`. The file defers the call to a thread. See
+  [F80](port_review.md#f80--flexptps-heartbeat-cannot-be-enqueued-from-threadxs-timer-thread-resolved)
+  for the same mistake on the heartbeat path.
 
 ---
 
@@ -210,23 +217,32 @@ Reset_Handler                       Startup/startup_stm32h563zitx.s
        ├─ init_osc_and_clk()        VOS0 → PLL1 → 250 MHz → SBS comp cells
        ├─ init_randomizer()         RNG seeds rand()
        ├─ init_mpu()                HAL_MPU_Disable()
-       ├─ serial_io_init()          USART3 + GPDMA1_Ch0; starts "serialio"
-       ├─ osKernelInitialize()
+       ├─ serial_io_init()          USART3 + GPDMA1_Ch0 ONLY -- no RTOS objects yet
+       ├─ osKernelInitialize()      creates the two ThreadX byte pools
+       ├─ MSG_init()                }  everything that allocates comes after the
+       ├─ serial_io_start()         }  pools exist: FIFO, event flags, "serialio"
+       ├─ tx_thread_stack_error_notify(app_stack_error_handler)
        ├─ osThreadNew(task_startup) → "init"
-       └─ osKernelStart()           does not return
+       └─ osKernelStart()           tx_kernel_enter(); does not return
 
 task_startup ("init")
   ├─ cli_init()                     starts "cli"
   ├─ print_welcome_message()
-  ├─ init_ethernet()                lwIP init → "tcpip_thread", "rx", "phy"; MAC+PHY up
+  ├─ init_ethernet()                NetX Duo: pool, IP instance → "eth ip",
+  │                                 ARP/ICMP/UDP/IGMP, DHCP client, driver → "rx", "phy"
   ├─ cmd_init()                     registers CLI commands
-  └─ loop { osDelay(1000) }         stays resident, idle
+  └─ loop { ethernet_poll_dhcp(); osDelay(1000) }
 
 "flexptp" CLI command → reg_task_ptp() → creates the "ptp" thread on demand
   └─ flexptp_user_event_cb(PTP_UEV_INIT_DONE)      Src/main.c
        ├─ ptp_load_profile(FLEXPTP_INITIAL_PROFILE)  "default" — see ptp_profiles.md
        └─ ptp_log_enable(PTP_LOG_DEF | PTP_LOG_BMCA)
 ```
+
+**The split of `serial_io_init()` is load-bearing, not tidiness.** ST's CMSIS-RTOS2 wrapper
+creates its two byte pools inside `osKernelInitialize()`, so nothing can be allocated before
+that call. Configuring USART3 first is what lets `serial_io_panic_write()` report a failure in
+the second half — which it did, the first time the kernel was swapped in.
 
 PTP is **not** started at boot. The stack comes up only when the operator types `flexptp`
 at the CLI, which is why `is_flexPTP_operating()` gates that command.
@@ -240,52 +256,40 @@ lost on the next reset and the compile-time preset is reinstated — see
 
 ## Threads
 
-Priorities below are raw FreeRTOS priorities. `configMAX_PRIORITIES` is 56. The CMSIS-RTOS2
-shim passes `osPriority_t` values straight through to `xTaskCreate`, so the CMSIS and
-FreeRTOS scales are the same numbers here — `osPriorityNormal` *is* 24.
+Two priority scales are in play and they run in opposite directions, which is the single
+easiest thing to misread in this firmware. **ThreadX counts 0 as most urgent**; CMSIS-RTOS2
+counts `osPriorityISR` (56) as most urgent. ST's wrapper maps one to the other as
+`tx = osPriorityISR - cmsis`, so `osPriorityNormal` (24) becomes ThreadX **32**. Both numbers
+are given below, and `osinfo` prints both for the same reason.
 
-Thread names are as they appear in a debugger. lwIP's core thread is named by
-`TCPIP_THREAD_NAME` in `Inc/lwipopts.h`, which is `"TCP/IP"` — it is referred to as
-`tcpip_thread` elsewhere in these documents after its lwIP source symbol.
-
-| Thread | Priority | Stack | Created by | Role |
-|---|---|---|---|---|
-| `TCP/IP` | **40** (`osPriorityHigh`) | 3072 B | lwIP via `sys_thread_new` | lwIP core; all stack processing is serialised here |
-| `ptp` | **24** | 2048 B | `reg_task_ptp()`, on demand | flexPTP core: BMCA, servo, message handling |
-| `init` | 24 (default) | 2048 B | `main()` | One-shot bring-up, then idles at 1 Hz |
-| `cli` | 24 (default) | 2048 B | `cli_init()` | Console command parsing |
-| `rx` | **32** (`osPriorityAboveNormal`) | 2048 B | `eth_drv_lwip.c` | Drains the Ethernet RX ring into lwIP |
-| `serialio` | 24 (default) | 2048 B | `serial_io_init()` | FIFO → UART DMA; the only writer to USART3 |
-| `phy` | 24 (default) | 1024 B | `eth_drv_lwip.c` | PHY link-state polling |
-| `Tmr Svc` | 2 | 1040 B | FreeRTOS | Software timers; flexPTP's heartbeat runs here |
-| `IDLE` | 0 | 520 B | FreeRTOS | |
+| Thread | ThreadX pri | CMSIS | Stack | Created by | Role |
+|---|---|---|---|---|---|
+| `System Timer Thread` | **0** | 56 | 1024 B | ThreadX | Software timers; flexPTP's heartbeat runs here |
+| `NetX DHCP Client` | **3** | 53 | — | `nx_dhcp_create()` | DHCP state machine |
+| `eth ip` | **16** | 40 | 2048 B | `nx_ip_create()` | NetX Duo core; all stack processing is serialised here |
+| `rx` | **24** | 32 | 2048 B | `eth_drv_netxduo.c` | Drains the Ethernet RX ring into NetX Duo |
+| `ptpts` | **24** | 32 | 1024 B | `ptp_tx_timestamp.c` | Carries transmit timestamps out of the ETH ISR into flexPTP |
+| `ptp` | **32** | 24 | 2048 B | `reg_task_ptp()`, on demand | flexPTP core: BMCA, servo, message handling |
+| `init` | **32** | 24 | 2048 B | `main()` | One-shot bring-up, then polls DHCP at 1 Hz |
+| `cli` | **32** | 24 | 2048 B | `cli_init()` | Console command parsing |
+| `serialio` | **32** | 24 | 2048 B | `serial_io_start()` | FIFO → UART DMA; the only writer to USART3 |
+| `phy` | **32** | 24 | 1024 B | `eth_drv_netxduo.c` | PHY link polling; also drains the DMA error latch |
 
 Notes:
 
-- **Threads created with `attr.priority` left zero get `osPriorityNormal` (24)**, not
-  priority 0. `osPriorityNone` is 0 and the shim substitutes Normal. Five of the nine
-  threads rely on this default, so they are peers at 24 and round-robin against each other.
-- **`rx` sits above the console at 32**, so a burst of CLI output cannot round-robin against
-  the thread that restores RX descriptors to the DMA. This mirrors the interrupt ordering the
-  project already chose deliberately (ETH at 7 preempts the console at 12). Note that no
-  benefit was *measurable* on the bench: with `rx` at 24 and at 32, 400 pings at 1400 B under
-  continuous CLI load both gave 0% loss and ~0.40 ms mean RTT. A 115200-baud console cannot
-  generate enough load to starve it. The ordering is kept as correct-by-construction, not as
-  a demonstrated optimisation.
-- **`tcpip_thread` is the highest application thread**, with `rx` above the console at 32.
-  Everything else at 24 can be preempted by both, which is what keeps the receive path and
-  the network stack ahead of console output.
-- **The `ptp` thread can no longer be wedged by the MAC driver.** `ETHHW_SetPTPAddend()`
-  once waited on `MACTSCR.TSADDREG` with no timeout, so a timestamp unit that was not
-  running left the thread stuck inside the driver and took the `ptp pps` and `ptp addend`
-  CLI commands with it — the visible half of F53. Every hardware handshake in the driver is
-  now bounded and reports on expiry (F54), including the transmit descriptor wait and the
-  PHY reset, which the original F54 sweep missed. See [port_review.md](port_review.md).
-- **`ptp` sits at the same priority as the CLI and the console writer.** flexPTP's timing
-  does not depend on winning that race, because timestamps are captured in hardware — see
-  below.
-- **Heap**: FreeRTOS `heap_4`, 30 KB, in `.FreeRTOSHeapSection` in SRAM1. Thread stacks are
-  allocated from it, so the nine threads above account for roughly 15 KB.
+- **Every thread now states its priority explicitly.** Under FreeRTOS, five of them left
+  `attr.priority` at zero and the shim substituted `osPriorityNormal`. ST's ThreadX wrapper
+  rejects `osPriorityNone` (0) instead, because it is below `osPriorityIdle` (1), and
+  `osThreadNew()` returns NULL. The board booted, printed its banner, and halted.
+- **`eth ip` holds the position `tcpip_thread` held**, not the number: highest of the
+  application threads, so the stack stays ahead of everything that feeds it.
+- **`rx` and `ptpts` sit above the console** at ThreadX 24. For `rx` the reason is unchanged
+  from the lwIP driver — every descriptor it has not restored is one the DMA cannot reuse, and
+  F61's `inFlight` marker makes that window safe rather than short. For `ptpts` it is latency
+  to the servo, not correctness: the timestamp was captured in hardware long before.
+- **Memory**: two ThreadX byte pools carved from the RAM above `__RAM_segment_used_end__` —
+  24 KB for stacks, the rest for objects. `osinfo` reports both. There is no heap; the
+  FreeRTOS `ucHeap` and its `.FreeRTOSHeapSection` are gone.
 
 ### RX depths, and which one is the limit
 
@@ -339,23 +343,36 @@ that catches an overflow here — this handler is. Measured:
 | Task stack overflow | `CFSR` = `0x00100000` → *UFSR.STKOF — stack overflow (PSPLIM)* |
 | Call through a NULL pointer | `CFSR` = `0x00000100`, `PC` = `0x00000000` → *BFSR.IBUSERR* |
 
-### The FreeRTOS priority constraint
+### Interrupt priorities: the FreeRTOS constraint no longer applies
 
-`configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY` is **5**. On Cortex-M this partitions the
-priority space:
+Under FreeRTOS this section described a hard rule: `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY`
+was 5, interrupts at 0–4 were never masked by `taskENTER_CRITICAL()` and **must not** call any
+`*FromISR` API, and 5–15 could. **That rule is gone.**
 
-```
-  0 ─ 4   ABOVE the kernel's masking level.
-          Never masked by taskENTER_CRITICAL(). MUST NOT call any FreeRTOS *FromISR API.
-  5 ─ 15  At or below the masking level. May call *FromISR APIs.
-```
+ThreadX's Cortex-M port uses **PRIMASK**, not BASEPRI, for its critical sections
+(`ports/cortex_m33/gnu/inc/tx_port.h`). So:
 
-All three project interrupts sit at 7 or 12, so all three are permitted to call
-`*FromISR` APIs — which they do, via the CMSIS-RTOS2 message queue and event flags. Anything
-added above priority 5 in future must not touch FreeRTOS.
+- there is no priority ceiling above which the kernel must not be called — **any** ISR may use
+  ThreadX services;
+- and conversely a kernel critical section masks **everything**, including an interrupt that
+  FreeRTOS would have left running.
 
-The ordering is deliberate: **ETH (7) preempts the console (12)**, so heavy CLI output
-cannot delay Ethernet servicing. Both sit below the kernel masking level.
+Nothing regresses here, because all three of this project's interrupts already sat at 7 and 12
+— below the old masking level — so both kernels mask them identically. The ordering itself is
+unchanged and still deliberate: **ETH (7) preempts the console (12)**, so heavy CLI output
+cannot delay Ethernet servicing.
+
+If an interrupt with hard latency requirements is ever added, define `TX_PORT_USE_BASEPRI` and
+`TX_PORT_BASEPRI` together in `Inc/tx_user.h` and re-derive the priorities; the ceiling
+behaviour then returns.
+
+> **What replaced the rule is a different one, and it caught this port twice.** The constraint
+> that now matters is not *which priority* may call the kernel, but *which context may block*.
+> CMSIS-RTOS2 forbids a non-zero timeout from an ISR, and ThreadX additionally forbids one from
+> its **timer thread** (`txe_queue_send.c` returns `TX_WAIT_ERROR` for `&_tx_timer_thread`).
+> flexPTP's CMSIS-RTOS2 binding violates both — on the transmit-timestamp path and on the
+> heartbeat path. See `Src/flexptp_nsd/ptp_tx_timestamp.c` and
+> [F80](port_review.md#f80--flexptps-heartbeat-cannot-be-enqueued-from-threadxs-timer-thread-resolved).
 
 ### Handler responsibilities
 
@@ -416,45 +433,44 @@ took days precisely because the fault turned out to be outside the board entirel
 MAC captures RX timestamp into a context descriptor
   → ETHHW_ProcessRx() [ISR] pairs the data descriptor with its context descriptor,
       marks both ETHHW_DescExt.inFlight, and queues the event on rx_msg_q
-  → rx_thread [task] copies the frame into a pbuf, stores the timestamp into
-      pbuf->time_s / time_ns, hands it to lwIP, then ETHHW_RestoreRXDesc()
-      returns ownership to the DMA and clears inFlight
-  → nsd_lwip.c reads those fields and calls ptp_receive_enqueue()
+  → rx_thread [task] copies the frame into an NX_PACKET **at data_start + 2**, and calls
+      nx_link_ethernet_packet_received(ip, iface, packet, &NX_LINK_TIME)
+  → NetX Duo stashes the timestamp in the first three ULONGs of the packet buffer,
+      over the Ethernet header it has just consumed, and routes the packet up
+  → nsd_netxduo.c reads it back from nx_packet_data_start and calls ptp_receive_enqueue()
 ```
 
-The `inFlight` marker is what makes the handoff safe. The descriptor's OWN bit is clear for
-the whole span between the MAC writing the frame and `rx_thread` restoring it, so ownership
-alone cannot distinguish "newly received" from "already queued" — and `ETHHW_ProcessRx()`
-runs from the ISR, which can re-enter that span freely. Without the marker the driver
-re-delivers queued frames; measured at **57% of all frames** under ordinary PTP traffic
-(F61).
+**The 2-byte offset is not cosmetic.** `NX_PHYSICAL_HEADER` is **16**, not 14, precisely so a
+14-byte Ethernet header leaves the IP header 4-byte aligned. Copy the frame to `prepend_ptr`
+directly and every IPv4 packet fails its header checksum while ARP — which has none — works
+perfectly. That asymmetry is the signature, and it cost a bench session.
+
+On the 802.3 path there is no stashing at all: `nx_link_packet_receive_callback_add()` passes
+the `NX_LINK_TIME` to the callback as an argument.
 
 **Transmit:**
 
 ```
-flexPTP sets pbuf->tx_cb = ptp_transmit_cb and pbuf->tag = uid   (nsd_lwip.c)
-  → eth_drv_lwip.c copies both into the TX descriptor extension
-    and sets ETH_DMATXNDESCRF_TTSE to request a timestamp
+nsd_netxduo.c sets NX_INTERFACE_CAPABILITY_PTP_TIMESTAMP on the packet and records
+    (NX_PACKET * → flexPTP uid) in eth_drv_netxduo.c's pending table
+  → eth_drv_netxduo.c sees the flag, takes the uid, and asks the MAC for a timestamp
+    via ETHHW_TXOPT_CAPTURE_TS
   → MAC captures the TX timestamp on transmission
-  → ETHHW_ProcessTx(), in ETH_IRQHandler, invokes tx_cb(ts_s, ts_ns, tag)
+  → ETHHW_ProcessTx(), in ETH_IRQHandler, invokes ptp_tx_timestamp_from_isr()
+  → that posts to a queue with timeout 0 and the "ptpts" thread calls
+    ptp_transmit_timestamp_cb() from thread context
 ```
 
-`time_s`, `time_ns`, `tx_cb` and `tag` are **not** lwIP fields. They are injected into
-`struct pbuf` by `Inc/lwipopts.h` through lwIP's `LWIP_PBUF_CUSTOM_DATA` hook — this is the
-"instrumented lwIP driver" flexPTP's documentation requires.
+**Two things replaced what lwIP needed.** The capability flag is a real `NX_PACKET` field, so
+the four `LWIP_PBUF_CUSTOM_DATA` injections are gone — and with them the unversioned `tx_cb`
+signature that drifted in F48. But NX_PACKET has no field for the uid, so that association
+lives in a side table keyed on the packet address, **taken rather than read** when consumed:
+NetX Duo recycles packets, and a stale entry would hand the servo a wrong uid silently.
 
-**The `tx_cb` signature is an unversioned contract** between `Inc/lwipopts.h` and flexPTP's
-`nsd_lwip.c`, and nothing enforces it. It has already drifted once (F48). Re-check it on
-any flexPTP bump.
-
-**Both halves of this path are verified working on hardware.** Receive timestamps arrive via
-the context descriptor (T1/T2 carry real values), and transmit timestamps were instrumented
-at 698-for-698 through `ETHHW_ProcessTx()` into the callback.
-
-Nothing in this path is outstanding. F42 — which this section previously described as an
-unresolved defect in flexPTP's message buffer — was **resolved**: the site switch was
-discarding `Delay_Resp` frames, and no part of this port was ever at fault. See
-[port_review.md](port_review.md).
+The final hop is the one that is not optional. flexPTP's CMSIS-RTOS2 binding enqueues with
+`osWaitForever`, and `ETHHW_ProcessTx()` runs in interrupt context, where that is rejected
+outright. Without the deferral every `t3` is discarded in silence and the servo converges on a
+lie — which is why `tools/hil/` checks `ptp_ts` **before** `ptp_sync`.
 
 Because timestamps are captured **in hardware**, PTP accuracy does not depend on thread
 scheduling or interrupt latency. Latency affects how quickly the servo *reacts*, not how
@@ -468,13 +484,23 @@ Regions from `stm32h563zitx_FLASH.ld`; usage from the Stage 15 build.
 
 | Region | Base | Size | Contents | Used |
 |---|---|---|---|---|
-| FLASH | `0x08000000` | 2 MB | `.isr_vector`, `.text`, `.rodata`, `.data` LMA | 221 552 B (10.6%) |
-| SRAM1 | `0x20000000` | 256 KB | `.data`, `.bss`, main stack, C heap, FreeRTOS heap | 133 328 B (50.9%) |
+| FLASH | `0x08000000` | 2 MB | `.isr_vector`, `.text`, `.rodata`, `.data` LMA | 205 736 B (9.81%) |
+| SRAM1 | `0x20000000` | 256 KB | `.data`, `.bss`, main stack, C heap, **ThreadX byte pools** | 80 864 B (30.85%) |
 | SRAM2 | `0x20040000` | 64 KB | *(unallocated — deliberate spare capacity)* | 0 B |
-| SRAM3 | `0x20050000` | 320 KB | Ethernet DMA descriptors + buffers, lwIP heap | 74 888 B (22.9%) |
+| SRAM3 | `0x20050000` | 320 KB | Ethernet DMA descriptors + buffers, **NetX Duo packet pool and IP thread stack** | 89 704 B (27.38%) |
+
+Both smaller than the FreeRTOS/lwIP build they replace (217 160 B FLASH, 133 168 B SRAM1),
+despite SRAM3 growing: lwIP's heap and the 30 KB `ucHeap` are gone, and NetX Duo's packet pool
+moved to SRAM3 alongside the DMA buffers it feeds.
 
 - `_estack` = `0x20040000`, the top of SRAM1 — confirmed as vector word 0 in the linked image.
 - Ethernet DMA buffers live in SRAM3: 48 descriptors plus 48 × 1528 B of frame buffers.
+- **`__RAM_segment_used_end__`** is PROVIDEd immediately after the heap/stack reservation and is
+  where ThreadX starts. Everything above it becomes `_tx_initialize_unused_memory`, from which
+  the CMSIS-RTOS2 wrapper carves its two byte pools. It must come **after** `._user_heap_stack`
+  for the same reason the FreeRTOS heap had to come before it: `_sbrk()` hands out everything
+  between `_end` and the stack reservation, so a byte pool inside that window would also be
+  handed to `malloc()`.
 - **No cache maintenance is performed anywhere**, and none is needed: the H563's DCACHE is
   disabled out of reset and `HAL_Init()` does not enable it. Enabling DCACHE later would
   require making the SRAM3 Ethernet region non-cacheable or adding explicit maintenance.
