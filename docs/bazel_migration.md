@@ -13,6 +13,8 @@ Status: **phases 0–4 landed and verified on hardware; phases 5–7 outstanding
 | 5 — flashing | outstanding |
 | 6 — host tests | outstanding |
 | 7 — delete CMake | outstanding |
+| 8 — the FreeRTOS + lwIP project | outstanding |
+| 9 — unification | outstanding |
 
 CMake still builds and still passes S8 at every point, so there is a working fallback until
 phase 7 removes it.
@@ -1151,14 +1153,79 @@ in phase 5, or this takes the hardware suite with it.
 Also here, not before: `bazel run //:format`, coverage and complexity — the remaining reusable
 parts of imu's tooling.
 
-### Phases 8–9 — The second project, then unification
+### Phase 8 — The FreeRTOS + lwIP project
 
-Out of scope for this plan's detail, specified in
-[§13.7](#137-sequencing) and [§13.8](#138-unification-afterwards):
-**phase 8** adds `projects/flexptp_freertos_lwip_demo/` from `master` @ `5e25b7b` with its own
-HIL baseline and CI row, and moves the documents per D18; **phase 9** factors the duplication
-out — code and the three hardware/protocol documents alike — a layer at a time, only where a
-test pins the behaviour first.
+The monorepo's second firmware. Design is [§13](#13-target-state-the-two-firmware-monorepo);
+this is the work and how it is gated.
+
+**Sources.** `projects/flexptp_freertos_lwip_demo/`, seeded strictly per the table in
+[§13.3](#133-layout-two-independent-projects-first): common files from the **current** tree,
+only the stack-specific glue from `master` @ `5e25b7b`. Plus the one breaking signature change
+across the shared headers, `serial_io_init()`.
+
+**Dependencies.** FreeRTOS from git at V11.3.0 (D14), which needs `bazel/freertos.BUILD` to
+select `portable/GCC/ARM_CM33_NTZ/non_secure`, `portable/MemMang/heap_4.c` and —
+for D15 — `portable/ThirdParty/GCC/Posix`. lwIP gains the `BUILD` file D9 deferred;
+[§13.4](#134-new-dependencies) notes imu's is a usable reference and flags the IPv6 glob as the
+thing to check rather than copy.
+
+**Configuration.** This is where the `label_flag` seam of [§4.2](#42-configuration-headers)
+stops being ceremony around a constant: `@flexptp`, and now `@freertos` and `@lwip`, are
+configured per project. Note that FreeRTOS and lwIP need **no transition** — under D11 each has
+exactly one firmware consumer, and the host/target split for D15's Posix tests is a `select()`
+on platform ([decisions §5](bazel_decisions.md#5-why-not-imus-embedded_cc_binary)).
+
+**Also here:** the documents move to `projects/<name>/docs/` (D18,
+[§2.1](#21-documentation)), and CI's matrix becomes per project.
+
+*Accepts when:*
+
+1. **`bazel build //...` builds both firmwares** in one invocation. This is the monorepo payoff
+   and the thing CMake cannot do; if it needs two invocations something is a global flag that
+   should be a per-project dependency.
+2. **The seeding rule holds, checked rather than asserted.** For every file taken from `master`,
+   `git log` it on the `bazel` line: any commit after `5e25b7b` means it is on the wrong side of
+   [§13.3](#133-layout-two-independent-projects-first)'s table and a fix has been silently
+   reverted.
+3. **The ThreadX firmware is unchanged.** Its ELF sections must match the pre-phase-8 build.
+   Adding a second project must not perturb the first, and the way it would is a `label_flag`
+   default quietly repointed — which is invisible in a diff and obvious in a size comparison.
+4. **The FreeRTOS image passes on hardware**, against its own baseline. Capture that baseline on
+   the first image that boots, not at the end: `checks.py` asserts the registered CLI command
+   count exactly and it will differ between the two firmwares. The board is available from this
+   phase's first commit ([§13.7](#137-sequencing)) — there is no reason to work on inspection.
+5. **Both flash targets work** — `bazel run //projects/flexptp_threadx_netx_demo:flash` and the
+   FreeRTOS equivalent, each flashing its own image and not the other's. The platform transition
+   ([§5.3](#53-the-firmware-binary)) matters more here than it did with one project: with two
+   images in the tree, "flashed the wrong thing" becomes a plausible mistake rather than a
+   theoretical one.
+6. **`check_docs_links.py` is clean** after the documents move.
+7. **D15's FreeRTOS context tests exist and are re-derived, not translated** — the ISR half
+   ported verbatim, the timer-thread half replaced by FreeRTOS's own rule, and the file
+   recording that F80 has no FreeRTOS counterpart ([§13.6](#136-what-gets-harder)).
+
+**Prerequisite:** finish the platform transition first ([§5.3](#53-the-firmware-binary)).
+Criterion 5 depends on it, and a second project is the point at which building the wrong
+image stops being harmless.
+
+### Phase 9 — Unification
+
+Factor out the duplication D11 deliberately accepted, in the order set out in
+[§13.8](#138-unification-afterwards): the pure-logic units first, then the hardware layer, then
+the CMSIS-RTOS2 layer, then the runtime odds and ends. The three hardware/protocol documents
+(`ptp_clock.md`, `ptp_profiles.md`, `host_ptp_setup.md`) come back to a shared `docs/` on the
+same schedule.
+
+*Accepts when*, for each layer unified:
+
+1. **Both firmwares still build and still pass their HIL stage.** Unification is the phase most
+   able to break one firmware while the other stays green, so both run every time.
+2. **A test pinned the behaviour before the merge, not after.** This is the rule that keeps the
+   phase honest: the divergence table in
+   [§13.2](#132-where-the-freertos--lwip-firmware-comes-from) is what "the two copies were
+   identical" looks like when nobody checked.
+3. **Neither firmware's ELF sections move unexpectedly.** A unified file that changes an image
+   is a file that was not actually common.
 
 ---
 
@@ -1536,8 +1603,8 @@ The restructure comes **first**, not last (D11). Full order, with the phase numb
 | **0** | Move today's firmware into `projects/flexptp_threadx_netx_demo/`, **under CMake** | CMake still builds; HIL S8 passes; sections match modulo `__FILE__` | **landed** — sections came out identical |
 | 1–6 | The Bazel migration, writing `BUILD` files into their final home | as [§9](#9-phases) | 1–4 landed |
 | 7 | Delete CMake and `build.sh` (D3, D7) | | |
-| **8** | Add `projects/flexptp_freertos_lwip_demo/` from `master`, plus the FreeRTOS and lwIP `BUILD` files and per-project configuration; **and move the documents into `projects/<name>/docs/`** (D18) | its own HIL baseline; `check_docs_links.py` clean | |
-| **9** | Unification ([§13.8](#138-unification-afterwards)), incrementally | both firmwares keep passing | |
+| **8** | Add `projects/flexptp_freertos_lwip_demo/` from `master`, plus the FreeRTOS and lwIP `BUILD` files and per-project configuration; **and move the documents into `projects/<name>/docs/`** (D18) | seven criteria in [§9, Phase 8](#9-phases) | |
+| **9** | Unification ([§13.8](#138-unification-afterwards)), incrementally | three criteria per layer, in [§9, Phase 9](#9-phases) | |
 
 **Phase 8 can use the board from its first commit.** This plan assumed the hardware gate arrived
 with a Bazel flash target, and phase 4 showed otherwise: `tools/hil/run.py --flash` takes an ELF
