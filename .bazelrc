@@ -1,0 +1,11 @@
+# Firmware builds. The stm32_firmware() macro will carry its own platform transition, so this
+# is for building libraries directly rather than for the firmware target.
+build:target --platforms=//toolchain:cortex_m33
+
+# CMake Debug and Release. Note opt is -O2, NOT CMake's -Og: decision D8, see
+# docs/bazel_decisions.md.
+build:dbg --compilation_mode=dbg
+build:opt --compilation_mode=opt
+
+# Keep the lockfile honest: a resolution that would change it is an error, not a silent update.
+common --lockfile_mode=error

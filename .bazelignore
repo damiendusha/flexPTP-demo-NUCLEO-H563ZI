@@ -1,0 +1,9 @@
+# CMake's build tree. During the coexistence period (D3) it contains FetchContent'd
+# GoogleTest, whose BUILD files Bazel would otherwise try to load -- and fail on, because they
+# load @rules_python, which this module does not depend on. Not a hypothetical: it broke
+# `bazel build //...` the first time it was run.
+build
+
+# The toolchain and OpenOCD that build.sh extracts. Bazel fetches its own copy of the compiler
+# into the repository cache; this directory is CMake's.
+toolchains

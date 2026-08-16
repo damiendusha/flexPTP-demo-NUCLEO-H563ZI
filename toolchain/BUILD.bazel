@@ -1,0 +1,220 @@
+# The arm-none-eabi toolchain for the STM32H563, and the platform it targets.
+#
+# No Pigweed. The flags below are the ones the CMake build uses, and the reasoning behind the
+# non-obvious ones is preserved in place rather than being left to git history -- see in
+# particular the optimisation levels, where -O2 is a deliberate change from CMake's -Og
+# (decision D8 in docs/bazel_decisions.md).
+
+load("@rules_cc//cc/toolchains:args.bzl", "cc_args")
+load("@rules_cc//cc/toolchains:feature.bzl", "cc_feature")
+load("@rules_cc//cc/toolchains:tool.bzl", "cc_tool")
+load("@rules_cc//cc/toolchains:tool_map.bzl", "cc_tool_map")
+load("@rules_cc//cc/toolchains:toolchain.bzl", "cc_toolchain")
+
+package(default_visibility = ["//visibility:public"])
+
+# ---------------------------------------------------------------------------
+# Constraints and the platform
+# ---------------------------------------------------------------------------
+#
+# @platforms//cpu:armv8-m cannot tell a Cortex-M33 from a Cortex-M23, and says nothing about the
+# FPU -- yet -mfpu=fpv5-sp-d16 -mfloat-abi=hard are baked into this toolchain. A second Armv8-M
+# part added later would match it and be compiled with the wrong FPU flags, silently. Four lines
+# make that impossible.
+#
+# The constraint also earns its keep on first-party libraries, which carry
+# target_compatible_with = ["//toolchain:stm32h563"]: that is what lets a single
+# `bazel build //...` skip the firmware on the host rather than trying to compile mac_drv.c for
+# x86 and failing.
+constraint_setting(name = "mcu")
+
+constraint_value(
+    name = "stm32h563",
+    constraint_setting = ":mcu",
+)
+
+platform(
+    name = "cortex_m33",
+    constraint_values = [
+        "@platforms//cpu:armv8-m",
+        "@platforms//os:none",
+        ":stm32h563",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
+
+[
+    cc_tool(
+        name = "arm-none-eabi-%s" % tool,
+        src = "@arm_gnu_toolchain//:bin/arm-none-eabi-%s" % tool,
+        data = ["@arm_gnu_toolchain//:compiler_support"],
+    )
+    for tool in [
+        "gcc",
+        "g++",
+        "ar",
+        "ld",
+        "objcopy",
+        "objdump",
+        "strip",
+        "nm",
+        "readelf",
+        "size",
+    ]
+]
+
+cc_tool_map(
+    name = "all_tools",
+    tools = {
+        "@rules_cc//cc/toolchains/actions:assembly_actions": ":arm-none-eabi-gcc",
+        "@rules_cc//cc/toolchains/actions:c_compile_actions": ":arm-none-eabi-gcc",
+        "@rules_cc//cc/toolchains/actions:cpp_compile_actions": ":arm-none-eabi-g++",
+        "@rules_cc//cc/toolchains/actions:link_actions": ":arm-none-eabi-gcc",
+        "@rules_cc//cc/toolchains/actions:objcopy_embed_data": ":arm-none-eabi-objcopy",
+        "@rules_cc//cc/toolchains/actions:strip": ":arm-none-eabi-strip",
+        "@rules_cc//cc/toolchains/actions:ar_actions": ":arm-none-eabi-ar",
+    },
+)
+
+# ---------------------------------------------------------------------------
+# Flags
+# ---------------------------------------------------------------------------
+
+# cpu_PARAMS in CMakeLists.txt. On compile AND link: the float ABI has to match at both ends or
+# the link picks the wrong multilib (thumb/v8-m.main+fp/hard).
+cc_args(
+    name = "cpu_flags",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:assembly_actions",
+        "@rules_cc//cc/toolchains/actions:compile_actions",
+        "@rules_cc//cc/toolchains/actions:link_actions",
+    ],
+    args = [
+        "-mthumb",
+        "-mcpu=cortex-m33",
+        "-mfpu=fpv5-sp-d16",
+        "-mfloat-abi=hard",
+    ],
+)
+
+# The two -f flags that make section garbage collection possible. Their partner is
+# -Wl,--gc-sections below; removing one without the other is finding H-3, which grew the Release
+# image from 167 424 B to 233 924 B.
+cc_args(
+    name = "reduced_size",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-fdata-sections",
+        "-ffunction-sections",
+    ],
+)
+
+cc_args(
+    name = "no_canonical_prefixes",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = ["-no-canonical-prefixes"],
+)
+
+# CPP_FLAGS in cmake/gcc-arm-none-eabi.cmake. Enforced against the linked image as well, by
+# tools/ci/check_cxx_rules.sh -- these flags are why that check passes.
+cc_args(
+    name = "cpp_no_runtime",
+    actions = ["@rules_cc//cc/toolchains/actions:cpp_compile_actions"],
+    args = [
+        "-fno-rtti",
+        "-fno-exceptions",
+        "-fno-threadsafe-statics",
+    ],
+)
+
+cc_args(
+    name = "asm_with_cpp",
+    actions = ["@rules_cc//cc/toolchains/actions:assembly_actions"],
+    args = ["-x", "assembler-with-cpp"],
+)
+
+# target_link_options in CMakeLists.txt.
+cc_args(
+    name = "link_flags",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = [
+        "--specs=nosys.specs",
+        "-Wl,--gc-sections",
+        # Allow good software remapping across address space.
+        "-Wl,-z,max-page-size=8",
+        # A SHA-1 over the linked output, in .note.gnu.build-id. `osinfo` prints it and
+        # tools/hil/ compares it against the ELF, so the hardware suite cannot report a pass
+        # for an image it did not test (finding GI-01).
+        "-Wl,--build-id=sha1",
+        "-Wl,--print-memory-usage",
+        "-Wl,--start-group",
+        "-lc",
+        "-lm",
+        "-lstdc++",
+        "-lsupc++",
+        "-Wl,--end-group",
+    ],
+)
+
+# -Wall -Wextra, applied to first-party targets only. Vendored trees keep -w, which is what
+# keeps this gate meaningful: a warning in NetX Duo or the HAL is not this project's to fix.
+#
+# -Werror is on by default (D13). That is safe here in a way it usually is not, because the
+# compiler is pinned by sha256 in MODULE.bazel: a new diagnostic can only arrive in the commit
+# that bumps the toolchain, which is where it should be dealt with. Escape hatch, for bisecting
+# or a half-finished refactor: --features=-first_party_warnings
+cc_args(
+    name = "first_party_warnings",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-Wall",
+        "-Wextra",
+        "-Wno-unused-parameter",
+        "-Werror",
+    ],
+)
+
+# Declared in known_features on the toolchain below, which means OFF unless a target asks for
+# it with features = ["first_party_warnings"].
+cc_feature(
+    name = "first_party_warnings_feature",
+    args = [":first_party_warnings"],
+    feature_name = "first_party_warnings",
+)
+
+cc_toolchain(
+    name = "arm_none_eabi_cortex_m33",
+    args = [
+        ":cpu_flags",
+        ":reduced_size",
+        ":no_canonical_prefixes",
+        ":cpp_no_runtime",
+        ":asm_with_cpp",
+        ":link_flags",
+    ],
+    # Supplies the arguments Bazel's legacy action configs used to inject implicitly --
+    # archiver flags, compile flags, include flags, the linker param file, and so on. Without
+    # it the compile works and the ARCHIVE step fails, because `ar` is invoked with no
+    # operation letters at all.
+    enabled_features = ["@rules_cc//cc/toolchains/args:experimental_replace_legacy_action_config_features"],
+    known_features = [":first_party_warnings_feature"],
+    tool_map = ":all_tools",
+)
+
+toolchain(
+    name = "arm_none_eabi_cortex_m33_toolchain",
+    exec_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:armv8-m",
+        "@platforms//os:none",
+        ":stm32h563",
+    ],
+    toolchain = ":arm_none_eabi_cortex_m33",
+    toolchain_type = "@rules_cc//cc:toolchain_type",
+)

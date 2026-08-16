@@ -1,0 +1,33 @@
+"""flexPTP demo for the NUCLEO-H563ZI.
+
+Dependency policy (D2): rule sets come from BCR, pinned, with the lockfile checked in. Every
+*project* dependency -- the HAL, ThreadX, NetX Duo, flexPTP, embfmt -- comes from git, added in
+phase 2. See docs/bazel_decisions.md.
+"""
+
+module(
+    name = "flexptp_demo",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "rules_cc", version = "0.2.22")
+bazel_dep(name = "platforms", version = "1.0.0")
+
+# ---------------------------------------------------------------------------
+# The Arm GNU toolchain
+# ---------------------------------------------------------------------------
+#
+# The same archive, from the same URL, that build.sh downloads -- so during the coexistence
+# period both build systems compile with the identical compiler. build.sh fetches it with no
+# integrity check at all; pinning the digest here is a small independent gain.
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "arm_gnu_toolchain",
+    build_file = "//toolchain:arm_gnu.BUILD",
+    sha256 = "563bebb2b97d53382b956d6ee1fe61e2cae26699901417234a37df505ef9b5fa",
+    strip_prefix = "arm-gnu-toolchain-15.3.rel1-x86_64-arm-none-eabi",
+    urls = ["https://gitlab.arm.com/api/v4/projects/tooling%2Fgnu-toolchains-for-arm/packages/generic/gnu-toolchain/15.3.rel1/arm-gnu-toolchain-15.3.rel1-x86_64-arm-none-eabi.tar.xz"],
+)
+
+register_toolchains("//toolchain:arm_none_eabi_cortex_m33_toolchain")
