@@ -1,0 +1,20 @@
+# ARM's CMSIS headers and ST's device headers. Header-only; there are no sources here.
+#
+# cmsis_os2.h is ARM's and RTOS-agnostic, which is what lets both a ThreadX-backed and a
+# FreeRTOS-backed implementation sit underneath the same application code.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "cmsis",
+    hdrs = glob([
+        "Device/ST/STM32H5xx/Include/*.h",
+        "Include/*.h",
+        "CMSIS_RTOS_V2/*.h",
+    ]),
+    includes = [
+        "CMSIS_RTOS_V2",
+        "Device/ST/STM32H5xx/Include",
+        "Include",
+    ],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,38 @@
+# The ThreadX + NetX Duo firmware.
+#
+# Phase 2 defines only the configuration headers -- the seam the vendored libraries reach this
+# project through. The libraries and the binary arrive in phases 3 and 4.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Each of these is the target a label_flag in the corresponding vendored BUILD file points at,
+# so a second project can supply its own without forking the vendored file. With one project the
+# indirection looks like ceremony around a constant; it is the seam phase 8 writes through.
+
+cc_library(
+    name = "hal_conf",
+    hdrs = ["stm32h5xx_hal_conf.h"],
+    # compile_DEFS in CMakeLists.txt, which applies them globally with
+    # add_compile_definitions(). Here they ride on the config target instead, so anything that
+    # depends on the HAL configuration gets the device selection with it -- without them
+    # stm32h5xx.h #errors with "Please select first the target STM32H5xx device".
+    defines = [
+        "STM32H563xx",
+        "USE_HAL_DRIVER",
+    ],
+    includes = ["."],
+    deps = ["//third_party/CMSIS:cmsis"],
+)
+
+cc_library(
+    name = "tx_user",
+    hdrs = ["tx_user.h"],
+    includes = ["."],
+)
+
+cc_library(
+    name = "nx_user",
+    hdrs = ["nx_user.h"],
+    includes = ["."],
+)

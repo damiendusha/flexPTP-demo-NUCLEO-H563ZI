@@ -191,6 +191,87 @@
   },
   "selectedYankedVersions": {},
   "moduleExtensions": {
+    "//bazel:repositories.bzl%vendored": {
+      "general": {
+        "bzlTransitiveDigest": "qvcGT7eH3K9q9DlJsiadH9qJP0RrXKVpKbr5KubqNbM=",
+        "usagesDigest": "TXFRr/ekOJ4WkENAUY1PQ7JCVxHUmRqoFm+HcCVY/SY=",
+        "recordedInputs": [
+          "REPO_MAPPING:,bazel_tools bazel_tools"
+        ],
+        "generatedRepoSpecs": {
+          "stm32h5_hal": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:git.bzl%git_repository",
+            "attributes": {
+              "build_file": "@@//bazel:stm32h5_hal.BUILD",
+              "commit": "0fff6e2a2e2fa40ba335ee739dd0cb64c509f521",
+              "remote": "https://github.com/STMicroelectronics/stm32h5xx-hal-driver.git"
+            }
+          },
+          "threadx": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:git.bzl%git_repository",
+            "attributes": {
+              "build_file": "@@//bazel:threadx.BUILD",
+              "commit": "44d7c95c582d415c4ad84527180b29c93c3bf664",
+              "remote": "https://github.com/eclipse-threadx/threadx.git"
+            }
+          },
+          "netxduo": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:git.bzl%git_repository",
+            "attributes": {
+              "build_file": "@@//bazel:netxduo.BUILD",
+              "commit": "473d192822babbd831dc5907b9e279b340a3925b",
+              "remote": "https://github.com/eclipse-threadx/netxduo.git"
+            }
+          },
+          "cmsis_rtos_threadx": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:git.bzl%git_repository",
+            "attributes": {
+              "build_file": "@@//bazel:cmsis_rtos_threadx.BUILD",
+              "commit": "3b0b28a45c6eca4daaf6d640fefaa7a67aeead54",
+              "remote": "https://github.com/STMicroelectronics/stm32-mw-cmsis-rtos-tx.git"
+            }
+          },
+          "flexptp": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:git.bzl%git_repository",
+            "attributes": {
+              "build_file": "@@//bazel:flexptp.BUILD",
+              "commit": "76aaf67050dd497d09af1d60e1cc752bb93d9af4",
+              "patch_args": [
+                "-p1"
+              ],
+              "patches": [
+                "@@//patches/flexptp:0002-servo-nan-latch-fix.patch",
+                "@@//patches/flexptp:0003-generic-netstack-igmp-addresses.patch",
+                "@@//patches/flexptp:0004-cmsis-os2-event-enqueue-from-timer-thread.patch"
+              ],
+              "remote": "https://github.com/epagris/flexPTP.git"
+            }
+          },
+          "embfmt": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:git.bzl%git_repository",
+            "attributes": {
+              "build_file": "@@//bazel:embfmt.BUILD",
+              "commit": "670a34997010e8a564053f35511ff9cf56fd7523",
+              "patch_args": [
+                "-p1"
+              ],
+              "patches": [
+                "@@//patches/embfmt:0001-formatting-fixes.patch"
+              ],
+              "remote": "https://github.com/epagris/embfmt.git"
+            }
+          },
+          "lwip": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:git.bzl%git_repository",
+            "attributes": {
+              "build_file_content": "# Pinned, not built. See docs/bazel_decisions.md.\nfilegroup(name = \"srcs\", srcs = glob([\"**\"], allow_empty = True), visibility = [\"//visibility:public\"])\n",
+              "commit": "3d896ba0a37ff3ce73270ca5e230707fe47f60e3",
+              "remote": "https://github.com/lwip-tcpip/lwip.git"
+            }
+          }
+        }
+      }
+    },
     "@@pybind11_bazel+//:internal_configure.bzl%internal_configure_extension": {
       "general": {
         "bzlTransitiveDigest": "NRXra7941UfmNUyIxnLt82V5hULluVGL2nBsijTl4j4=",

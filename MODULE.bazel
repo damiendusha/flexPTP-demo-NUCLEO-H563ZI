@@ -31,3 +31,22 @@ http_archive(
 )
 
 register_toolchains("//toolchain:arm_none_eabi_cortex_m33_toolchain")
+
+# ---------------------------------------------------------------------------
+# The vendored trees, from git (D2)
+# ---------------------------------------------------------------------------
+#
+# These were submodules. The pins are the commits the submodules pointed at, and the four
+# patches that used to be working-tree edits are attached to the fetch. See
+# //bazel/repositories.bzl.
+vendored = use_extension("//bazel:repositories.bzl", "vendored")
+use_repo(
+    vendored,
+    "cmsis_rtos_threadx",
+    "embfmt",
+    "flexptp",
+    "lwip",
+    "netxduo",
+    "stm32h5_hal",
+    "threadx",
+)
