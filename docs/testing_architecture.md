@@ -18,7 +18,7 @@ suite, because it converts an unknown into a false certainty.
 
 Companion documents: [architecture.md](architecture.md) (what is being tested) ·
 [port_review.md](port_review.md) (the finding log these tests are calibrated against) ·
-[`test/README.md`](../test/README.md) (host-suite mechanics) ·
+[`test/README.md`](../projects/flexptp_threadx_netx_demo/test/README.md) (host-suite mechanics) ·
 [`tools/hil/README.md`](../tools/hil/README.md) (hardware harness mechanics)
 
 ---

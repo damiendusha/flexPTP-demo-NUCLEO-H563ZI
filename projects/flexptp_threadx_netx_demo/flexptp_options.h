@@ -62,7 +62,7 @@ typedef struct ip4_addr {
 // Give a maskable printing implementation CLILOG(en,...)
 // Provide an SPRINTF-implementation SPRINTF(str,n,fmt,...)
 
-#include "cliutils/cli.h"
+#include "cli/cli.h"
 #include "embfmt/embformat.h"
 #include "standard_output/standard_output.h"
 
@@ -75,7 +75,7 @@ typedef struct ip4_addr {
 // - PTP_UPDATE_CLOCK(s,ns): function jumping clock by defined value (negative time value means jumping backward)
 // - PTP_SET_ADDEND(addend): function writing hardware clock addend register
 
-#include "Drivers/EthDrv/mac_drv.h"
+#include "eth/mac_drv.h"
 
 // Project-local hardware port: flexPTP ships no STM32H5 port.
 #include "ptp_port_stm32h563.h"

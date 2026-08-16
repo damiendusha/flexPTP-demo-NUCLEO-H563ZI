@@ -51,9 +51,9 @@ jobs:
       - name: Fail on first-party warnings
         run: |
           total=$(grep -c 'warning:' build.log || true)
-          first=$(grep 'warning:' build.log | grep -cE '/(Src|Inc|Drivers/EthDrv)/' || true)
+          first=$(grep 'warning:' build.log | grep -cE '/projects/' || true)
           echo "warnings: $total total, $first first-party"
-          grep 'warning:' build.log | grep -E '/(Src|Inc|Drivers/EthDrv)/' || true
+          grep 'warning:' build.log | grep -E '/projects/' || true
           test "$first" -eq 0
 
       # Independent of the build, and driven from build.sh's own SUBMODULE_PATCHES array so the
@@ -68,7 +68,7 @@ jobs:
       - name: Check the patches really were applied
         run: ./build.sh --check-patches
 
-      # The C++ rules in Src/cpp_support.cpp -- no dynamic allocation, no exceptions, no RTTI
+      # The C++ rules in the project's cpp_support.cpp -- no dynamic allocation, no exceptions, no RTTI
       # -- checked against the linked image rather than against the sources, for the same
       # reason `cpp_ctor` in tools/hil/ asks the running board about static constructors: a
       # rule about what the firmware contains is a question for the firmware (CX-07).
@@ -138,7 +138,7 @@ jobs:
   #   cppcheck         this job, for the code that ONLY exists cross-compiled --
   #                    eth_drv_netxduo.c, nsd_netxduo.c, main.c, cmds.c, serial_io.c.
   #
-  # Scoped deliberately: Src/, Inc/ and Drivers/EthDrv/ are this project's, and everything else
+  # Scoped deliberately: projects/ is this project's, and everything else
   # in the tree is vendored at a pinned commit. A finding in NetX Duo or the HAL is not this
   # project's to fix and would turn the gate into noise -- the same reasoning as the
   # first-party-warnings gate in the build job.
@@ -174,7 +174,7 @@ jobs:
             --suppress=missingIncludeSystem \
             --suppress=unusedFunction \
             --suppress=unmatchedSuppression \
-            Src/ Drivers/EthDrv/
+            projects/flexptp_threadx_netx_demo/
 
   host-tests:
     name: Host unit tests
@@ -194,7 +194,7 @@ jobs:
       # No board and no network needed: these are pure logic tests and run in well under a
       # second, which is why they gate every push while the hardware suite cannot.
       - name: Configure
-        run: cmake -S test -B build/test -DCMAKE_BUILD_TYPE=Debug
+        run: cmake -S projects/flexptp_threadx_netx_demo/test -B build/test -DCMAKE_BUILD_TYPE=Debug
 
       - name: Build
         run: cmake --build build/test -j

@@ -40,16 +40,16 @@ list(FILTER THREADX_PORT_SRC EXCLUDE REGEX "secure_stack")
 
 # The board-specific low-level init is OURS, not the port's: Eclipse keeps it in
 # example_build/ precisely because the clock, tick, vector symbol and end-of-RAM marker are
-# the integrator's to supply. See the header of Startup/tx_initialize_low_level.S for what
-# was changed and, importantly, what was deliberately left out (the fault handlers).
-list(APPEND THREADX_PORT_SRC ${CMAKE_CURRENT_LIST_DIR}/../Startup/tx_initialize_low_level.S)
+# the integrator's to supply. See the header of the project's startup/tx_initialize_low_level.S
+# for what was changed and, importantly, what was deliberately left out (the fault handlers).
+list(APPEND THREADX_PORT_SRC ${PROJECT_DIR}/startup/tx_initialize_low_level.S)
 
 add_library(threadx STATIC ${THREADX_COMMON_SRC} ${THREADX_PORT_SRC})
 
 target_include_directories(threadx PUBLIC
     ${THREADX_DIR}/common/inc
     ${THREADX_PORT_DIR}/inc
-    ${CMAKE_CURRENT_LIST_DIR}/../Inc          # tx_user.h
+    ${PROJECT_DIR}                            # tx_user.h
 )
 
 target_compile_definitions(threadx PUBLIC
@@ -76,14 +76,14 @@ target_compile_options(threadx PRIVATE
 # ---------------------------------------------------------------------------
 #
 # Ships a single .c and no header: cmsis_os2.h is ARM's, RTOS-agnostic, and this project
-# already carries it in Drivers/CMSIS/CMSIS_RTOS_V2/. The FreeRTOS-specific headers beside it
+# already carries it in third_party/CMSIS/CMSIS_RTOS_V2/. The FreeRTOS-specific headers beside it
 # (freertos_os2.h, freertos_mpool.h) are unused by this wrapper and are removed in S3.
 add_library(cmsis_rtos_tx STATIC ${CMSIS_RTOS_TX_DIR}/cmsis_os2.c)
 
 target_include_directories(cmsis_rtos_tx PUBLIC
     ${CMSIS_RTOS_TX_DIR}
-    ${CMAKE_CURRENT_LIST_DIR}/../Drivers/CMSIS/CMSIS_RTOS_V2   # cmsis_os2.h (ARM's, RTOS-agnostic)
-    ${CMAKE_CURRENT_LIST_DIR}/../Drivers/CMSIS/Include         # cmsis_compiler.h
+    ${CMAKE_SOURCE_DIR}/third_party/CMSIS/CMSIS_RTOS_V2        # cmsis_os2.h (ARM's, RTOS-agnostic)
+    ${CMAKE_SOURCE_DIR}/third_party/CMSIS/Include              # cmsis_compiler.h
 )
 
 target_compile_definitions(cmsis_rtos_tx PUBLIC

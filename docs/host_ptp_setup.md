@@ -18,7 +18,7 @@ How to set up a Linux host as a PTP grandmaster for this demo, using `linuxptp`.
 ## Two routes
 
 The board loads the `default` profile at startup (`FLEXPTP_INITIAL_PROFILE` in
-[`Src/main.c`](../Src/main.c)), but it will run either profile. Pick one and match both ends:
+[`Src/main.c`](../projects/flexptp_threadx_netx_demo/main.c)), but it will run either profile. Pick one and match both ends:
 
 | | **`default`** — plain IEEE 1588 | **`gPTP`** — 802.1AS |
 |---|---|---|

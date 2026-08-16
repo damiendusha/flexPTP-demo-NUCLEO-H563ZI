@@ -65,7 +65,7 @@ Below is a detailed evaluation of all 11 findings presented in `docs/reviews/fin
 - **Claim:** `ETHHW_UpdatePTPTime()` in `mac_drv.c` contains a broken subtract path `nsec = 1000000000 - (nsec >> 1)` and recommends deleting the function as dead code.
 - **Verdict:** **DISAGREE WITH THE CURRENT RELEVANCE (Outdated / Stale Finding).**
 - **Reasoning:**
-  In the current codebase at [Drivers/EthDrv/mac_drv.c:746-751](../../Drivers/EthDrv/mac_drv.c#L746-L751), `ETHHW_UpdatePTPTime()` **was already deleted** during Stage 14 / finding F41 resolution. The file explicitly contains this comment:
+  In the current codebase at [Drivers/EthDrv/mac_drv.c:746-751](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L746-L751), `ETHHW_UpdatePTPTime()` **was already deleted** during Stage 14 / finding F41 resolution. The file explicitly contains this comment:
   ```c
   // NOTE: there is no relative time-update helper here on purpose. TSUPDT-based adjustment
   // (MACSTSUR/MACSTNUR with the ADDSUB bit) is a documented feature of this MAC, but nothing in
@@ -123,16 +123,16 @@ The Gemini Pro 3.1 report failed to detect **all 10 active code defects and docu
 
 | Missed Finding | Defect / Vulnerability | Location | Severity | Impact |
 |---|---|---|---|---|
-| **[B1]** | **Recursive Mutex Deadlock** | [Src/cliutils/cli.c:461, 519](../../Src/cliutils/cli.c#L461) | **Critical** | `cli_register_command` acquires non-recursive `modifyMtx` and calls `cli_remove_command`, which blocks on the same mutex forever. |
-| **[B3]** | **Write-1-to-Clear Register Corruption** | [Drivers/EthDrv/mac_drv.c:522-540](../../Drivers/EthDrv/mac_drv.c#L522-L540) | **Critical** | `ETHHW_ISR` uses `SET_BIT` (`|=`) on `DMACSR`, clearing all active interrupt flags simultaneously and dropping concurrent TX/error interrupts. |
-| **[B2]** | **Unbounded Transmit Busy-Wait** | [Drivers/EthDrv/mac_drv.c:552](../../Drivers/EthDrv/mac_drv.c#L552) | **High** | `while (!OWNED)` spins 100% CPU in `tcpip_thread` if TX DMA hangs or ring is full. |
-| **[B4]** | **16-bit Counter Wrap Underflow** | [Drivers/EthDrv/mac_drv.c:473](../../Drivers/EthDrv/mac_drv.c#L473) | **High** | `(int32_t)txCntr - (int32_t)state->txCntAcked` yields $-65535$ on overflow, corrupting descriptor ordering. |
-| **[B5]** | **Escape Parser Stack Overflow** | [Src/cliutils/cli.c:314, 396](../../Src/cliutils/cli.c#L314) | **High** | `escParam[4]` on stack lacks array bounds check against `paramIdx`, corrupting stack frame on long sequences. |
-| **[B6]** | **String Out-of-Bounds Write** | [Src/standard_output/standard_output.c:16](../../Src/standard_output/standard_output.c#L16) | **High** | `insert_carriage_return` writes `str[2049]` into 2049-byte `lineBuf` when string is at full capacity. |
-| **[B7]** | **`MSG()` Thread-Safety Race** | [Src/standard_output/standard_output.c:12](../../Src/standard_output/standard_output.c#L12) | **High** | 6 threads format concurrently into a single un-locked `static char lineBuf`. |
-| **[B8] / [B9]** | **PHY Reset Loop & Null Pointer Dereference** | [Drivers/EthDrv/phy_drv/phy_common.c:441, 515](../../Drivers/EthDrv/phy_drv/phy_common.c#L441) | **High** | Unbounded `phy_soft_reset()` loop and unguarded `phyFetchLinkStatusCb()` call causing HardFault on unknown PHY. |
-| **[B10]** | **Newlib Heap vs FreeRTOS Heap Collision** | [stm32h563zitx_FLASH.ld:153-169](../../stm32h563zitx_FLASH.ld#L153-L169) | **High** | `._user_heap_stack` defines `_end` before `.FreeRTOS_sec`, causing `_sbrk()` to overlap `ucHeap`. |
-| **[D1]** | **Stale HCLK Clock Comment** | [Src/main.c:83-85](../../Src/main.c#L83-L85) | **Medium** | Comment claims PTP clock is HCLK, contradicting lines 61–64 of `main.c` and `ptp_clock.md`. |
+| **[B1]** | **Recursive Mutex Deadlock** | [Src/cliutils/cli.c:461, 519](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L461) | **Critical** | `cli_register_command` acquires non-recursive `modifyMtx` and calls `cli_remove_command`, which blocks on the same mutex forever. |
+| **[B3]** | **Write-1-to-Clear Register Corruption** | [Drivers/EthDrv/mac_drv.c:522-540](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L522-L540) | **Critical** | `ETHHW_ISR` uses `SET_BIT` (`|=`) on `DMACSR`, clearing all active interrupt flags simultaneously and dropping concurrent TX/error interrupts. |
+| **[B2]** | **Unbounded Transmit Busy-Wait** | [Drivers/EthDrv/mac_drv.c:552](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L552) | **High** | `while (!OWNED)` spins 100% CPU in `tcpip_thread` if TX DMA hangs or ring is full. |
+| **[B4]** | **16-bit Counter Wrap Underflow** | [Drivers/EthDrv/mac_drv.c:473](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L473) | **High** | `(int32_t)txCntr - (int32_t)state->txCntAcked` yields $-65535$ on overflow, corrupting descriptor ordering. |
+| **[B5]** | **Escape Parser Stack Overflow** | [Src/cliutils/cli.c:314, 396](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L314) | **High** | `escParam[4]` on stack lacks array bounds check against `paramIdx`, corrupting stack frame on long sequences. |
+| **[B6]** | **String Out-of-Bounds Write** | [Src/standard_output/standard_output.c:16](../../projects/flexptp_threadx_netx_demo/standard_output/standard_output.c#L16) | **High** | `insert_carriage_return` writes `str[2049]` into 2049-byte `lineBuf` when string is at full capacity. |
+| **[B7]** | **`MSG()` Thread-Safety Race** | [Src/standard_output/standard_output.c:12](../../projects/flexptp_threadx_netx_demo/standard_output/standard_output.c#L12) | **High** | 6 threads format concurrently into a single un-locked `static char lineBuf`. |
+| **[B8] / [B9]** | **PHY Reset Loop & Null Pointer Dereference** | [Drivers/EthDrv/phy_drv/phy_common.c:441, 515](../../projects/flexptp_threadx_netx_demo/eth/phy_drv/phy_common.c#L441) | **High** | Unbounded `phy_soft_reset()` loop and unguarded `phyFetchLinkStatusCb()` call causing HardFault on unknown PHY. |
+| **[B10]** | **Newlib Heap vs FreeRTOS Heap Collision** | [stm32h563zitx_FLASH.ld:153-169](../../projects/flexptp_threadx_netx_demo/startup/stm32h563zitx_FLASH.ld#L153-L169) | **High** | `._user_heap_stack` defines `_end` before `.FreeRTOS_sec`, causing `_sbrk()` to overlap `ucHeap`. |
+| **[D1]** | **Stale HCLK Clock Comment** | [Src/main.c:83-85](../../projects/flexptp_threadx_netx_demo/main.c#L83-L85) | **Medium** | Comment claims PTP clock is HCLK, contradicting lines 61–64 of `main.c` and `ptp_clock.md`. |
 | **[U1]** | **Silent Patch Loss on Clone** | `build.sh` / `patches/` | **High** | `build.sh` runs `git submodule update` which discards submodule working-tree patches without re-applying them. |
 
 ---

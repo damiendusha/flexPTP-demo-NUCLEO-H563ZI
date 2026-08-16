@@ -86,7 +86,7 @@ Four modules. `rules_cc` is unavoidable ([decisions §1.1](bazel_decisions.md#11
 `platforms` supplies the `@platforms//cpu:armv8-m` and `@platforms//os:none` constraints;
 `bazel_skylib` supplies `string_flag`/`bool_flag` for the configuration model in
 [§4](#4-platforms-and-the-configuration-model); `googletest` is the host test framework and is
-already pinned to v1.15.2 by [`test/CMakeLists.txt`](../test/CMakeLists.txt), so this is not a
+already pinned to v1.15.2 by [`test/CMakeLists.txt`](../projects/flexptp_threadx_netx_demo/test/CMakeLists.txt), so this is not a
 new dependency, only a new way of fetching the same commit.
 
 `MODULE.bazel.lock` is **checked in**. Without it the "pinned" versions above are still
@@ -443,7 +443,7 @@ toolchain(
 ```
 
 The host toolchain stays Bazel's autodetected local one, which is what the host tests want:
-[`test/CMakeLists.txt`](../test/CMakeLists.txt) compiles with the system gcc/g++ today.
+[`test/CMakeLists.txt`](../projects/flexptp_threadx_netx_demo/test/CMakeLists.txt) compiles with the system gcc/g++ today.
 
 ---
 
@@ -581,7 +581,7 @@ retrofitting later; see [§13.1](#131-it-strengthens-the-case-for-migrating-and-
 
 with `//P:tx_user` a `cc_library` exporting just that header. The flag makes the host test
 build able to point ThreadX at a different configuration without forking the `BUILD` file —
-though note that [`test/CMakeLists.txt`](../test/CMakeLists.txt) deliberately shares the
+though note that [`test/CMakeLists.txt`](../projects/flexptp_threadx_netx_demo/test/CMakeLists.txt) deliberately shares the
 *firmware's* `tx_user.h` ("sharing the header means a test that passes here is a test of the
 kernel the board actually runs"), so the default is what both use, and the flag exists for the
 pool sizes that genuinely do differ.
@@ -610,7 +610,7 @@ warnings gate meaningful.
 
 The `startup_stm32h563xx.s` fix imu needs in its `stm32cubeh5` genrule (`sed 's/\.thumb_set /\.set /g'`)
 is **not** needed here: this project has its own
-[`Startup/startup_stm32h563zitx.s`](../Startup/startup_stm32h563zitx.s), not CubeH5's.
+[its own `startup/startup_stm32h563zitx.s`](../projects/flexptp_threadx_netx_demo/startup/startup_stm32h563zitx.s), not CubeH5's.
 
 ### 5.2 First-party libraries
 
@@ -686,7 +686,7 @@ Two flags to carry over verbatim:
 ## 6. Host tests
 
 13 test binaries (plus `eth_model.cpp`, a support library), currently a **separate CMake root**
-([`test/CMakeLists.txt`](../test/CMakeLists.txt)) because the top-level CMake includes the ARM
+([`test/CMakeLists.txt`](../projects/flexptp_threadx_netx_demo/test/CMakeLists.txt)) because the top-level CMake includes the ARM
 toolchain file unconditionally and there is no flag that makes it produce a host binary.
 
 In Bazel this separation disappears: host and target are two platforms in one graph, and
@@ -724,7 +724,7 @@ binary to enumerate — the CMake build notes the same about `gtest_discover_tes
 Bazel reads the result.
 
 **The timeout gets 6× looser, and that should be said plainly.** CMake sets `TIMEOUT 10`, and
-[`test/CMakeLists.txt`](../test/CMakeLists.txt) records why it is not boilerplate: some defects
+[`test/CMakeLists.txt`](../projects/flexptp_threadx_netx_demo/test/CMakeLists.txt) records why it is not boilerplate: some defects
 these tests pin present as a *hang* rather than a wrong value — reintroducing F57 makes
 `ETHHW_ProcessTx()`'s drain loop spin forever. Bazel's `timeout` attribute has fixed buckets and
 its smallest, `short`, is **60 s**. So the fail-fast window goes from 10 s to 60 s. A hang still
@@ -773,7 +773,8 @@ an explicit acceptance check in phase 4.
 
 ### 7.3 The first-party warnings gate
 
-Today: grep `build.log` for `warning:` and filter to `/(Src|Inc|Drivers/EthDrv)/`.
+Today: grep `build.log` for `warning:` and filter to first-party paths (`/projects/` since
+phase 0; `/(Src|Inc|Drivers/EthDrv)/` before it).
 
 In Bazel this becomes structural — `-Wall -Wextra` is a feature enabled only on first-party
 targets, vendored targets keep `-w` — so the *scoping* no longer needs a regex. But making
@@ -1407,7 +1408,7 @@ Worth stating, because it is most of the plan:
 - **Host tests (D15).** The stack-agnostic ones (`ptp_units`, `eth_framer`, `eth_link_state`,
   `sysmem_bounds`, the ring tests) serve both projects unchanged. The RTOS ones do not, and
   **they must not simply be translated** — reading what
-  [`test/test_rtos_context.cpp`](../test/test_rtos_context.cpp) actually asserts, its four
+  [`test/test_rtos_context.cpp`](../projects/flexptp_threadx_netx_demo/test/test_rtos_context.cpp) actually asserts, its four
   context tests pin *two different rules from two different layers*:
 
   1. **The ISR half** — ST's CMSIS-RTOS2 wrapper rejecting a blocking call from interrupt

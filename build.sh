@@ -317,7 +317,7 @@ run_host_tests() {
     local test_build_dir="${BUILD_DIR}/test"
 
     info "Configuring host test suite (${test_build_dir})..."
-    cmake -S "${PROJECT_ROOT}/test" -B "${test_build_dir}"
+    cmake -S "${PROJECT_ROOT}/projects/flexptp_threadx_netx_demo/test" -B "${test_build_dir}"
 
     info "Building host tests using ${JOBS} parallel jobs..."
     cmake --build "${test_build_dir}" -j"${JOBS}"

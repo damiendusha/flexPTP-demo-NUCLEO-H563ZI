@@ -74,7 +74,7 @@ void MSG_init(void) {}
 /* serial_io_rx_callback() is __weak in the firmware and overridden by cli.c; nothing here
    drives the UART, so the declaration is all that is needed. */
 
-#include "cliutils/cli.c"
+#include "cli/cli.c"
 
 /* --- reaching the file-statics ------------------------------------------------------------ */
 

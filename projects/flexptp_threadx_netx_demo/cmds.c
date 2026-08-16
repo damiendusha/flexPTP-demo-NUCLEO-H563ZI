@@ -11,16 +11,16 @@
 
 #include <cmsis_os2.h>
 
-#include "cliutils/cli.h"
+#include "cli/cli.h"
 #include "standard_output/serial_io.h"
 #include "standard_output/standard_output.h"
 
 /* `ethinfo` reports the NetX Duo driver's counters, so the command exists only when that
    driver does. flexPTP's own state below is stack-agnostic and always reported. */
 #ifdef ETH_NETXDUO
-#include "Drivers/EthDrv/eth_drv_netxduo.h"
-#include "flexptp_nsd/nsd_netxduo.h"
-#include "flexptp_nsd/ptp_tx_timestamp.h"
+#include "eth/eth_drv_netxduo.h"
+#include "ptp/nsd_netxduo.h"
+#include "ptp/ptp_tx_timestamp.h"
 #endif
 #include "flexptp/clock_utils.h"
 #include "flexptp/event.h"

@@ -132,9 +132,9 @@ target_compile_options(H5HAL PUBLIC ${cpu_PARAMS})
 target_compile_definitions(H5HAL PUBLIC ${compile_DEFS})
 target_include_directories(H5HAL PUBLIC
     ${H5HAL_ROOT}/Inc
-    ${CMAKE_CURRENT_LIST_DIR}/../Inc
-    ${CMAKE_CURRENT_LIST_DIR}/CMSIS/Device/ST/STM32H5xx/Include
-    ${CMAKE_CURRENT_LIST_DIR}/CMSIS/Include
+    ${PROJECT_DIR}                                   # stm32h5xx_hal_conf.h
+    ${CMAKE_SOURCE_DIR}/third_party/CMSIS/Device/ST/STM32H5xx/Include
+    ${CMAKE_SOURCE_DIR}/third_party/CMSIS/Include
 )
 
 target_include_directories(
@@ -144,8 +144,6 @@ target_include_directories(
 
 target_link_libraries(${CMAKE_PROJECT_NAME} H5HAL)
 
-# Add CMSIS includes
-add_subdirectory(CMSIS)
-
-# Add custom Ethernet driver
-add_subdirectory(EthDrv)
+# CMSIS moved to third_party/ in phase 0 of the Bazel migration; the Ethernet driver moved
+# into the project, and is added by the project's own CMakeLists.txt.
+add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/CMSIS cmsis)

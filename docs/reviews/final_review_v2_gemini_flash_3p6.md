@@ -12,13 +12,13 @@
 This is an independent, fresh comprehensive audit (Pass 2 / v2) of the **flexPTP** IEEE 1588 / 802.1AS precision time protocol demonstration firmware ported to the STMicroelectronics **STM32H563ZI** microcontroller.
 
 The audit encompasses full static analysis and verification across every first-party translation unit, peripheral driver, memory layout configuration, build orchestration script, and operating system integration layer:
-- **Application & Initialization:** [`Src/main.c`](../../Src/main.c), [`Src/cmds.c`](../../Src/cmds.c), [`Src/syscall.c`](../../Src/syscall.c), [`Src/sysmem.c`](../../Src/sysmem.c), [`Src/system_stm32h5xx.c`](../../Src/system_stm32h5xx.c)
-- **Ethernet MAC & PHY Drivers:** [`Drivers/EthDrv/mac_drv.c`](../../Drivers/EthDrv/mac_drv.c), [`Drivers/EthDrv/mac_drv.h`](../../Drivers/EthDrv/mac_drv.h), [`Drivers/EthDrv/eth_drv_lwip.c`](../../Drivers/EthDrv/eth_drv_lwip.c), [`Drivers/EthDrv/eth_drv_etherlib.c`](../../Drivers/EthDrv/eth_drv_etherlib.c), [`Drivers/EthDrv/phy_drv/phy_common.c`](../../Drivers/EthDrv/phy_drv/phy_common.c), [`Drivers/EthDrv/phy_drv/phy_common.h`](../../Drivers/EthDrv/phy_drv/phy_common.h)
-- **PTP Hardware Subsystem:** [`Src/flexptp_port/ptp_port_stm32h563.c`](../../Src/flexptp_port/ptp_port_stm32h563.c), [`Src/flexptp_port/ptp_port_stm32h563.h`](../../Src/flexptp_port/ptp_port_stm32h563.h)
-- **I/O & Diagnostic Infrastructure:** [`Src/standard_output/serial_io.c`](../../Src/standard_output/serial_io.c), [`Src/standard_output/standard_output.c`](../../Src/standard_output/standard_output.c), [`Modules/blocking_io/blocking_fifo.c`](../../Modules/blocking_io/blocking_fifo.c), [`Modules/blocking_io/blocking_fifo.h`](../../Modules/blocking_io/blocking_fifo.h), [`Src/cliutils/cli.c`](../../Src/cliutils/cli.c), [`Src/cliutils/cli.h`](../../Src/cliutils/cli.h)
+- **Application & Initialization:** [`Src/main.c`](../../projects/flexptp_threadx_netx_demo/main.c), [`Src/cmds.c`](../../projects/flexptp_threadx_netx_demo/cmds.c), [`Src/syscall.c`](../../projects/flexptp_threadx_netx_demo/syscall.c), [`Src/sysmem.c`](../../projects/flexptp_threadx_netx_demo/sysmem.c), [`Src/system_stm32h5xx.c`](../../projects/flexptp_threadx_netx_demo/system_stm32h5xx.c)
+- **Ethernet MAC & PHY Drivers:** [`Drivers/EthDrv/mac_drv.c`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c), [`Drivers/EthDrv/mac_drv.h`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.h), [`Drivers/EthDrv/eth_drv_lwip.c`](../../Drivers/EthDrv/eth_drv_lwip.c), [`Drivers/EthDrv/eth_drv_etherlib.c`](../../Drivers/EthDrv/eth_drv_etherlib.c), [`Drivers/EthDrv/phy_drv/phy_common.c`](../../projects/flexptp_threadx_netx_demo/eth/phy_drv/phy_common.c), [`Drivers/EthDrv/phy_drv/phy_common.h`](../../projects/flexptp_threadx_netx_demo/eth/phy_drv/phy_common.h)
+- **PTP Hardware Subsystem:** [`Src/flexptp_port/ptp_port_stm32h563.c`](../../projects/flexptp_threadx_netx_demo/ptp/ptp_port_stm32h563.c), [`Src/flexptp_port/ptp_port_stm32h563.h`](../../projects/flexptp_threadx_netx_demo/ptp/ptp_port_stm32h563.h)
+- **I/O & Diagnostic Infrastructure:** [`Src/standard_output/serial_io.c`](../../projects/flexptp_threadx_netx_demo/standard_output/serial_io.c), [`Src/standard_output/standard_output.c`](../../projects/flexptp_threadx_netx_demo/standard_output/standard_output.c), [`Modules/blocking_io/blocking_fifo.c`](../../projects/flexptp_threadx_netx_demo/blocking_io/blocking_fifo.c), [`Modules/blocking_io/blocking_fifo.h`](../../projects/flexptp_threadx_netx_demo/blocking_io/blocking_fifo.h), [`Src/cliutils/cli.c`](../../projects/flexptp_threadx_netx_demo/cli/cli.c), [`Src/cliutils/cli.h`](../../projects/flexptp_threadx_netx_demo/cli/cli.h)
 - **Network Interface Integration:** [`Src/ethernet/ethernet_lwip.c`](../../Src/ethernet/ethernet_lwip.c), [`Src/ethernet/ethernet_etherlib.c`](../../Src/ethernet/ethernet_etherlib.c)
-- **Configuration & Headers:** [`Inc/FreeRTOSConfig.h`](../../Inc/FreeRTOSConfig.h), [`Inc/lwipopts.h`](../../Inc/lwipopts.h), [`Inc/flexptp_options.h`](../../Inc/flexptp_options.h), [`Inc/etherlib_options.h`](../../Inc/etherlib_options.h), [`Inc/stm32h5xx_hal_conf.h`](../../Inc/stm32h5xx_hal_conf.h), [`Modules/lwip_port/arch/cc.h`](../../Modules/lwip_port/arch/cc.h)
-- **Linker & Build Orchestration:** [`stm32h563zitx_FLASH.ld`](../../stm32h563zitx_FLASH.ld), [`CMakeLists.txt`](../../CMakeLists.txt), [`build.sh`](../../build.sh), [`cmake/gcc-arm-none-eabi.cmake`](../../cmake/gcc-arm-none-eabi.cmake), [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)
+- **Configuration & Headers:** [`Inc/FreeRTOSConfig.h`](../../Inc/FreeRTOSConfig.h), [`Inc/lwipopts.h`](../../Inc/lwipopts.h), [`Inc/flexptp_options.h`](../../projects/flexptp_threadx_netx_demo/flexptp_options.h), [`Inc/etherlib_options.h`](../../Inc/etherlib_options.h), [`Inc/stm32h5xx_hal_conf.h`](../../projects/flexptp_threadx_netx_demo/stm32h5xx_hal_conf.h), [`Modules/lwip_port/arch/cc.h`](../../Modules/lwip_port/arch/cc.h)
+- **Linker & Build Orchestration:** [`stm32h563zitx_FLASH.ld`](../../projects/flexptp_threadx_netx_demo/startup/stm32h563zitx_FLASH.ld), [`CMakeLists.txt`](../../CMakeLists.txt), [`build.sh`](../../build.sh), [`cmake/gcc-arm-none-eabi.cmake`](../../cmake/gcc-arm-none-eabi.cmake), [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)
 
 ### Summary of Build & Validation Checks
 
@@ -39,7 +39,7 @@ All 26 remediation items from the initial review cycles (spanning unbounded hard
 
 1. **Bounded Hardware Polling:** `ETHHW_WaitBitsClear()` replaces all infinite while-loops across MAC reset, MDIO reads/writes, PTP initialization, addend updates, and PPS pulse train control with deterministic spin timeouts.
 2. **`inFlight` Descriptor Hazard Resolution:** `ETHHW_DescExt.inFlight` guarantees that descriptors queued to `rx_thread` are not re-delivered by subsequent RX interrupts while waiting for thread-level consumption.
-3. **FreeRTOS Heap Protection:** The linker script [`stm32h563zitx_FLASH.ld`](../../stm32h563zitx_FLASH.ld) explicitly places `.FreeRTOS_sec` prior to `._user_heap_stack`, preventing newlib `_sbrk()` from advancing into `ucHeap`.
+3. **FreeRTOS Heap Protection:** The linker script [`stm32h563zitx_FLASH.ld`](../../projects/flexptp_threadx_netx_demo/startup/stm32h563zitx_FLASH.ld) explicitly places `.FreeRTOS_sec` prior to `._user_heap_stack`, preventing newlib `_sbrk()` from advancing into `ucHeap`.
 4. **Hardware Fault Diagnostic Handlers:** Naked assembly trampolines for `HardFault`, `MemManage`, `BusFault`, and `UsageFault` extract exception stack frames, decode CFSR/HFSR/BFAR/MMFAR, and write fatal crash dumps via polled non-blocking UART before halting.
 5. **Memory Layout Static Assertions:** `_Static_assert` enforces that `ETHHW_State` immediately precedes `DMARxDscrTab` with zero padding, guaranteeing that `ETHHW_GetState()` pointer arithmetic is structurally sound at compile time.
 6. **Thread Priority Rebalancing:** The `rx` thread runs at `osPriorityAboveNormal` (32), below `tcpip_thread` (40) but above CLI/logging threads (24), preventing console bursts from starving Ethernet descriptor recycling.
@@ -79,7 +79,7 @@ LOW       N16   CI/Workflow      GitHub Actions CI pipeline lacks pipefail (fail
 
 #### N1 — `BFifo` Full vs Empty Ambiguity Causes Complete Diagnostic Blackout
 
-- **Locations:** [`Modules/blocking_io/blocking_fifo.c:26-40`](../../Modules/blocking_io/blocking_fifo.c#L26), [`Modules/blocking_io/blocking_fifo.c:42-95`](../../Modules/blocking_io/blocking_fifo.c#L42)
+- **Locations:** [`Modules/blocking_io/blocking_fifo.c:26-40`](../../projects/flexptp_threadx_netx_demo/blocking_io/blocking_fifo.c#L26), [`Modules/blocking_io/blocking_fifo.c:42-95`](../../projects/flexptp_threadx_netx_demo/blocking_io/blocking_fifo.c#L42)
 - **Impact:** Complete loss of queued console diagnostics; persistent CPU spinning in serial thread; silent overwrite of backlog data.
 
 ##### Defect Analysis
@@ -140,11 +140,11 @@ uint32_t bfifo_get_free(const BFifo *fifo) {
 
 #### N2 — TX Descriptor Ownership Wait Loop is Completely Hoisted/Eliminated at `-O2`
 
-- **Locations:** [`Drivers/EthDrv/mac_drv.c:596-607`](../../Drivers/EthDrv/mac_drv.c#L596), [`Drivers/EthDrv/mac_drv.h:29-32`](../../Drivers/EthDrv/mac_drv.h#L29)
+- **Locations:** [`Drivers/EthDrv/mac_drv.c:596-607`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L596), [`Drivers/EthDrv/mac_drv.h:29-32`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.h#L29)
 - **Impact:** High transmit packet drop rate under load when compiled with `-O2`, `-O3`, or `RelWithDebInfo`.
 
 ##### Defect Analysis
-In [`Drivers/EthDrv/mac_drv.c`](../../Drivers/EthDrv/mac_drv.c), `ETHHW_Transmit()` polls descriptor ownership using a spin loop:
+In [`Drivers/EthDrv/mac_drv.c`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c), `ETHHW_Transmit()` polls descriptor ownership using a spin loop:
 ```c
 bool descFree = false;
 for (uint32_t i = 0; i < ETHHW_HW_TIMEOUT_SPINS; i++) {
@@ -154,7 +154,7 @@ for (uint32_t i = 0; i < ETHHW_HW_TIMEOUT_SPINS; i++) {
     }
 }
 ```
-However, in [`Drivers/EthDrv/mac_drv.h`](../../Drivers/EthDrv/mac_drv.h), `ETHHW_Desc` is defined with non-volatile members:
+However, in [`Drivers/EthDrv/mac_drv.h`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.h), `ETHHW_Desc` is defined with non-volatile members:
 ```c
 typedef struct {
     uint32_t DES0, DES1, DES2, DES3;
@@ -171,7 +171,7 @@ Disassembly of `ETHHW_Transmit` compiled at `-O2` confirms this:
 The 100,000-iteration retry wait is entirely absent. If the DMA has not released the descriptor at the exact nanosecond `ETHHW_Transmit()` is called, the frame is dropped immediately.
 
 ##### Remediation Plan
-Qualify hardware-accessed descriptor fields with `volatile` in [`Drivers/EthDrv/mac_drv.h`](../../Drivers/EthDrv/mac_drv.h):
+Qualify hardware-accessed descriptor fields with `volatile` in [`Drivers/EthDrv/mac_drv.h`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.h):
 ```c
 typedef struct {
     volatile uint32_t DES0, DES1, DES2, DES3;
@@ -182,7 +182,7 @@ typedef struct {
 
 #### N3 — Unrecovered Ethernet DMA Suspension on RX Buffer Exhaustion (`DMACSR.RBU`)
 
-- **Locations:** [`Drivers/EthDrv/mac_drv.c:547-579`](../../Drivers/EthDrv/mac_drv.c#L547), [`Drivers/EthDrv/mac_drv.c:253-265`](../../Drivers/EthDrv/mac_drv.c#L253), [`Drivers/EthDrv/mac_drv.c:176`](../../Drivers/EthDrv/mac_drv.c#L176)
+- **Locations:** [`Drivers/EthDrv/mac_drv.c:547-579`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L547), [`Drivers/EthDrv/mac_drv.c:253-265`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L253), [`Drivers/EthDrv/mac_drv.c:176`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L176)
 - **Impact:** Permanent loss of all incoming Ethernet traffic following a momentary burst or RX thread delay.
 
 ##### Defect Analysis
@@ -224,11 +224,11 @@ void ETHHW_RestoreRXDesc(ETHHW_DescFull *bd) {
 
 #### N4 — Recognized PHY Vendor with Unlisted Model Triggers Boot HardFault
 
-- **Locations:** [`Drivers/EthDrv/phy_drv/phy_common.c:21`](../../Drivers/EthDrv/phy_drv/phy_common.c#L21), [`Drivers/EthDrv/phy_drv/phy_common.c:382-451`](../../Drivers/EthDrv/phy_drv/phy_common.c#L382)
+- **Locations:** [`Drivers/EthDrv/phy_drv/phy_common.c:21`](../../projects/flexptp_threadx_netx_demo/eth/phy_drv/phy_common.c#L21), [`Drivers/EthDrv/phy_drv/phy_common.c:382-451`](../../projects/flexptp_threadx_netx_demo/eth/phy_drv/phy_common.c#L382)
 - **Impact:** Immediate HardFault crash during boot on hardware revisions featuring alternate PHY models from supported vendors.
 
 ##### Defect Analysis
-In [`Drivers/EthDrv/phy_drv/phy_common.c`](../../Drivers/EthDrv/phy_drv/phy_common.c):
+In [`Drivers/EthDrv/phy_drv/phy_common.c`](../../projects/flexptp_threadx_netx_demo/eth/phy_drv/phy_common.c):
 ```c
 static const char *phyName = NULL;
 ...
@@ -262,7 +262,7 @@ and ensure `phy_populate_handlers()` handles unmatched models safely.
 
 #### N5 — lwIP Assertions (`LWIP_PLATFORM_ASSERT`) Are Silent No-Ops and Drag ~9 KB Dead Code
 
-- **Locations:** [`Modules/lwip_port/arch/cc.h:83`](../../Modules/lwip_port/arch/cc.h#L83), [`Src/syscall.c:35, 80-90`](../../Src/syscall.c#L35), [`Inc/lwipopts.h:48-62`](../../Inc/lwipopts.h#L48)
+- **Locations:** [`Modules/lwip_port/arch/cc.h:83`](../../Modules/lwip_port/arch/cc.h#L83), [`Src/syscall.c:35, 80-90`](../../projects/flexptp_threadx_netx_demo/syscall.c#L35), [`Inc/lwipopts.h:48-62`](../../Inc/lwipopts.h#L48)
 - **Impact:** Core protocol invariant checks (e.g. `LWIP_ASSERT_CORE_LOCKED()`) fail silently; ~9 KB of Flash wasted on non-functional floating-point printf libraries.
 
 ##### Defect Analysis
@@ -272,7 +272,7 @@ and ensure `phy_populate_handlers()` handles unmatched models safely.
                                      x, __LINE__, __FILE__); } while(0)
 ```
 1. `printf` maps through newlib libc to `_write()`, which calls `__io_putchar()`.
-2. `__io_putchar()` is declared `__attribute__((weak))` in [`Src/syscall.c`](../../Src/syscall.c) and is **never implemented**. The linker resolves the weak symbol to `0x0`, causing `_write` to drop all characters silently.
+2. `__io_putchar()` is declared `__attribute__((weak))` in [`Src/syscall.c`](../../projects/flexptp_threadx_netx_demo/syscall.c) and is **never implemented**. The linker resolves the weak symbol to `0x0`, causing `_write` to drop all characters silently.
 3. `LWIP_PLATFORM_ASSERT` contains no `while(1)` or `abort()`. When an assertion fails, execution continues unchecked into corrupted memory or un-locked states.
 4. Calling `printf` forces the linker to include newlib's `_vfprintf_r` formatting engine, adding ~9 KB of dead code to Flash.
 
@@ -291,7 +291,7 @@ Redirect `LWIP_PLATFORM_ASSERT` to `serial_io_panic_write()` and halt:
 
 #### N6 — Contradictory and Unsafe ISR Logging Contract Between Modules
 
-- **Locations:** [`Src/standard_output/standard_output.c:33-46`](../../Src/standard_output/standard_output.c#L33), [`Src/standard_output/serial_io.c:120-131`](../../Src/standard_output/serial_io.c#L120), [`Drivers/EthDrv/mac_drv.c:9-17`](../../Drivers/EthDrv/mac_drv.c#L9)
+- **Locations:** [`Src/standard_output/standard_output.c:33-46`](../../projects/flexptp_threadx_netx_demo/standard_output/standard_output.c#L33), [`Src/standard_output/serial_io.c:120-131`](../../projects/flexptp_threadx_netx_demo/standard_output/serial_io.c#L120), [`Drivers/EthDrv/mac_drv.c:9-17`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L9)
 - **Impact:** System hang inside ISR if diagnostic output is attempted during high console FIFO utilization.
 
 ##### Defect Analysis
@@ -314,7 +314,7 @@ In `serial_io_write()`, check execution context: if inside an ISR (`__get_IPSR()
 
 #### N7 — `bfifo_pop()` Releases Write Semaphore During Active Concurrent Push
 
-- **Locations:** [`Modules/blocking_io/blocking_fifo.c:142`](../../Modules/blocking_io/blocking_fifo.c#L142), [`Modules/blocking_io/blocking_fifo.c:49`](../../Modules/blocking_io/blocking_fifo.c#L49)
+- **Locations:** [`Modules/blocking_io/blocking_fifo.c:142`](../../projects/flexptp_threadx_netx_demo/blocking_io/blocking_fifo.c#L142), [`Modules/blocking_io/blocking_fifo.c:49`](../../projects/flexptp_threadx_netx_demo/blocking_io/blocking_fifo.c#L49)
 - **Impact:** Memory corruption and interleaved output when multiple producers push to `BFifo`.
 
 ##### Defect Analysis
@@ -332,7 +332,7 @@ Separate buffer space signaling from mutual exclusion: use a dedicated `osMutexI
 
 #### N8 — CLI Tokenizer Buffer Overflow & Multi-Threaded Re-Entrancy Hazard
 
-- **Locations:** [`Src/cliutils/cli.c:78-106`](../../Src/cliutils/cli.c#L78), [`Src/cliutils/cli.c:453`](../../Src/cliutils/cli.c#L453)
+- **Locations:** [`Src/cliutils/cli.c:78-106`](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L78), [`Src/cliutils/cli.c:453`](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L453)
 - **Impact:** 1-byte BSS corruption; CLI command parsing corruption when background threads register commands.
 
 ##### Defect Analysis
@@ -346,7 +346,7 @@ Make `pLineCpy` a local stack buffer (`char pLineCpy[CLI_LINEBUF_LENGTH + 1]`) a
 
 #### N9 — Missing Memory Barriers in Ethernet DMA Descriptor Handoff
 
-- **Locations:** [`Drivers/EthDrv/mac_drv.c:258-264`](../../Drivers/EthDrv/mac_drv.c#L258), [`Drivers/EthDrv/mac_drv.c:632-640`](../../Drivers/EthDrv/mac_drv.c#L632)
+- **Locations:** [`Drivers/EthDrv/mac_drv.c:258-264`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L258), [`Drivers/EthDrv/mac_drv.c:632-640`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L632)
 - **Impact:** Potential DMA fetch of stale descriptor data on Cortex-M33 out-of-order write buffers.
 
 ##### Defect Analysis
@@ -362,8 +362,8 @@ Insert `__DMB()` before transferring descriptor ownership (`DES3 = OWN`) and `__
 
 - **N10 — EtherLib RX Descriptor Leak on Allocation Failure:** [`Drivers/EthDrv/eth_drv_etherlib.c:134`](../../Drivers/EthDrv/eth_drv_etherlib.c#L134) returns `0` instead of `ETHHW_RET_RX_PROCESSED` when `dynmem_alloc()` fails. This leaves `inFlight = 1`, permanently removing the descriptor from the ring.
 - **N11 — Unbounded Stack Allocation in EtherLib UDP Callback:** [`Src/ethernet/ethernet_etherlib.c:7-13`](../../Src/ethernet/ethernet_etherlib.c#L7) allocates `char str[packet->payloadSize + 1]` on the stack, exposing the task to potential stack exhaustion on large frames.
-- **N12 — Unterminated `strncpy` in CLI Parsing:** [`Src/cliutils/cli.c:94, 102, 506`](../../Src/cliutils/cli.c#L94) does not ensure null-termination when source strings equal or exceed maximum token length.
-- **N13 — Ethernet MAC Frame Check Sequence (FCS) Forwarded in Payload:** [`Drivers/EthDrv/mac_drv.c:143`](../../Drivers/EthDrv/mac_drv.c#L143) leaves `ETH_MACCR_CST` and `ETH_MACCR_ACS` clear, causing the MAC to append 4-byte CRC trailers to received packet buffers.
+- **N12 — Unterminated `strncpy` in CLI Parsing:** [`Src/cliutils/cli.c:94, 102, 506`](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L94) does not ensure null-termination when source strings equal or exceed maximum token length.
+- **N13 — Ethernet MAC Frame Check Sequence (FCS) Forwarded in Payload:** [`Drivers/EthDrv/mac_drv.c:143`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L143) leaves `ETH_MACCR_CST` and `ETH_MACCR_ACS` clear, causing the MAC to append 4-byte CRC trailers to received packet buffers.
 - **N14 — Transmit Drop Masked from lwIP Stack:** [`Drivers/EthDrv/eth_drv_lwip.c:290-308`](../../Drivers/EthDrv/eth_drv_lwip.c#L290) unconditionally returns `ERR_OK` even when `ETHHW_Transmit()` drops a frame due to descriptor exhaustion.
 - **N15 — Overridden `LWIP_PROVIDE_ERRNO` Definition:** [`Inc/lwipopts.h:239`](../../Inc/lwipopts.h#L239) undefines `LWIP_PROVIDE_ERRNO`, but [`Modules/lwip_port/arch/cc.h:42`](../../Modules/lwip_port/arch/cc.h#L42) redefines it unconditionally.
 - **N16 — GitHub Actions CI Missing `pipefail`:** [`.github/workflows/ci.yml:35`](../../.github/workflows/ci.yml#L35) pipes build output to `tee` without `set -o pipefail`, allowing build failures to report successful CI runs.
@@ -406,11 +406,11 @@ Stack usage measured via `-fstack-usage` and high-water mark tracking:
 
 The following subsystems were reviewed in detail and confirmed to be correctly implemented:
 
-- [x] **PTP Clock Tree Derivation:** PLL1Q divider configured to produce exact 250 MHz `pll1_q_ck` clock; `__HAL_RCC_PLL1_CLKOUT_ENABLE(RCC_PLL1_DIVQ)` explicitly un-gates clock output ([`Src/main.c:83`](../../Src/main.c#L83)).
-- [x] **PTP Subsecond Increment & Addend:** `MACSSIR` (5 ns) programmed prior to `MACTSAR` (`0xCCCCCCCC`), complying with RM0481 hardware sequencing ([`Src/flexptp_port/ptp_port_stm32h563.c:122-128`](../../Src/flexptp_port/ptp_port_stm32h563.c#L122)).
-- [x] **Atomic Timestamp Register Latch:** `ptphw_gettime()` re-reads `MACSTSR` to detect and discard second-rollover tears across nanosecond reads ([`Src/flexptp_port/ptp_port_stm32h563.c:157-162`](../../Src/flexptp_port/ptp_port_stm32h563.c#L157)).
-- [x] **PTP Snapshot Filter Selection:** `SNAPTYPSEL = 0b01` with `TSEVNTENA`/`TSMSTRENA` cleared enables simultaneous timestamping of both E2E (`Delay_Req`) and P2P (`Pdelay_Req`/`Pdelay_Resp`) frames ([`Drivers/EthDrv/mac_drv.c:766-775`](../../Drivers/EthDrv/mac_drv.c#L766)).
-- [x] **Modular Transmit Sequence Tracking:** 16-bit modular difference arithmetic in `ETHHW_ProcessTx()` handles sequence counter rollover seamlessly ([`Drivers/EthDrv/mac_drv.c:490`](../../Drivers/EthDrv/mac_drv.c#L490)).
+- [x] **PTP Clock Tree Derivation:** PLL1Q divider configured to produce exact 250 MHz `pll1_q_ck` clock; `__HAL_RCC_PLL1_CLKOUT_ENABLE(RCC_PLL1_DIVQ)` explicitly un-gates clock output ([`Src/main.c:83`](../../projects/flexptp_threadx_netx_demo/main.c#L83)).
+- [x] **PTP Subsecond Increment & Addend:** `MACSSIR` (5 ns) programmed prior to `MACTSAR` (`0xCCCCCCCC`), complying with RM0481 hardware sequencing ([`Src/flexptp_port/ptp_port_stm32h563.c:122-128`](../../projects/flexptp_threadx_netx_demo/ptp/ptp_port_stm32h563.c#L122)).
+- [x] **Atomic Timestamp Register Latch:** `ptphw_gettime()` re-reads `MACSTSR` to detect and discard second-rollover tears across nanosecond reads ([`Src/flexptp_port/ptp_port_stm32h563.c:157-162`](../../projects/flexptp_threadx_netx_demo/ptp/ptp_port_stm32h563.c#L157)).
+- [x] **PTP Snapshot Filter Selection:** `SNAPTYPSEL = 0b01` with `TSEVNTENA`/`TSMSTRENA` cleared enables simultaneous timestamping of both E2E (`Delay_Req`) and P2P (`Pdelay_Req`/`Pdelay_Resp`) frames ([`Drivers/EthDrv/mac_drv.c:766-775`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L766)).
+- [x] **Modular Transmit Sequence Tracking:** 16-bit modular difference arithmetic in `ETHHW_ProcessTx()` handles sequence counter rollover seamlessly ([`Drivers/EthDrv/mac_drv.c:490`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L490)).
 - [x] **Thread-Safe DHCP Polling:** `check_dhcp_state()` holds `LOCK_TCPIP_CORE()` across lwIP state accesses and buffers strings before printing outside the lock ([`Src/ethernet/ethernet_lwip.c:38-48`](../../Src/ethernet/ethernet_lwip.c#L38)).
 - [x] **Interrupt Priorities:** All ISRs making FreeRTOS system calls (`ETH_IRQn` @ 7, `USART3_IRQn` @ 12, `GPDMA1_Channel0_IRQn` @ 12) operate within the legal syscall window (`configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY` = 5).
 
@@ -450,15 +450,15 @@ graph TD
 ### Prioritized Sequence
 
 1. **Immediate Remediation (Pre-Deployment):**
-   - **N1 & N7:** Rewrite [`Modules/blocking_io/blocking_fifo.c`](../../Modules/blocking_io/blocking_fifo.c) with unambiguous monotonic index math and a dedicated writer mutex.
-   - **N2 & N9:** Add `volatile` qualifiers to `ETHHW_Desc` in [`Drivers/EthDrv/mac_drv.h`](../../Drivers/EthDrv/mac_drv.h) and insert `__DMB()` / `__DSB()` memory barriers in [`Drivers/EthDrv/mac_drv.c`](../../Drivers/EthDrv/mac_drv.c).
+   - **N1 & N7:** Rewrite [`Modules/blocking_io/blocking_fifo.c`](../../projects/flexptp_threadx_netx_demo/blocking_io/blocking_fifo.c) with unambiguous monotonic index math and a dedicated writer mutex.
+   - **N2 & N9:** Add `volatile` qualifiers to `ETHHW_Desc` in [`Drivers/EthDrv/mac_drv.h`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.h) and insert `__DMB()` / `__DSB()` memory barriers in [`Drivers/EthDrv/mac_drv.c`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c).
    - **N3:** Add `WRITE_REG(ETH->DMACRDTPR, 0)` to `ETHHW_RestoreRXDesc()` and log `DMACSR_AIS` flags in `ETHHW_ISR()`.
-   - **N4:** Initialize `phyName = ""` in [`Drivers/EthDrv/phy_drv/phy_common.c`](../../Drivers/EthDrv/phy_drv/phy_common.c).
+   - **N4:** Initialize `phyName = ""` in [`Drivers/EthDrv/phy_drv/phy_common.c`](../../projects/flexptp_threadx_netx_demo/eth/phy_drv/phy_common.c).
 
 2. **Diagnostics & Robustness Hardening:**
    - **N5:** Redefine `LWIP_PLATFORM_ASSERT` in [`Modules/lwip_port/arch/cc.h`](../../Modules/lwip_port/arch/cc.h) to call `serial_io_panic_write()` and halt, eliminating ~9 KB of dead `printf` bloat.
    - **N6:** Enforce non-blocking panic writes for any logging attempted from ISR context.
-   - **N8:** Expand `pLineCpy` buffer size in [`Src/cliutils/cli.c`](../../Src/cliutils/cli.c) and switch to `strtok_r()`.
+   - **N8:** Expand `pLineCpy` buffer size in [`Src/cliutils/cli.c`](../../projects/flexptp_threadx_netx_demo/cli/cli.c) and switch to `strtok_r()`.
 
 3. **Infrastructure & Build Polish:**
    - **N16:** Add `set -o pipefail` to [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml).

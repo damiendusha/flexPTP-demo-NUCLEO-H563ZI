@@ -35,8 +35,8 @@
 #include "eth_link_state.h"
 #include "mac_drv.h"
 #include "phy_drv/phy_common.h"
-#include "flexptp_nsd/ptp_tx_registry.h"
-#include "flexptp_nsd/ptp_tx_timestamp.h"
+#include "ptp/ptp_tx_registry.h"
+#include "ptp/ptp_tx_timestamp.h"
 #include "standard_output/standard_output.h"
 
 /* --- Descriptors and buffers ----------------------------------------------------------- */

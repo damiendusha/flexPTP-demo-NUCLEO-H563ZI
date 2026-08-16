@@ -9,7 +9,7 @@
 #include "tx_api.h" // TX_THREAD and the stack-error notification, for the failure hooks
 
 
-#include "cliutils/cli.h"
+#include "cli/cli.h"
 #include "cmds.h"
 /* The stack-specific bring-up header. main.c itself is stack-agnostic -- it calls
    init_ethernet() and ethernet_poll_dhcp() and nothing else -- so the switch is a header
@@ -17,7 +17,7 @@
    before this it was an unconditional include and neither alternative configuration would even
    compile (AR-05). */
 #if !defined(ETH_NONE)
-#include "ethernet/ethernet_netxduo.h"
+#include "eth/ethernet_netxduo.h"
 #endif
 
 #include "flexptp/event.h"

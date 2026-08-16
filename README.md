@@ -328,7 +328,7 @@ ROOT
 ```
 
 > [!NOTE]
-> The flexPTP parameters are defined in the [flexptp_options.h](Inc/flexptp_options.h) header.
+> The flexPTP parameters are defined in the [flexptp_options.h](projects/flexptp_threadx_netx_demo/flexptp_options.h) header.
 
 Two submodules carry local changes, kept in [`patches/`](patches/) because the parent
 repository records only submodule commit pointers — **four patch files in total**:

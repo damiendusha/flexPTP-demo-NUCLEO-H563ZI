@@ -31,23 +31,29 @@ set(cpu_PARAMS
 # Set MCU type
 set(MCU_TYPE STM32H563xx)
 
+# The project this build produces. Phase 0 of the Bazel migration moved the first-party sources
+# under projects/<name>/ so that a second firmware can sit beside this one; see
+# docs/bazel_migration.md. Everything below refers to the project through this variable rather
+# than to the old top-level Src/, Inc/ and Startup/.
+set(PROJECT_DIR ${CMAKE_SOURCE_DIR}/projects/flexptp_threadx_netx_demo)
+
 # Sources
-# Only the startup file: main.c, syscall.c and sysmem.c are added by Src/CMakeLists.txt,
+# Only the startup file: main.c, syscall.c and sysmem.c are added by the project's
+# CMakeLists.txt,
 # and listing them in both places was a duplicate CMake happened to deduplicate.
 set(sources_SRCS
-    ${CMAKE_SOURCE_DIR}/Startup/startup_stm32h563zitx.s
+    ${PROJECT_DIR}/startup/startup_stm32h563zitx.s
 )
 
 # Include directories for all compilers
-set(include_DIRS 
-    ${CMAKE_SOURCE_DIR}/Inc
-    ${CMAKE_SOURCE_DIR}/Src
-    ${CMAKE_SOURCE_DIR}/Src/flexptp_port
+set(include_DIRS
+    ${PROJECT_DIR}
+    ${PROJECT_DIR}/ptp
     ${CMAKE_SOURCE_DIR})
 
 # Include directories for each compiler
 set(include_c_DIRS
-    ${CMAKE_SOURCE_DIR}/Inc
+    ${PROJECT_DIR}
 )
 set(include_cxx_DIRS)
 set(include_asm_DIRS)
@@ -67,7 +73,7 @@ set(link_LIBS)
 
 # Linker script
 set(linker_script_SRC
-    ${CMAKE_SOURCE_DIR}/stm32h563zitx_FLASH.ld
+    ${PROJECT_DIR}/startup/stm32h563zitx_FLASH.ld
 )
 
 # Compiler options
@@ -127,8 +133,8 @@ add_subdirectory(Drivers)
 # Add Modules
 add_subdirectory(Modules)
 
-# Add generic sources
-add_subdirectory(Src)
+# Add the project's own sources
+add_subdirectory(${PROJECT_DIR} project)
 
 # Add project symbols (macros)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE

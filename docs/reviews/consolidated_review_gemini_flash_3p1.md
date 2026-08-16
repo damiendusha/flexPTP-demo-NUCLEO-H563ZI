@@ -86,13 +86,13 @@ Where initial reviews differed in details, cross-reviews established a refined c
 ### 2.3 Areas Where Consensus Was NOT Reached (Disputes & Alternate Proposals)
 
 #### Dispute 1: Changing Default Startup Profile from `gPTP` to `default`
-- **Location:** [Src/main.c:27](../../Src/main.c#L27) (`FLEXPTP_INITIAL_PROFILE`)
+- **Location:** [Src/main.c:27](../../projects/flexptp_threadx_netx_demo/main.c#L27) (`FLEXPTP_INITIAL_PROFILE`)
 - **Flash 3.6 Position (`ACT-49`):** Recommend changing default to `"default"` (UDP/IPv4) because standard enterprise switches drop 802.1AS link-local multicast packets (`01:80:C2:00:00:0E`), causing immediate silent communication failure for new users.
 - **Opus 5.0 Position:** **Disagrees.** Argues that `gPTP` is a deliberate demonstration choice for industrial IEEE 802.1AS networks, prominently documented in `README.md` and the boot banner. Recommends leaving default as `gPTP` and improving runtime discoverability.
 - **Consensus Status:** **NO CONSENSUS (Maintainer Product Decision).** Flagged for project maintainer decision.
 
 #### Dispute 2: Libc `printf` Redirection vs. Dedicated Polled Panic Writer
-- **Location:** [Src/syscall.c:35](../../Src/syscall.c#L35)
+- **Location:** [Src/syscall.c:35](../../projects/flexptp_threadx_netx_demo/syscall.c#L35)
 - **Flash 3.6 Position (`ACT-51`):** Implement `__io_putchar` in `syscall.c` to route standard C library `printf`/`assert` output to `MSGchar()`.
 - **Opus 5.0 Position (`ACT-35`):** **Disagrees with `__io_putchar` redirection.** Points out that `__io_putchar` is unreferenced, `assert_param()` is compiled out, and FIFO-backed `MSGchar()` cannot function during FreeRTOS asserts, HardFaults, or stack overflows (where interrupts/scheduler are dead). Proposes instead implementing a **polled-UART panic writer (`panic_puts`)** directly writing `USART3->TDR`.
 - **Consensus Status:** **CONSENSUS REACHED ON REVISED PROPOSAL.** Dropped `__io_putchar` redirection in favor of the polled-UART panic handler (`ACT-35`).

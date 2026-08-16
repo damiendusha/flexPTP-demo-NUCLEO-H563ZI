@@ -20,7 +20,11 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(REPO_ROOT ${CMAKE_CURRENT_LIST_DIR}/..)
+# Phase 0 of the Bazel migration moved this suite under the project it tests, so there are now
+# two roots: PROJECT_ROOT for this firmware's own sources, REPO_ROOT for the vendored trees
+# that are still shared (the HAL and CMSIS headers, ThreadX, the CMSIS-RTOS2 wrapper).
+set(PROJECT_ROOT ${CMAKE_CURRENT_LIST_DIR}/..)
+set(REPO_ROOT ${CMAKE_CURRENT_LIST_DIR}/../../..)
 
 # ---------------------------------------------------------------------------
 # GoogleTest, pinned.
@@ -69,11 +73,11 @@ set(FIRST_PARTY_ANALYSIS -fanalyzer)
 # submodule automatically. Nothing is hand-copied.
 set(HOST_INCLUDES
     ${CMAKE_CURRENT_LIST_DIR}/host
-    ${REPO_ROOT}/Drivers/CMSIS/Device/ST/STM32H5xx/Include
+    ${REPO_ROOT}/third_party/CMSIS/Device/ST/STM32H5xx/Include
     ${REPO_ROOT}/Drivers/stm32h5xx-hal-driver/Inc
-    ${REPO_ROOT}/Inc
-    ${REPO_ROOT}/Src
-    ${REPO_ROOT}/Drivers/EthDrv
+    ${PROJECT_ROOT}
+    ${PROJECT_ROOT}
+    ${PROJECT_ROOT}/eth
     ${CMAKE_CURRENT_LIST_DIR}
 )
 
@@ -125,12 +129,12 @@ endfunction()
 # The NSD/driver logic units. They depend on nothing but stdint, which is the whole point of
 # extracting them -- no ThreadX, no NetX Duo, no fakes.
 add_library(ptp_units STATIC
-    ${REPO_ROOT}/Src/flexptp_nsd/ptp_tx_registry.cpp
-    ${REPO_ROOT}/Src/flexptp_nsd/ptp_ts_codec.cpp
-    ${REPO_ROOT}/Src/flexptp_nsd/ptp_endpoint.cpp
-    ${REPO_ROOT}/Src/flexptp_nsd/ptp_nsd_lifecycle.cpp
+    ${PROJECT_ROOT}/ptp/ptp_tx_registry.cpp
+    ${PROJECT_ROOT}/ptp/ptp_ts_codec.cpp
+    ${PROJECT_ROOT}/ptp/ptp_endpoint.cpp
+    ${PROJECT_ROOT}/ptp/ptp_nsd_lifecycle.cpp
 )
-target_include_directories(ptp_units PUBLIC ${REPO_ROOT}/Src/flexptp_nsd)
+target_include_directories(ptp_units PUBLIC ${PROJECT_ROOT}/ptp)
 target_compile_options(ptp_units PRIVATE -Wall -Wextra ${FIRST_PARTY_ANALYSIS})
 
 function(add_unit_test name)
@@ -147,12 +151,12 @@ add_unit_test(test_ptp_nsd_lifecycle)
 
 # The framing decisions lifted out of drv_send() (TS-04/CX-05). Depends on nothing, like the
 # NSD units, so it gets its own tiny library rather than joining ptp_units.
-add_library(eth_framer STATIC ${REPO_ROOT}/Drivers/EthDrv/eth_framer.cpp)
-target_include_directories(eth_framer PUBLIC ${REPO_ROOT}/Drivers/EthDrv)
+add_library(eth_framer STATIC ${PROJECT_ROOT}/eth/eth_framer.cpp)
+target_include_directories(eth_framer PUBLIC ${PROJECT_ROOT}/eth)
 target_compile_options(eth_framer PRIVATE -Wall -Wextra ${FIRST_PARTY_ANALYSIS})
 
-add_library(eth_link_state STATIC ${REPO_ROOT}/Drivers/EthDrv/eth_link_state.cpp)
-target_include_directories(eth_link_state PUBLIC ${REPO_ROOT}/Drivers/EthDrv)
+add_library(eth_link_state STATIC ${PROJECT_ROOT}/eth/eth_link_state.cpp)
+target_include_directories(eth_link_state PUBLIC ${PROJECT_ROOT}/eth)
 target_compile_options(eth_link_state PRIVATE -Wall -Wextra ${FIRST_PARTY_ANALYSIS})
 
 add_executable(test_eth_link_state test_eth_link_state.cpp)
@@ -169,7 +173,7 @@ gtest_discover_tests(test_eth_framer PROPERTIES TIMEOUT 10)
 # already provides via ptp_units' PUBLIC directories? It does not: ptp_units exports only
 # Src/flexptp_nsd. Point at Src/ explicitly.
 add_executable(test_sysmem_bounds test_sysmem_bounds.cpp)
-target_include_directories(test_sysmem_bounds PRIVATE ${REPO_ROOT}/Src)
+target_include_directories(test_sysmem_bounds PRIVATE ${PROJECT_ROOT})
 target_link_libraries(test_sysmem_bounds PRIVATE GTest::gtest_main)
 target_compile_options(test_sysmem_bounds PRIVATE -Wall -Wextra)
 gtest_discover_tests(test_sysmem_bounds PROPERTIES TIMEOUT 10)
@@ -206,7 +210,7 @@ if (EXISTS ${THREADX_DIR}/common/inc/tx_api.h)
     target_include_directories(host_threadx PUBLIC
         ${THREADX_DIR}/common/inc
         ${THREADX_DIR}/ports/linux/gnu/inc
-        ${REPO_ROOT}/Inc                       # the FIRMWARE's tx_user.h, deliberately
+        ${PROJECT_ROOT}                       # the FIRMWARE's tx_user.h, deliberately
     )
     # Inc/tx_user.h, not a host copy. The plan flagged a second configuration of the world as
     # a way for host and target to drift apart; sharing the header means a test that passes
@@ -231,7 +235,7 @@ if (EXISTS ${THREADX_DIR}/common/inc/tx_api.h)
     target_include_directories(host_cmsis_rtos PUBLIC
         ${CMAKE_CURRENT_LIST_DIR}/host
         ${REPO_ROOT}/Modules/cmsis_rtos_threadx
-        ${REPO_ROOT}/Drivers/CMSIS/CMSIS_RTOS_V2
+        ${REPO_ROOT}/third_party/CMSIS/CMSIS_RTOS_V2
     )
     # Pool sizes deliberately DIFFER from the firmware's.
     #
@@ -251,9 +255,9 @@ if (EXISTS ${THREADX_DIR}/common/inc/tx_api.h)
     # would be a fake of the thing under test (TS-01). Its own binary for the same reason
     # test_rtos_context is: it enters a kernel that never returns.
     add_executable(test_blocking_fifo test_blocking_fifo.cpp
-                   ${REPO_ROOT}/Modules/blocking_io/blocking_fifo.c)
+                   ${PROJECT_ROOT}/blocking_io/blocking_fifo.c)
     target_include_directories(test_blocking_fifo PRIVATE
-        ${REPO_ROOT}/Modules/blocking_io
+        ${PROJECT_ROOT}/blocking_io
         ${CMAKE_CURRENT_LIST_DIR}/host)          # cmsis_compiler.h: PRIMASK, __get_IPSR
     target_link_libraries(test_blocking_fifo PRIVATE host_cmsis_rtos GTest::gtest)
     target_compile_options(test_blocking_fifo PRIVATE -Wall -Wextra
@@ -265,11 +269,11 @@ if (EXISTS ${THREADX_DIR}/common/inc/tx_api.h)
     # the real ones -- only the console is faked, in cli_uut.c, which also exposes the
     # file-statics by including cli.c verbatim.
     add_executable(test_cli test_cli.cpp cli_uut.c
-                   ${REPO_ROOT}/Modules/blocking_io/blocking_fifo.c)
+                   ${PROJECT_ROOT}/blocking_io/blocking_fifo.c)
     target_include_directories(test_cli PRIVATE
-        ${REPO_ROOT}/Src
+        ${PROJECT_ROOT}
         ${REPO_ROOT}/Modules
-        ${REPO_ROOT}/Modules/blocking_io
+        ${PROJECT_ROOT}/blocking_io
         ${CMAKE_CURRENT_LIST_DIR}/host)
     target_link_libraries(test_cli PRIVATE host_cmsis_rtos GTest::gtest)
     target_compile_options(test_cli PRIVATE -Wall -Wextra -Wno-unused-parameter)

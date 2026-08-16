@@ -9,7 +9,7 @@
 # Nothing from ST's fork is used, including its nx_stm32_eth_driver.c: that driver is
 # HAL_ETH-based, which is exactly the abstraction this project bypassed to reach the DMA
 # descriptors that hardware timestamping needs. The driver here is written against
-# Drivers/EthDrv/mac_drv.c instead, from S5a.
+# the project's eth/mac_drv.c instead, from S5a.
 
 set(NETXDUO_DIR ${CMAKE_CURRENT_LIST_DIR}/../Modules/netxduo)
 set(NETXDUO_PORT_DIR ${NETXDUO_DIR}/ports/cortex_m33/gnu)
@@ -35,7 +35,7 @@ target_include_directories(netxduo PUBLIC
     ${NETXDUO_DIR}/common/inc
     ${NETXDUO_DIR}/addons/dhcp
     ${NETXDUO_PORT_DIR}/inc
-    ${CMAKE_CURRENT_LIST_DIR}/../Inc          # nx_user.h
+    ${PROJECT_DIR}                            # nx_user.h
 )
 
 target_compile_definitions(netxduo PUBLIC

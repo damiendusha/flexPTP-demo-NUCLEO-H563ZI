@@ -13,7 +13,6 @@ set(EMBFMT_CPU_PARAMS ${cpu_PARAMS})
 add_subdirectory(embfmt)
 target_link_libraries(${CMAKE_PROJECT_NAME} embfmt)
 
-add_subdirectory(blocking_io)
 
 if(ETH_STACK STREQUAL "LWIP")
     # Historical. lwIP was removed from the build in S3; the submodule is still pinned so
@@ -28,7 +27,7 @@ elseif(ETH_STACK STREQUAL "NETXDUO")
 elseif(ETH_STACK STREQUAL "NONE")
     # S3-S5: no network stack. flexPTP is kept in the build with a no-op driver so that its
     # 19 CLI commands, the servo, the profile machinery and the H563 hardware port all stay
-    # compiled and exercised while the stack underneath is replaced. See Src/flexptp_nsd/.
+    # compiled and exercised while the stack underneath is replaced. See the project's ptp/ directory.
     set(ETH_STACK_LIB)
 endif()
 
@@ -36,7 +35,7 @@ endif()
 # FLEXPTP_HWPORT_SRC and leaving FLEXPTP_HWPORT unmatched makes flexPTP take its
 # "custom hardware port defined" path and use these files verbatim.
 set(FLEXPTP_HWPORT "H563_CUSTOM")
-set(FLEXPTP_HWPORT_SRC ${CMAKE_SOURCE_DIR}/Src/flexptp_port/ptp_port_stm32h563.c)
+set(FLEXPTP_HWPORT_SRC ${PROJECT_DIR}/ptp/ptp_port_stm32h563.c)
 
 # A project-supplied network stack driver, using flexPTP's documented extension point
 # (FLEXPTP_NSD_SRC + FLEXPTP_NETWORK_STACK) rather than one of its bundled examples. Leaving
@@ -44,21 +43,21 @@ set(FLEXPTP_HWPORT_SRC ${CMAKE_SOURCE_DIR}/Src/flexptp_port/ptp_port_stm32h563.c
 set(FLEXPTP_NSD "CUSTOM")
 if (ETH_STACK STREQUAL "NETXDUO")
     set(FLEXPTP_NSD_SRC
-        ${CMAKE_SOURCE_DIR}/Src/flexptp_nsd/nsd_netxduo.c
-        ${CMAKE_SOURCE_DIR}/Src/flexptp_nsd/ptp_tx_timestamp.c
+        ${PROJECT_DIR}/ptp/nsd_netxduo.c
+        ${PROJECT_DIR}/ptp/ptp_tx_timestamp.c
         # Extracted for testability; see test/test_ptp_*.cpp. C++ per the rules in
-        # Src/cpp_support.cpp -- no allocation, no exceptions, extern "C" at the boundary.
-        ${CMAKE_SOURCE_DIR}/Src/flexptp_nsd/ptp_tx_registry.cpp
-        ${CMAKE_SOURCE_DIR}/Src/flexptp_nsd/ptp_ts_codec.cpp
-        ${CMAKE_SOURCE_DIR}/Src/flexptp_nsd/ptp_endpoint.cpp
-        ${CMAKE_SOURCE_DIR}/Src/flexptp_nsd/ptp_nsd_lifecycle.cpp)
+        # cpp_support.cpp -- no allocation, no exceptions, extern "C" at the boundary.
+        ${PROJECT_DIR}/ptp/ptp_tx_registry.cpp
+        ${PROJECT_DIR}/ptp/ptp_ts_codec.cpp
+        ${PROJECT_DIR}/ptp/ptp_endpoint.cpp
+        ${PROJECT_DIR}/ptp/ptp_nsd_lifecycle.cpp)
 else()
     # S3-S5 kept flexPTP linked on a no-op driver while the stack underneath was rebuilt.
-    set(FLEXPTP_NSD_SRC ${CMAKE_SOURCE_DIR}/Src/flexptp_nsd/nsd_stub.c)
+    set(FLEXPTP_NSD_SRC ${PROJECT_DIR}/ptp/nsd_stub.c)
 endif()
 set(FLEXPTP_NETWORK_STACK ${ETH_STACK_LIB})
 set(FLEXPTP_SERVO "KALMAN")
-set(FLEXPTP_INCLUDES ${include_dirs} ${CMAKE_SOURCE_DIR}/Src/flexptp_port)
+set(FLEXPTP_INCLUDES ${include_dirs} ${PROJECT_DIR}/ptp)
 set(FLEXPTP_CPU_PARAMS ${cpu_PARAMS})
 # flexPTP >= a60190f uses __PRI64_PREFIX, a glibc-internal macro, in cli_cmds.c,
 # master.c and slave.c. Newlib does not define it, so the library does not build for

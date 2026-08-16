@@ -29,7 +29,7 @@
 extern "C" {
 #include "cmsis_os2.h"
 
-#include "cliutils/cli.h"
+#include "cli/cli.h"
 
 /* From cli_uut.c: the captured console, and the file-statics the .c include exposes. */
 extern char cli_uut_output[];

@@ -19,8 +19,8 @@
 #include "nx_api.h"
 #include "nx_link.h"
 
-#include "Drivers/EthDrv/eth_drv_netxduo.h"
-#include "ethernet/ethernet_netxduo.h"
+#include "eth/eth_drv_netxduo.h"
+#include "eth/ethernet_netxduo.h"
 #include "nsd_netxduo.h"
 #include "ptp_endpoint.h"
 #include "ptp_nsd_lifecycle.h"

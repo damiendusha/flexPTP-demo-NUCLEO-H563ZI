@@ -8,11 +8,11 @@ ctest --test-dir build/test --output-on-failure
 ```
 
 They run in well under a second and gate every push in CI, which the hardware suite in
-[`tools/hil/`](../tools/hil/README.md) cannot.
+[`tools/hil/`](../../../tools/hil/README.md) cannot.
 
 ## What is tested, and what is not
 
-Set out in full in [`docs/threadx_porting_plan.md`](../docs/threadx_porting_plan.md) under
+Set out in full in [`docs/threadx_porting_plan.md`](../../../docs/threadx_porting_plan.md) under
 *How far mocks actually reach*. The short version, measured against this repository's own
 finding log: **roughly half** of the findings in the code this port touches would have been
 caught here, a quarter become regression-lockable once discovered on hardware, and a quarter

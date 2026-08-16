@@ -63,8 +63,8 @@ stated separately in each item.
 
 #### N1 — The FIFO reports empty when it is exactly full *(NEW)*
 
-[`blocking_fifo.c:26-40`](../../Modules/blocking_io/blocking_fifo.c#L26) ·
-[`blocking_fifo.c:42-95`](../../Modules/blocking_io/blocking_fifo.c#L42)
+[`blocking_fifo.c:26-40`](../../projects/flexptp_threadx_netx_demo/blocking_io/blocking_fifo.c#L26) ·
+[`blocking_fifo.c:42-95`](../../projects/flexptp_threadx_netx_demo/blocking_io/blocking_fifo.c#L42)
 
 `BFifo` tracks only `readIdx` and `writeIdx`, and derives occupancy from them:
 
@@ -110,7 +110,7 @@ transmitted twice.
 **Reachability.** The console FIFO drains at 11.5 KB/s (115200 8N1), so filling 16 KB needs a
 burst that outruns the UART — not normal PTP logging, but easily a `?` help dump chased by
 several `ptp log … on` streams, or any future code that prints in a loop. The CLI *input* FIFO
-([`cli.c:39-41`](../../Src/cliutils/cli.c#L39), 512 bytes) has the same defect and a far lower
+([`cli.c:39-41`](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L39), 512 bytes) has the same defect and a far lower
 bar: a 512-byte paste into the terminal reaches it directly.
 
 Note that P5.4 made this **more** likely, not less. `bfifo_push_all()` loops until everything
@@ -125,8 +125,8 @@ functions. Whichever is chosen, `bfifo_push()` must never be able to make `write
 
 #### N2 — The TX ownership wait is compiled away at `-O2` and above *(NEW)*
 
-[`mac_drv.c:596-607`](../../Drivers/EthDrv/mac_drv.c#L596) ·
-[`mac_drv.h:29-52`](../../Drivers/EthDrv/mac_drv.h#L29)
+[`mac_drv.c:596-607`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L596) ·
+[`mac_drv.h:29-52`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.h#L29)
 
 P2.3 bounded the descriptor-ownership wait in `ETHHW_Transmit()` with the driver's spin-count
 idiom:
@@ -169,9 +169,9 @@ three disassemblies afterwards is a five-minute job and should be added next to 
 
 #### N3 — A receive-buffer-unavailable stall is permanent, and the flag that reports it is discarded *(NEW)*
 
-[`mac_drv.c:547-579`](../../Drivers/EthDrv/mac_drv.c#L547) ·
-[`mac_drv.c:253-265`](../../Drivers/EthDrv/mac_drv.c#L253) ·
-[`mac_drv.c:172-176`](../../Drivers/EthDrv/mac_drv.c#L172)
+[`mac_drv.c:547-579`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L547) ·
+[`mac_drv.c:253-265`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L253) ·
+[`mac_drv.c:172-176`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L172)
 
 The RX tail pointer is written exactly once, at init, with the comment `// tail pointer WON'T
 STOP`:
@@ -223,8 +223,8 @@ constraint applies as for every other `MSG()` in this file; see [N6](#n6--msg-is
 
 #### N4 — A recognised vendor with an unrecognised model dereferences NULL at boot *(NEW)*
 
-[`phy_common.c:21`](../../Drivers/EthDrv/phy_drv/phy_common.c#L21) ·
-[`phy_common.c:382-451`](../../Drivers/EthDrv/phy_drv/phy_common.c#L382)
+[`phy_common.c:21`](../../projects/flexptp_threadx_netx_demo/eth/phy_drv/phy_common.c#L21) ·
+[`phy_common.c:382-451`](../../projects/flexptp_threadx_netx_demo/eth/phy_drv/phy_common.c#L382)
 
 ```c
 static const char *phyName = NULL;
@@ -258,8 +258,8 @@ outer default. Both remaining reads then behave.
 
 #### N5 — Every lwIP assertion is a silent no-op *(NEW)*
 
-[`cc.h:83`](../../Modules/lwip_port/arch/cc.h#L83) · [`syscall.c:35`](../../Src/syscall.c#L35) ·
-[`syscall.c:80-90`](../../Src/syscall.c#L80) · [`lwipopts.h:48-62`](../../Inc/lwipopts.h#L48)
+[`cc.h:83`](../../Modules/lwip_port/arch/cc.h#L83) · [`syscall.c:35`](../../projects/flexptp_threadx_netx_demo/syscall.c#L35) ·
+[`syscall.c:80-90`](../../projects/flexptp_threadx_netx_demo/syscall.c#L80) · [`lwipopts.h:48-62`](../../Inc/lwipopts.h#L48)
 
 The port's assertion macro is the lwIP stock one:
 
@@ -318,9 +318,9 @@ flash back as `printf` drops out of the link.
 
 #### N6 — `MSG()` is documented as ISR-safe in one file and ISR-unsafe in another *(NEW)*
 
-[`standard_output.c:33-46`](../../Src/standard_output/standard_output.c#L33) ·
-[`serial_io.c:120-131`](../../Src/standard_output/serial_io.c#L120) ·
-[`mac_drv.c:9-17`](../../Drivers/EthDrv/mac_drv.c#L9)
+[`standard_output.c:33-46`](../../projects/flexptp_threadx_netx_demo/standard_output/standard_output.c#L33) ·
+[`serial_io.c:120-131`](../../projects/flexptp_threadx_netx_demo/standard_output/serial_io.c#L120) ·
+[`mac_drv.c:9-17`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L9)
 
 Three comments, written during the same review cycle, disagree:
 
@@ -356,8 +356,8 @@ three comments so they agree.
 
 #### N7 — `bfifo_pop()` hands the write token to a second writer *(NEW)*
 
-[`blocking_fifo.c:142`](../../Modules/blocking_io/blocking_fifo.c#L142) ·
-[`blocking_fifo.c:49`](../../Modules/blocking_io/blocking_fifo.c#L49)
+[`blocking_fifo.c:142`](../../projects/flexptp_threadx_netx_demo/blocking_io/blocking_fifo.c#L142) ·
+[`blocking_fifo.c:49`](../../projects/flexptp_threadx_netx_demo/blocking_io/blocking_fifo.c#L49)
 
 `writeSem` is created with count 1 and is used as a writer mutex: `bfifo_push()` acquires it on
 entry and releases it on exit only if space remains. But `bfifo_pop()` releases it
@@ -376,7 +376,7 @@ mid-byte-range and one message is partly overwritten.
 
 There is more than one producer in practice, and the `MSG()` mutex does not cover them:
 `MSGraw()` and `MSGchar()` go straight to `serial_io_write()`
-([`standard_output.c:97-103`](../../Src/standard_output/standard_output.c#L97)), and the CLI
+([`standard_output.c:97-103`](../../projects/flexptp_threadx_netx_demo/standard_output/standard_output.c#L97)), and the CLI
 echoes every keystroke that way from the `cli` thread while other threads log.
 
 **Fix.** The write token is doing two jobs — "there is space" and "no other writer" — and they
@@ -386,7 +386,7 @@ both are worth fixing in one pass over a 161-line file.
 
 #### N8 — `tokenize_cli_line()` overflows its copy by one byte, and is shared across threads *(NEW)*
 
-[`cli.c:78-106`](../../Src/cliutils/cli.c#L78) · [`cli.c:453`](../../Src/cliutils/cli.c#L453)
+[`cli.c:78-106`](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L78) · [`cli.c:453`](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L453)
 
 ```c
 #define CLI_LINEBUF_LENGTH (191)
@@ -415,8 +415,8 @@ hazard for free.
 
 #### N9 — No memory barriers at descriptor handoff *(NEW)*
 
-[`mac_drv.c:258-264`](../../Drivers/EthDrv/mac_drv.c#L258) ·
-[`mac_drv.c:632-640`](../../Drivers/EthDrv/mac_drv.c#L632)
+[`mac_drv.c:258-264`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L258) ·
+[`mac_drv.c:632-640`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L632)
 
 Both handoffs to the DMA write the payload/buffer fields and then the `OWN` bit, with nothing
 in between:
@@ -488,8 +488,8 @@ compiled, cheap to fix now. **Fix:** a fixed bounded buffer and `MIN(payloadSize
 
 #### N12 — `strncpy` without termination in two CLI paths *(NEW)*
 
-[`cli.c:94`](../../Src/cliutils/cli.c#L94) · [`cli.c:102`](../../Src/cliutils/cli.c#L102) ·
-[`cli.c:506`](../../Src/cliutils/cli.c#L506)
+[`cli.c:94`](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L94) · [`cli.c:102`](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L102) ·
+[`cli.c:506`](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L506)
 
 `strncpy(&ppTok[i][0], pTok, tokMaxLen)` leaves the token unterminated when it is exactly
 `MAX_TOK_LEN` (32) characters or longer; every later `strcmp` then runs off the end of the
@@ -500,7 +500,7 @@ places.
 
 #### N13 — The FCS is never stripped, so every frame is four bytes longer than it was on the wire *(NEW)*
 
-[`mac_drv.c:143`](../../Drivers/EthDrv/mac_drv.c#L143)
+[`mac_drv.c:143`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L143)
 
 ```c
 WRITE_REG(eth->MACCR, mode | ETH_MACCR_IPC);

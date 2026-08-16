@@ -15,7 +15,7 @@
 #include "nx_api.h"
 #include "nxd_dhcp_client.h"
 
-#include "Drivers/EthDrv/eth_drv_netxduo.h"
+#include "eth/eth_drv_netxduo.h"
 
 #include "standard_output/standard_output.h"
 

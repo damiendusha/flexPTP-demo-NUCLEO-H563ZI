@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# The C++ rules in Src/cpp_support.cpp, enforced against the linked image.
+# The C++ rules in the project's cpp_support.cpp, enforced against the linked image.
 #
 # Those rules -- no dynamic allocation, no exceptions, no RTTI -- were a comment. Two of them
 # are already enforced by compiler flags (-fno-exceptions, -fno-rtti); the allocation rule was
@@ -34,12 +34,12 @@ FORBIDDEN='_Znwj|_Znaj|_ZdlPv|_ZdaPv|__cxa_throw|__cxa_allocate_exception|_ZTVN1
 found="$("${NM}" "${ELF}" | grep -E " (T|t|W|w|D|d|B|b) .*(${FORBIDDEN})" || true)"
 
 if [ -n "${found}" ]; then
-    echo "ERROR: the linked image violates the C++ rules in Src/cpp_support.cpp:"
+    echo "ERROR: the linked image violates the C++ rules in cpp_support.cpp:"
     echo "${found}"
     echo ""
     echo "  No dynamic allocation, no exceptions, no RTTI. There is no RTOS heap to allocate"
     echo "  from, and operator new would fall through to newlib malloc -> _sbrk, which on this"
-    echo "  firmware reports and halts when exhausted (see Src/sysmem.c)."
+    echo "  firmware reports and halts when exhausted (see the project's sysmem.c)."
     exit 1
 fi
 

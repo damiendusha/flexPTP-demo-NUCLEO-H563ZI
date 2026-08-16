@@ -21,5 +21,6 @@ target_include_directories(
 )
 
 add_subdirectory(standard_output)
-add_subdirectory(cliutils)
-add_subdirectory(ethernet)
+add_subdirectory(cli)
+add_subdirectory(blocking_io)
+add_subdirectory(eth)
