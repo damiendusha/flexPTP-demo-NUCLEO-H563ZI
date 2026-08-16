@@ -36,3 +36,259 @@ cc_library(
     hdrs = ["nx_user.h"],
     includes = ["."],
 )
+
+# ---------------------------------------------------------------------------
+# Project-wide compile settings
+# ---------------------------------------------------------------------------
+#
+# compile_DEFS in CMakeLists.txt, minus the HAL device selection which rides on :hal_conf. Kept
+# on one target that every first-party library depends on, rather than repeated.
+cc_library(
+    name = "project_defines",
+    defines = [
+        "CMSIS_OS2",
+        "PPS_SIMPLE",
+        "ETH_NETXDUO",
+        r'ETH_STACK=\"NETXDUO\"',
+        r'PROJECT_NAME=\"flexptp-demo\"',
+    ],
+)
+
+# The include root and the project-wide defines. Deliberately carries NO headers: sources refer
+# to each other as <cli/cli.h>, <eth/mac_drv.h>, <ptp/...>, and all this target has to do is put
+# the project directory on the path.
+#
+# flexptp_options.h is NOT here. It includes cli/cli.h, standard_output/standard_output.h and
+# eth/mac_drv.h, so putting it on the base target every library depends on would make :cli
+# depend on itself. It gets its own target below, after the things it includes.
+cc_library(
+    name = "includes",
+    includes = ["."],
+    deps = [
+        ":hal_conf",
+        ":project_defines",
+    ],
+)
+
+FIRST_PARTY = ["first_party_warnings"]
+
+TARGET_ONLY = ["//toolchain:stm32h563"]
+
+# ---------------------------------------------------------------------------
+# Libraries
+# ---------------------------------------------------------------------------
+
+cc_library(
+    name = "blocking_io",
+    srcs = ["blocking_io/blocking_fifo.c"],
+    hdrs = ["blocking_io/blocking_fifo.h"],
+    features = FIRST_PARTY,
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":includes",
+        "@cmsis_rtos_threadx//:cmsis_rtos_tx",
+    ],
+)
+
+cc_library(
+    name = "standard_output",
+    srcs = [
+        "standard_output/serial_io.c",
+        "standard_output/standard_output.c",
+    ],
+    hdrs = [
+        "standard_output/serial_io.h",
+        "standard_output/standard_output.h",
+        "standard_output/term_colors.h",
+    ],
+    features = FIRST_PARTY,
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":blocking_io",
+        ":includes",
+        "@cmsis_rtos_threadx//:cmsis_rtos_tx",
+        "@embfmt",
+        "@stm32h5_hal//:hal",
+    ],
+)
+
+cc_library(
+    name = "cli",
+    srcs = ["cli/cli.c"],
+    hdrs = ["cli/cli.h"],
+    features = FIRST_PARTY,
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":blocking_io",
+        ":includes",
+        ":standard_output",
+        "@cmsis_rtos_threadx//:cmsis_rtos_tx",
+    ],
+)
+
+# The pure-logic units, extracted from the driver so they can be tested off-target. They depend
+# on nothing but stdint, which is the whole point -- and is why they are the first thing phase 9
+# will unify between the two projects.
+cc_library(
+    name = "eth_framer",
+    srcs = ["eth/eth_framer.cpp"],
+    hdrs = ["eth/eth_framer.h"],
+    features = FIRST_PARTY,
+    includes = ["."],
+)
+
+cc_library(
+    name = "eth_link_state",
+    srcs = ["eth/eth_link_state.cpp"],
+    hdrs = ["eth/eth_link_state.h"],
+    features = FIRST_PARTY,
+    includes = ["."],
+)
+
+# The MAC driver. Stack-agnostic and always built: it owns the PTP clock registers the flexPTP
+# hardware port reaches, which is why it stayed compiled even when no stack was linked.
+cc_library(
+    name = "mac_drv",
+    srcs = [
+        "eth/mac_drv.c",
+        "eth/phy_drv/phy_common.c",
+    ],
+    hdrs = [
+        "eth/mac_drv.h",
+        "eth/phy_drv/phy_common.h",
+    ],
+    features = FIRST_PARTY,
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":includes",
+        ":standard_output",
+        "@stm32h5_hal//:hal",
+    ],
+)
+
+# The stack-facing glue.
+cc_library(
+    name = "eth",
+    srcs = [
+        "eth/eth_drv_netxduo.c",
+        "eth/ethernet_netxduo.c",
+    ],
+    hdrs = [
+        "eth/eth_drv_netxduo.h",
+        "eth/ethernet_netxduo.h",
+    ],
+    features = FIRST_PARTY,
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":eth_framer",
+        ":eth_link_state",
+        ":includes",
+        ":mac_drv",
+        ":ptp_tx_timestamp",
+        ":ptp_units",
+        ":standard_output",
+        "@netxduo",
+    ],
+)
+
+# The reset vector, and ThreadX's board-specific low-level init.
+#
+# tx_initialize_low_level.S is ours rather than the port's -- Eclipse keeps it in example_build/
+# because the clock, tick, vector symbol and end-of-RAM marker are the integrator's to supply --
+# and it reads TX_TIMER_TICKS_PER_SECOND out of tx_user.h, so it needs ThreadX's headers and the
+# TX_INCLUDE_USER_DEFINE_FILE define that come with @threadx. Without them it #errors, which is
+# the file doing its job.
+cc_library(
+    name = "startup",
+    srcs = [
+        "startup/startup_stm32h563zitx.s",
+        "startup/tx_initialize_low_level.S",
+    ],
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":includes",
+        "@threadx",
+    ],
+    alwayslink = True,
+)
+
+exports_files(["startup/stm32h563zitx_FLASH.ld"])
+
+# ---------------------------------------------------------------------------
+# flexPTP: the pure units, the hardware port, and the assembled library
+# ---------------------------------------------------------------------------
+
+# The NSD logic lifted out of the driver so it could be tested off-target. Depends on nothing
+# but stdint -- no ThreadX, no NetX Duo, no fakes -- which is why it builds for the host too and
+# why it is first in phase 9's unification order.
+#
+# A library in its own right rather than sources compiled into flexPTP, because the Ethernet
+# driver calls into it as well; compiling it in both places would be duplicate symbols.
+cc_library(
+    name = "ptp_units",
+    srcs = [
+        "ptp/ptp_endpoint.cpp",
+        "ptp/ptp_nsd_lifecycle.cpp",
+        "ptp/ptp_ts_codec.cpp",
+        "ptp/ptp_tx_registry.cpp",
+    ],
+    hdrs = [
+        "ptp/ptp_endpoint.h",
+        "ptp/ptp_nsd_lifecycle.h",
+        "ptp/ptp_ts_codec.h",
+        "ptp/ptp_tx_registry.h",
+    ],
+    features = FIRST_PARTY,
+    includes = ["."],
+)
+
+# The transmit-timestamp registry's target half. Kept out of :ptp_units because it needs
+# CMSIS-RTOS2 and flexPTP's headers, and :ptp_units' whole value is that it needs neither -- it
+# is the part the host suite can compile.
+#
+# This file exists because flexPTP's CMSIS-RTOS2 binding calls osMessageQueuePut(..., osWaitForever)
+# from the transmit-timestamp callback, which on this hardware is reached from ETH_IRQHandler,
+# and ST's wrapper refuses a blocking call from interrupt context.
+cc_library(
+    name = "ptp_tx_timestamp",
+    srcs = ["ptp/ptp_tx_timestamp.c"],
+    hdrs = ["ptp/ptp_tx_timestamp.h"],
+    features = FIRST_PARTY,
+    includes = ["."],
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":flexptp_config",
+        ":includes",
+        ":ptp_units",
+        ":standard_output",
+        "@cmsis_rtos_threadx//:cmsis_rtos_tx",
+        "@flexptp//:headers",
+    ],
+)
+
+# flexPTP's configuration header, and the seam @flexptp reaches this project through.
+#
+# It is a configuration header that includes half the application -- the CLI, the console, the
+# MAC driver and the hardware port -- which is why it sits at the bottom of the dependency order
+# rather than on :includes with the other config headers.
+cc_library(
+    name = "flexptp_config",
+    hdrs = [
+        "flexptp_options.h",
+        "ptp/ptp_port_stm32h563.h",
+    ],
+    features = FIRST_PARTY,
+    includes = [
+        ".",
+        "ptp",
+    ],
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":cli",
+        ":includes",
+        ":mac_drv",
+        ":standard_output",
+        "@embfmt",
+        "@flexptp//:headers",
+    ],
+)

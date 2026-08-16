@@ -5,6 +5,8 @@ cc_library(
     srcs = ["embformat.c"],
     hdrs = ["embformat.h"],
     copts = ["-w"],
-    includes = ["."],
+    # Sources include it as <embfmt/embformat.h>. Under CMake that works because Modules/ is on
+    # the include path; here the prefix is added explicitly.
+    include_prefix = "embfmt",
     visibility = ["//visibility:public"],
 )
