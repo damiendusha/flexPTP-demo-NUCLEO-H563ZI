@@ -1410,17 +1410,34 @@ The obvious reading of "independent" is that
 GI-02 fixes and the rest of the P1–P6 remediation.
 
 Seeding the new project from `master` wholesale would ship a second firmware with those fixes
-silently reverted, and unification would then have to rediscover them. So:
+silently reverted, and unification would then have to rediscover them.
 
-- **common files** — seeded from the **current** (`bazel`-line) versions;
-- **only the FreeRTOS/lwIP-specific glue** comes from `master`: `FreeRTOSConfig.h`,
-  `lwipopts.h`, `lwip_port/` (`sys_arch.c`, `arch/cc.h`, `arch/cpu.h`, `arch/sys_arch.h`),
-  `ethernet_lwip.c`, `eth_drv_lwip.c`, ST's FreeRTOS-backed `cmsis_os2.c` with `freertos_os2.h`
-  and `freertos_mpool.h`, and the lwIP-flavoured `flexptp_options.h`;
-- plus the one known fix at the boundary, `serial_io_init()` — the only breaking signature
-  change across the shared headers.
+**The rule, in terms of the layout that now exists.** Phase 0 landed
+`projects/flexptp_threadx_netx_demo/`, so this can name paths rather than describe them. Copy
+the ThreadX project's tree, then replace only the stack-specific files:
+
+| Destination in `projects/flexptp_freertos_lwip_demo/` | Source |
+|---|---|
+| `eth/mac_drv.c`, `eth/phy_drv/`, `eth/eth_framer.cpp`, `eth/eth_link_state.cpp` | **current** — the descriptor-level driver and the pure units are common |
+| `ptp/ptp_port_stm32h563.c`, `ptp/ptp_endpoint.cpp`, `ptp/ptp_ts_codec.cpp`, `ptp/ptp_tx_registry.cpp`, `ptp/ptp_nsd_lifecycle.cpp`, `ptp/ptp_tx_timestamp.c` | **current** |
+| `cli/`, `standard_output/`, `blocking_io/` | **current** |
+| `syscall.c`, `sysmem.c`, `sysmem_bounds.h`, `cpp_support.cpp`, `system_stm32h5xx.c`, `stm32h5xx_hal_conf.h` | **current** |
+| `startup/startup_stm32h563zitx.s`, `startup/stm32h563zitx_FLASH.ld` | **current** |
+| `eth/eth_drv_lwip.c`, `eth/ethernet_lwip.c` | `master` |
+| `ptp/nsd_lwip.c` | `master` (or flexPTP's bundled `nsd_lwip.c`) |
+| `lwip_port/sys_arch.c`, `lwip_port/arch/{cc,cpu,sys_arch}.h` | `master` |
+| `FreeRTOSConfig.h`, `lwipopts.h`, `flexptp_options.h` | `master` |
+| ST's FreeRTOS-backed `cmsis_os2.c` (+ `freertos_os2.h`, `freertos_mpool.h`) | `master` |
+| `main.c`, `cmds.c` | `master`, then reconciled — both diverged (`main.c` ±242, `cmds.c` +338) and both are per-project anyway |
+| *(absent)* | `startup/tx_initialize_low_level.S`, `tx_user.h`, `nx_user.h` — ThreadX and NetX Duo only |
+
+Plus the one known fix at the boundary, `serial_io_init()` — the only breaking signature change
+across the shared headers ([§13.2](#132-where-the-freertos--lwip-firmware-comes-from)).
 
 "Independent" means *separately buildable*, not *separately stale*.
+
+**A cheap check that the rule was followed:** for every file taken from `master`, `git log` it on
+the `bazel` line. If it has commits after `5e25b7b`, it is on the wrong side of this table.
 
 ### 13.4 New dependencies
 
@@ -1500,7 +1517,9 @@ Worth stating, because it is most of the plan:
   non-`FromISR` API use from an ISR, and the `xTimerPendFunctionCall` boundary — plus the ISR
   half above verbatim. The test file should record that F80 has no FreeRTOS counterpart, because
   "we ported the tests and they pass" would otherwise imply a guarantee that was never checked.
-- **HIL.** [`tools/hil/baseline.json`](../tools/hil/README.md) is one baseline, and `checks.py`
+- **HIL.** Note that the board is available to phase 8 from its first commit, not from the point
+  it grows its own tooling — see [§13.7](#137-sequencing).
+  [`tools/hil/baseline.json`](../tools/hil/README.md) is one baseline, and `checks.py`
   asserts firmware-specific facts — the registered CLI command count is asserted *exactly* (25),
   and it would differ between apps. Expect a baseline per app and a way to say which app a run
   is testing. The `build_id` check already keys on the ELF, so it needs nothing.
@@ -1512,13 +1531,26 @@ Worth stating, because it is most of the plan:
 The restructure comes **first**, not last (D11). Full order, with the phase numbers used in
 [§9](#9-phases):
 
-| Phase | What | Verified by |
-|---|---|---|
-| **0** | Move today's firmware into `projects/flexptp_threadx_netx_demo/`, **under CMake** | CMake still builds; HIL S8 passes; sections match modulo `__FILE__` |
-| 1–6 | The Bazel migration, writing `BUILD` files into their final home | as [§9](#9-phases) |
-| 7 | Delete CMake and `build.sh` (D3, D7) | |
-| **8** | Add `projects/flexptp_freertos_lwip_demo/` from `master`, plus the FreeRTOS and lwIP `BUILD` files and per-project configuration; **and move the documents into `projects/<name>/docs/`** (D18) | its own HIL baseline; `check_docs_links.py` clean |
-| **9** | Unification ([§13.8](#138-unification-afterwards)), incrementally | both firmwares keep passing |
+| Phase | What | Verified by | State |
+|---|---|---|---|
+| **0** | Move today's firmware into `projects/flexptp_threadx_netx_demo/`, **under CMake** | CMake still builds; HIL S8 passes; sections match modulo `__FILE__` | **landed** — sections came out identical |
+| 1–6 | The Bazel migration, writing `BUILD` files into their final home | as [§9](#9-phases) | 1–4 landed |
+| 7 | Delete CMake and `build.sh` (D3, D7) | | |
+| **8** | Add `projects/flexptp_freertos_lwip_demo/` from `master`, plus the FreeRTOS and lwIP `BUILD` files and per-project configuration; **and move the documents into `projects/<name>/docs/`** (D18) | its own HIL baseline; `check_docs_links.py` clean | |
+| **9** | Unification ([§13.8](#138-unification-afterwards)), incrementally | both firmwares keep passing | |
+
+**Phase 8 can use the board from its first commit.** This plan assumed the hardware gate arrived
+with a Bazel flash target, and phase 4 showed otherwise: `tools/hil/run.py --flash` takes an ELF
+from anywhere, so the Bazel-built ThreadX image was flashed with the existing OpenOCD and put
+through S8 before any flash target existed. The same applies to the FreeRTOS project — it does
+not have to be accepted on inspection while its tooling catches up, and given
+[§13.3](#133-layout-two-independent-projects-first)'s seeding rule and the ~1000 lines of
+divergence behind it, it should not be.
+
+What phase 8 *does* need before it can claim a pass is its own baseline: `tools/hil/baseline.json`
+was captured from the pre-port firmware, and `checks.py` asserts firmware-specific facts — the
+registered CLI command count is asserted exactly (25) and will differ. Capture the FreeRTOS
+baseline on the first image that boots, not at the end.
 
 **Why phase 0 goes first rather than last.** An earlier draft put the reorganisation after the
 migration. Moving it to the front is strictly better:
