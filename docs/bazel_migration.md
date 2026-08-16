@@ -1085,9 +1085,24 @@ number from a deliberate flag change, not a defect. Mechanically it trips nothin
 `run.py`'s `TOLERANCE`, so `--compare` checks only PASS→not-PASS — but it is conspicuous in the
 output and someone will otherwise spend an afternoon on it.
 
-Note that the *decisive* check on this phase's output — the HIL suite — cannot run until
-phase 5 exists. Until then this image has been verified by inspection only, and inspection has
-not historically been sufficient on this project.
+**Landed, and the HIL suite did not wait for phase 5.** This phase expected the decisive check
+to be unavailable until a Bazel flash target existed; in practice `tools/hil/run.py --flash`
+takes an ELF from anywhere, so the Bazel-built image was flashed with the existing OpenOCD and
+put through S8 immediately: **13 passed, 0 failed, 0 skipped**, DHCP up, PTP at SLAVE with
+`|offset| <= 16 700 ns` — inside the run-to-run spread measured on this bench the same day at
+`-Og` (9 856 and 15 143 ns), and next to the 14 895 ns recorded for `-O2`.
+
+That is worth remembering for phases 8–9: the hardware gate is available a phase earlier than
+this plan assumed, so an image never has to be accepted on inspection alone.
+
+The size comparison against CMake at a matched `-O2` gave identical `data` and `bss`, and a
+3868 B `text` delta. That is past the threshold criterion 5 sets, so it was chased: 5 symbols
+differ out of ~1260, every one an `.isra.0` or `.part.0` inlining clone. The alarming-looking
+ones were `_nx_dhcp_*` absent from the Bazel image — `_nx_dhcp_create` and `_nx_dhcp_start` are
+in both, and the board gets an address, which settles it.
+
+**Residual work:** the platform transition is written but not wired in, so the firmware needs
+`--config=target` — see [§5.3](#53-the-firmware-binary).
 
 ### Phase 5 — Flashing
 
