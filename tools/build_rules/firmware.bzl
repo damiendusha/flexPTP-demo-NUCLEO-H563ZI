@@ -1,13 +1,21 @@
 """stm32_firmware(): an ELF for the board, plus the artefacts CMake produced after the link.
 
 Replaces the add_custom_command(POST_BUILD) block in CMakeLists.txt -- size, objcopy -O ihex,
-objcopy -O binary -- and the .map, which comes from rules_cc's generate_linkmap feature rather
-than the custom link rule docs/bazel_migration.md expected to need. `-Wl,-Map=` cannot be written
-in linkopts, because a cc_binary has no way to declare the extra output and $(RULEDIR) is not
-available there; generate_linkmap solves exactly that, using the link action's own output path.
+objcopy -O binary -- and the .map, which comes from rules_cc's generate_linkmap feature. That
+feature is why no custom link rule is needed for the map: `-Wl,-Map=` cannot be written in
+linkopts, because a cc_binary has no way to declare the extra output and $(RULEDIR) is not
+available there.
 
-The binary carries a transition onto the target platform, so `bazel build` on it produces a
-Cortex-M33 image whatever --platforms says, and cannot silently produce a host build.
+A custom rule IS needed, but for a different reason than docs/bazel_migration.md first expected:
+CONFIGURATION. The .hex and .bin actions resolve objcopy from the cc toolchain, so if they run
+in the host configuration they get the host objcopy and an ELF built for a different platform
+than the tool processing it. `_stm32_artifacts` therefore carries a rule-level incoming
+transition onto the target platform, which applies to every attribute at once -- the ELF and the
+toolchain together -- rather than an attribute-level transition on the ELF alone, which would
+leave objcopy behind in the host configuration.
+
+The effect a caller sees: `bazel build` on a firmware target produces a Cortex-M33 image
+whatever --platforms says, and cannot silently produce a host build.
 """
 
 load("@rules_cc//cc:defs.bzl", "cc_binary")
@@ -21,17 +29,42 @@ _target_platform_transition = transition(
     outputs = ["//command_line_option:platforms"],
 )
 
-def _transitioned_elf_impl(ctx):
-    src = ctx.file.elf
-    out = ctx.actions.declare_file(ctx.label.name)
-    ctx.actions.symlink(output = out, target_file = src)
-    return [DefaultInfo(files = depset([out]))]
+def _stm32_artifacts_impl(ctx):
+    # objcopy is taken by LABEL rather than from CcToolchainInfo.objcopy_executable, which the
+    # rule-based cc/toolchains API leaves empty -- the action then runs '' and fails with
+    # execvp(""): No such file or directory. An attribute keeps it overridable and explicit.
+    objcopy = ctx.file.objcopy
 
-_transitioned_elf = rule(
-    implementation = _transitioned_elf_impl,
+    elf = ctx.file.elf
+    hex_out = ctx.actions.declare_file(ctx.attr.basename + ".hex")
+    bin_out = ctx.actions.declare_file(ctx.attr.basename + ".bin")
+
+    for out, fmt in ((hex_out, "ihex"), (bin_out, "binary")):
+        ctx.actions.run(
+            arguments = ["-O", fmt, elf.path, out.path],
+            executable = objcopy,
+            inputs = depset([elf, objcopy]),
+            mnemonic = "Objcopy",
+            outputs = [out],
+            progress_message = "Extracting %s from %s" % (fmt, elf.basename),
+        )
+
+    return [DefaultInfo(files = depset([elf, hex_out, bin_out]))]
+
+_stm32_artifacts = rule(
+    implementation = _stm32_artifacts_impl,
+    # An INCOMING transition, on the rule rather than on the elf attribute: it has to cover the
+    # cc toolchain as well, or objcopy is resolved for the host while the ELF is not.
+    cfg = _target_platform_transition,
     attrs = {
-        "elf": attr.label(allow_single_file = True, cfg = _target_platform_transition),
-        "platform": attr.string(),
+        "basename": attr.string(mandatory = True),
+        "elf": attr.label(allow_single_file = True, mandatory = True),
+        "objcopy": attr.label(
+            allow_single_file = True,
+            cfg = "exec",
+            default = "@arm_gnu_toolchain//:bin/arm-none-eabi-objcopy",
+        ),
+        "platform": attr.string(mandatory = True),
         "_allowlist_function_transition": attr.label(
             default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
         ),
@@ -47,10 +80,10 @@ def stm32_firmware(
     """An STM32 firmware image and its post-link artefacts.
 
     Args:
-      name: base name; produces <name>.elf, <name>.map, <name>.hex, <name>.bin.
+      name: base name; produces <name>.elf, <name>.elf.map, <name>.hex, <name>.bin.
       linker_script: the .ld file.
       deps: the libraries to link.
-      platform: the target platform to transition to.
+      platform: the target platform the transition selects.
       **kwargs: forwarded to cc_binary.
     """
     elf = name + ".elf"
@@ -59,39 +92,18 @@ def stm32_firmware(
         name = elf,
         additional_linker_inputs = [linker_script],
         features = ["generate_linkmap"],
-        linkopts = [
-            "-T $(location %s)" % linker_script,
-            # Relinking when the script changes needs no equivalent of CMake's LINK_DEPENDS:
-            # the script is an input, so editing it invalidates the action. Under CMake it did
-            # not, and a section reorder appeared to do nothing until the ELF was deleted by
-            # hand (P3.8).
-        ],
+        linkopts = ["-T $(location %s)" % linker_script],
+        # Tagged manual so a wildcard build reaches the firmware through :name, which carries
+        # the transition, rather than building this directly in whatever configuration happens
+        # to be current.
+        tags = ["manual"],
         deps = deps,
         **kwargs
     )
 
-    # objcopy and size come from the registered toolchain rather than from PATH.
-    native.genrule(
-        name = name + "_hex",
-        srcs = [elf],
-        outs = [name + ".hex"],
-        cmd = "$(OBJCOPY) -O ihex $< $@",
-        toolchains = ["@rules_cc//cc:current_cc_toolchain"],
-    )
-
-    native.genrule(
-        name = name + "_bin",
-        srcs = [elf],
-        outs = [name + ".bin"],
-        cmd = "$(OBJCOPY) -O binary $< $@",
-        toolchains = ["@rules_cc//cc:current_cc_toolchain"],
-    )
-
-    native.filegroup(
+    _stm32_artifacts(
         name = name,
-        srcs = [
-            elf,
-            name + ".hex",
-            name + ".bin",
-        ],
+        basename = name,
+        elf = ":" + elf,
+        platform = platform,
     )

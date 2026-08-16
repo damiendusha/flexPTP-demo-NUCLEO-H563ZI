@@ -675,37 +675,28 @@ needed an explicit property because `-T` on the link line told CMake nothing —
 [`CMakeLists.txt`](../CMakeLists.txt) records that P3.8's section reorder appeared to do
 nothing until the ELF was deleted by hand. **That bug is structurally impossible in Bazel.**
 
-#### Residual: the platform transition is written but not wired in
+#### The platform transition — done, and the shape it had to take
 
-[§4.1](#41-platforms-and-constraints) says `stm32_firmware()` carries a transition onto
-`//toolchain:cortex_m33`, so that `bazel build` on the firmware produces a Cortex-M33 image
-whatever `--platforms` says and **cannot silently produce a host build**. As landed in phase 4
-it does not: the transition rule exists in `tools/build_rules/firmware.bzl` but nothing uses it,
-and the firmware is built with `--config=target` instead.
+`bazel build` on a firmware target produces a Cortex-M33 image whatever `--platforms` says, and
+**cannot silently produce a host build**. `bazel build //...` includes the firmware rather than
+skipping it as incompatible.
 
-What that costs today is small — a flag, and the `.bazelrc` already defines it. What it costs
-if left is the property the transition exists for: `bazel build //...` on the host skips the
-firmware as incompatible rather than building it, so there is nothing that produces the image
-without someone remembering the flag.
+It took option 1 of the two this section previously offered — one rule wrapping the whole set —
+and the reason is worth keeping, because option 2 looks equivalent and is not. The transition is
+an **incoming** transition on `_stm32_artifacts` (`rule(cfg = ...)`), not an attribute-level
+transition on the ELF. An attribute-level one transitions the ELF and leaves everything else
+behind, so `objcopy` is still resolved for the host while the image it is processing is not —
+which fails confusingly rather than loudly. A rule-level transition moves every attribute at
+once.
 
-**Why it is not a five-minute change.** The transition has to cover the *whole* macro, not just
-the `cc_binary`. The `.hex` and `.bin` genrules resolve `$(OBJCOPY)` from
-`@rules_cc//cc:current_cc_toolchain`, so if they run in the host configuration they get the host
-objcopy and the ELF from a different configuration than the one that produced it — which fails
-confusingly rather than loudly. Both need the transition, or the artefacts need to be produced
-inside a single rule that applies it once.
+Two smaller things found in the doing:
 
-Two ways to finish it, in rough order of preference:
-
-1. **A rule that wraps the whole set** — declare the ELF, `.map`, `.hex` and `.bin` as outputs
-   of one rule carrying `cfg = _target_platform_transition`, so there is exactly one
-   configuration boundary and the genrules disappear.
-2. **The transition on each of the three targets**, which is less code but three places to get
-   the configuration right rather than one, and leaves the boundary implicit.
-
-Until then, build the firmware with `--config=target`. Phase 5's flash rule already needs its
-own transition ([§8.1](#81-the-flash-rule--pure-starlark-no-new-bcr)) for the same reason and
-against the same hazard, so the two are worth doing together.
+- **`CcToolchainInfo.objcopy_executable` is empty** under the rule-based `cc/toolchains` API, so
+  the action runs `''` and dies with `execvp(""): No such file or directory`. The tool is taken
+  by label instead, as an overridable attribute.
+- The `cc_binary` is tagged `manual`, so a wildcard build reaches the firmware through the
+  transitioned target rather than building the untransitioned one in whatever configuration
+  happens to be current.
 
 ### 5.4 flexPTP
 
