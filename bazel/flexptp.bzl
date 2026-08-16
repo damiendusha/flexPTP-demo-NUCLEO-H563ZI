@@ -13,7 +13,7 @@ docs/bazel_decisions.md §5.
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
-def flexptp_library(name, config, port_srcs, nsd_srcs, deps = [], **kwargs):
+def flexptp_library(name, config, port_srcs, nsd_srcs, nsd_hdrs = [], deps = [], **kwargs):
     """A flexPTP library configured for one project.
 
     Args:
@@ -21,6 +21,7 @@ def flexptp_library(name, config, port_srcs, nsd_srcs, deps = [], **kwargs):
       config: cc_library exporting this project's flexptp_options.h.
       port_srcs: the hardware port (FLEXPTP_HWPORT_SRC).
       nsd_srcs: the network stack driver (FLEXPTP_NSD_SRC).
+      nsd_hdrs: headers belonging to the port and driver.
       deps: anything the port and driver need -- the HAL, the RTOS, the network stack.
       **kwargs: forwarded to cc_library.
     """
@@ -30,6 +31,7 @@ def flexptp_library(name, config, port_srcs, nsd_srcs, deps = [], **kwargs):
             "@flexptp//:core_srcs",
             "@flexptp//:servo_kalman_srcs",
         ] + port_srcs + nsd_srcs,
+        hdrs = nsd_hdrs,
         # flexPTP is vendored and its warnings are not this project's to fix. The port and the
         # driver ARE this project's, and they are compiled here rather than in a first-party
         # library -- which is exactly the gap Modules/CMakeLists.txt papers over with

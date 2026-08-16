@@ -3,6 +3,8 @@
 # Phase 2 defines only the configuration headers -- the seam the vendored libraries reach this
 # project through. The libraries and the binary arrive in phases 3 and 4.
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//bazel:flexptp.bzl", "flexptp_library")
+load("//tools/build_rules:firmware.bzl", "stm32_firmware")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -290,5 +292,75 @@ cc_library(
         ":standard_output",
         "@embfmt",
         "@flexptp//:headers",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# flexPTP, and the firmware
+# ---------------------------------------------------------------------------
+
+# flexPTP with this project's hardware port and NSD compiled in, exactly as
+# FLEXPTP_HWPORT_SRC and FLEXPTP_NSD_SRC do under CMake.
+flexptp_library(
+    name = "flexptp",
+    config = ":flexptp_config",
+    features = FIRST_PARTY,
+    # The NSD and the port include their own headers unqualified, so ptp/ is on the path via
+    # :flexptp_config.
+    nsd_hdrs = ["ptp/nsd_netxduo.h"],
+    nsd_srcs = ["ptp/nsd_netxduo.c"],
+    port_srcs = ["ptp/ptp_port_stm32h563.c"],
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":eth",
+        ":includes",
+        ":mac_drv",
+        ":ptp_tx_timestamp",
+        ":ptp_units",
+        ":standard_output",
+        "@cmsis_rtos_threadx//:cmsis_rtos_tx",
+        "@netxduo",
+        "@stm32h5_hal//:hal",
+    ],
+)
+
+# The application itself.
+cc_library(
+    name = "app",
+    srcs = [
+        "cmds.c",
+        "cpp_support.cpp",
+        "main.c",
+        "syscall.c",
+        "sysmem.c",
+        "system_stm32h5xx.c",
+    ],
+    hdrs = [
+        "cmds.h",
+        "sysmem_bounds.h",
+    ],
+    features = FIRST_PARTY,
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":cli",
+        ":eth",
+        ":flexptp",
+        ":flexptp_config",
+        ":includes",
+        ":mac_drv",
+        ":standard_output",
+        "@cmsis_rtos_threadx//:cmsis_rtos_tx",
+        "@netxduo",
+        "@stm32h5_hal//:hal",
+    ],
+    alwayslink = True,
+)
+
+stm32_firmware(
+    name = "flexptp-demo",
+    linker_script = "startup/stm32h563zitx_FLASH.ld",
+    deps = [
+        ":app",
+        ":startup",
     ],
 )

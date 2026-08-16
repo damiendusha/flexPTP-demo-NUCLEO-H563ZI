@@ -159,6 +159,46 @@ cc_args(
     ],
 )
 
+# Optimisation, per compilation mode. CMake Debug/Release map to dbg/opt.
+#
+# opt is -O2, which is a DELIBERATE CHANGE from CMake's -Og (D8). The CMakeLists comment records
+# the measurements: -Og 149 400 B, -O2 149 456 B (+56 B), -Os 147 400 B, all three built and run
+# on hardware with the full S8 suite passing. What -O2 gives up is debuggable release images;
+# what it buys is `-c opt` meaning what a Bazel user expects.
+#
+# One consequence to be aware of: the F62 regression -- the H563's UID must be read 32 bits at a
+# time -- was re-checked by disassembly at -Og only, because drv_initialize() is inlined away at
+# -O2. See the note in CMakeLists.txt.
+config_setting(
+    name = "opt_mode",
+    values = {"compilation_mode": "opt"},
+)
+
+config_setting(
+    name = "dbg_mode",
+    values = {"compilation_mode": "dbg"},
+)
+
+cc_args(
+    name = "optimisation",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = select({
+        ":opt_mode": [
+            "-O2",
+            "-g0",
+        ],
+        ":dbg_mode": [
+            "-O0",
+            "-g3",
+            "-ggdb",
+        ],
+        "//conditions:default": [
+            "-O0",
+            "-g",
+        ],
+    }),
+)
+
 # -Wall -Wextra, applied to first-party targets only. Vendored trees keep -w, which is what
 # keeps this gate meaningful: a warning in NetX Duo or the HAL is not this project's to fix.
 #
@@ -193,6 +233,7 @@ cc_toolchain(
         ":no_canonical_prefixes",
         ":cpp_no_runtime",
         ":asm_with_cpp",
+        ":optimisation",
         ":link_flags",
     ],
     # Supplies the arguments Bazel's legacy action configs used to inject implicitly --
@@ -200,7 +241,13 @@ cc_toolchain(
     # it the compile works and the ARCHIVE step fails, because `ar` is invoked with no
     # operation letters at all.
     enabled_features = ["@rules_cc//cc/toolchains/args:experimental_replace_legacy_action_config_features"],
-    known_features = [":first_party_warnings_feature"],
+    known_features = [
+        ":first_party_warnings_feature",
+        # Produces the .map alongside the ELF, using the link action's own output path. This is
+        # what makes -Wl,-Map= expressible at all: a cc_binary cannot declare the extra output
+        # and $(RULEDIR) is not available in linkopts.
+        "@rules_cc//cc/toolchains/args/generate_linkmap:feature",
+    ],
     tool_map = ":all_tools",
 )
 
