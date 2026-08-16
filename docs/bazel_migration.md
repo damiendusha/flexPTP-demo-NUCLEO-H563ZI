@@ -10,7 +10,7 @@ Status: **phases 0–4 landed and verified on hardware; phases 5–7 outstanding
 | 2 — vendored trees as git repositories | landed, with one caveat in [§1.3](#13-the-four-patches) |
 | 3 — first-party libraries | landed |
 | 4 — the firmware binary | landed; **S8 13/13 on hardware** from a Bazel-built image. One piece of residual work — see [§5.3](#53-the-firmware-binary) |
-| 5 — flashing | outstanding |
+| 5 — flashing | **landed**, except the `source` OpenOCD mode — `bazel run …:flash` verified on hardware |
 | 6 — host tests | outstanding |
 | 7 — delete CMake | outstanding |
 | 8 — the FreeRTOS + lwIP project | outstanding |
@@ -1104,23 +1104,41 @@ in both, and the board gets an address, which settles it.
 `stm32_flash_binary` with its platform transition, and the HIL changes in
 [§8.3](#83-the-hil-suite-must-stop-hardcoding-the-openocd-path).
 
+**Landed, with one part outstanding: the `source` mode.** In place are the `local` resolver,
+the capability test, the pure-Starlark flash rule and the HIL changes. Building ST's OpenOCD
+with `rules_foreign_cc` ([decisions §6](bazel_decisions.md#6-why-sts-openocd-built-from-source))
+is not wired up, so a clean clone still needs `./build.sh --with-openocd` — criterion 2 is
+half-met, and **D7's deletion of `build.sh` must wait for it**.
+
+Two findings worth carrying forward:
+
+- The flash script must resolve runfiles through `$RUNFILES_DIR`, not `dirname $0`. Short paths
+  are relative to the runfiles root and external repositories arrive as `../<repo>/…`, which
+  resolves only from `_main/`.
+- `bazel run` needed no `--config=target`; the rule's own transition covers the ELF.
+
 *Accepts when:*
 1. `bazel test //tools/flash:openocd_capability_test` passes in **both** modes — the built
    binary and a locally provisioned one — reporting `STMicroelectronics`, `stm32h5x` and
-   `st-link`.
+   `st-link`. **Verified for `local`, and non-vacuously: against a fake upstream OpenOCD all
+   three assertions fail.**
 2. `bazel run //P:flash` programs the board from a clean output base, with no prior `build.sh`
-   invocation.
+   invocation. **Half-met:** it programs and verifies the board, but OpenOCD still comes from
+   `build.sh`. The `source` mode closes this.
 3. `bazel run //P:flash` from an unset or host `--platforms` still flashes a Cortex-M33 image —
    i.e. the transition works and cannot flash a host build.
 4. `tools/hil/run.py --openocd <path>` is honoured by **both** the `--flash` path and the
    `reset()` path — verified by pointing it at a deliberately broken binary and confirming
-   *both* fail, not just the first.
+   *both* fail, not just the first. **Verified exactly that way.** The resolver also has unit
+   tests: `//tools/hil:find_openocd_test`, 6 cases covering precedence and a dangling
+   `$OPENOCD`.
 5. With `toolchains/openocd` **deleted**, `tools/hil/run.py --stage S0` still finds an OpenOCD
-   via the resolver. This is the check that phase 7 will not break the suite, and it must be
-   run before phase 7, not after.
-6. **The full 12-check S8 HIL suite passes on a Bazel-built, Bazel-flashed image.** This is the
-   real gate for phases 1–5 together, and §8.2's build-id check is what makes it trustworthy:
-   without it the suite can pass against whatever was previously on the board (finding GI-01).
+   via the resolver. **Verified** by moving the directory aside and running against one on
+   `PATH` only. Phase 7 will not take the hardware suite with it.
+6. **The full S8 HIL suite passes on a Bazel-built, Bazel-flashed image — 13/13**, flashed by
+   `bazel run …:flash`, `|offset| <= 8940 ns`. This is the real gate for phases 1–5 together,
+   and [§7.2](#72-the-build-id-check)'s build-id check is what makes it trustworthy: without it
+   the suite can pass against whatever was previously on the board (finding GI-01).
 
 ### Phase 6 — Host tests
 
