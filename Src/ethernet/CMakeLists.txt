@@ -1,9 +1,4 @@
-if (ETH_STACK STREQUAL "ETHERLIB")
-    set(ETH_STACK_SRC
-        ethernet_etherlib.c
-        ethernet_etherlib.h
-    )
-elseif(ETH_STACK STREQUAL "NETXDUO")
+if(ETH_STACK STREQUAL "NETXDUO")
     set(ETH_STACK_SRC
         ethernet_netxduo.c
         ethernet_netxduo.h

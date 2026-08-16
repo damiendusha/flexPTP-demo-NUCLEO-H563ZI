@@ -87,21 +87,21 @@ jobs:
 
   # The ETH_STACK alternatives, compile-only.
   #
-  # Both had rotted: `NONE` (the no-stack configuration S3-S5 used, and the fallback if NetX
-  # Duo ever has to be bisected out) and `ETHERLIB` both failed to configure, because main.c
-  # and cmds.c included NetX Duo headers unconditionally. Nothing noticed, because nothing
-  # built them (finding TS-08).
+  # `NONE` is the no-stack configuration S3-S5 used, and the fallback if NetX Duo ever has to
+  # be bisected out. It had rotted -- it failed to configure, because main.c and cmds.c
+  # included NetX Duo headers unconditionally, and nothing noticed because nothing built it
+  # (finding TS-08).
   #
-  # Compile-only is the honest scope: it proves the switch still means something, not that
-  # either configuration works. EtherLib in particular has never been RUN -- see
-  # docs/design_doc.md, "Remaining work to enable EtherLib".
+  # Compile-only is the honest scope: it proves the switch still means something, not that the
+  # configuration works. ETHERLIB was the other half of this matrix until EtherLib was removed
+  # in the Bazel migration (D9); it had never been RUN.
   eth-stack-alternatives:
     name: Build (ETH_STACK=${{ matrix.stack }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        stack: [NONE, ETHERLIB]
+        stack: [NONE]
 
     steps:
       - uses: actions/checkout@v4

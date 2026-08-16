@@ -16,9 +16,7 @@
    choice, not a code path. Keeping it that way is what lets ETH_STACK still mean something;
    before this it was an unconditional include and neither alternative configuration would even
    compile (AR-05). */
-#if defined(ETH_ETHERLIB)
-#include "ethernet/ethernet_etherlib.h"
-#elif !defined(ETH_NONE)
+#if !defined(ETH_NONE)
 #include "ethernet/ethernet_netxduo.h"
 #endif
 

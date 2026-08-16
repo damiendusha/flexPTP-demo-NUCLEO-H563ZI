@@ -15,13 +15,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME} embfmt)
 
 add_subdirectory(blocking_io)
 
-if (ETH_STACK STREQUAL "ETHERLIB")
-    set(ETH_STACK_LIB etherlib)
-    set(ETHERLIB_INCLUDES ${include_dirs})
-    set(ETHERLIB_CPU_PARAMS ${cpu_PARAMS})
-    add_subdirectory(etherlib)
-    target_link_libraries(${CMAKE_PROJECT_NAME} etherlib)
-elseif(ETH_STACK STREQUAL "LWIP")
+if(ETH_STACK STREQUAL "LWIP")
     # Historical. lwIP was removed from the build in S3; the submodule is still pinned so
     # that this path -- and the pre-port firmware -- remain reconstructable from history.
     message(FATAL_ERROR

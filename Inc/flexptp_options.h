@@ -1,12 +1,11 @@
 /* The guard name is a leftover: this header was EtherLib-specific in the H743 project it came
-   from. Renaming it is a no-op with a small chance of a duplicate-guard collision, so it is
-   left alone and explained instead. */
+   from, and EtherLib itself was removed in the Bazel migration (D9). Renaming the guard is a
+   no-op with a small chance of a duplicate-guard collision, so it is left alone and explained
+   instead. */
 #ifndef SRC_FLEXPTP_OPTIONS_ETHERLIB
 #define SRC_FLEXPTP_OPTIONS_ETHERLIB
 
-#ifdef ETH_ETHERLIB
-#define ETHLIB
-#elif defined(ETH_LWIP)
+#ifdef ETH_LWIP
 #define LWIP
 #endif
 
@@ -20,7 +19,7 @@
  * PTP_IGMP_*_INIT is the extension point added by
  * patches/flexptp/0003-generic-netstack-igmp-addresses.patch; the values are the same
  * little-endian words flexPTP's own lwIP branch uses. */
-#if !defined(ETH_ETHERLIB) && !defined(ETH_LWIP)
+#if !defined(ETH_LWIP)
 typedef struct ip4_addr {
     uint32_t addr;
 } ip4_addr;
@@ -55,11 +54,7 @@ typedef struct ip4_addr {
 // --- DEFINES FOR PORTING IMPLEMENTATION ----
 // -------------------------------------------
 
-// Include LwIP/EtherLib headers here
-
-#ifdef ETH_ETHERLIB
-#include <etherlib/etherlib.h>
-#endif
+// Include the network stack's headers here.
 /* No lwip/ip_addr.h: ip_addr_t comes from the ip4_addr typedef above when no stack is
    linked. */
 

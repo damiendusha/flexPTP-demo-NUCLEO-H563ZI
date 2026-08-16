@@ -2,12 +2,7 @@ add_subdirectory(phy_drv)
 
 # The stack-facing glue. mac_drv.c below is stack-agnostic and always built; only the shim
 # that adapts it to a particular stack varies.
-if (ETH_STACK STREQUAL "ETHERLIB")
-    set(ETH_DRV_SRC
-        eth_drv_etherlib.c
-        eth_drv_etherlib.h
-        )
-elseif(ETH_STACK STREQUAL "NETXDUO")
+if(ETH_STACK STREQUAL "NETXDUO")
     set(ETH_DRV_SRC
         eth_drv_netxduo.c
         eth_drv_netxduo.h

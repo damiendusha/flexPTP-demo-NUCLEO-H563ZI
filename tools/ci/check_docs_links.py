@@ -41,6 +41,20 @@ REMOVED_BY_THREADX_PORT = {
     "Modules/lwip_port/sys_arch.c",
 }
 
+# Source files removed with EtherLib, in the Bazel migration (decision D9 in
+# docs/bazel_decisions.md). EtherLib was compile-only and had never been run on hardware.
+# Same treatment, and same reasoning, as the set above: the documents that link to these were
+# correct when written, and rewriting the archive to hide the removal would falsify the record.
+REMOVED_WITH_ETHERLIB = {
+    "Drivers/EthDrv/eth_drv_etherlib.c",
+    "Drivers/EthDrv/eth_drv_etherlib.h",
+    "Inc/etherlib_options.h",
+    "Src/etherlib_options.c",
+    "Src/ethernet/ethernet_etherlib.c",
+    "Src/ethernet/ethernet_etherlib.h",
+    "Modules/etherlib",
+}
+
 
 def anchors(path):
     """GitHub-style slugs for every ATX heading in a Markdown file."""
@@ -82,7 +96,7 @@ def main():
                     rel_dest = dest.relative_to(ROOT).as_posix()
                 except ValueError:
                     rel_dest = None
-                if rel_dest in REMOVED_BY_THREADX_PORT:
+                if rel_dest in REMOVED_BY_THREADX_PORT or rel_dest in REMOVED_WITH_ETHERLIB:
                     continue
                 bad.append(f"{rel}: missing file -> {target}")
                 continue

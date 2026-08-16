@@ -14,13 +14,6 @@ target_sources(
     cpp_support.cpp
 )
 
-# EtherLib's option/glue translation unit, only meaningful when that stack is selected.
-# It was compiled unconditionally, which meant an lwIP build carried a file whose whole
-# purpose is to configure a stack that is not present.
-if (ETH_STACK STREQUAL "ETHERLIB")
-    target_sources(${CMAKE_PROJECT_NAME} PUBLIC etherlib_options.c)
-endif()
-
 target_include_directories(
     ${CMAKE_PROJECT_NAME}
     PUBLIC
