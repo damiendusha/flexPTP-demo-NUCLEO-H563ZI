@@ -62,6 +62,43 @@ a build that applies a patch cannot also be the evidence that it was applied:
 
 ## Building
 
+> [!NOTE]
+> **This project is migrating from CMake to Bazel.** Both build systems work today and produce
+> the same firmware; CMake is removed once the migration finishes. The plan, the phase-by-phase
+> state and the reasoning are in [`docs/bazel_migration.md`](docs/bazel_migration.md) and
+> [`docs/bazel_decisions.md`](docs/bazel_decisions.md).
+>
+> First-party sources live under `projects/flexptp_threadx_netx_demo/`, which is where a second
+> firmware — the FreeRTOS + lwIP one — will sit beside this one.
+
+### With Bazel
+
+Nothing to install but Bazel: the compiler is fetched and pinned by `MODULE.bazel`, and the
+vendored trees come from git rather than submodules.
+
+```bash
+bazel build //projects/flexptp_threadx_netx_demo:flexptp-demo
+```
+
+That produces the `.elf`, `.map`, `.hex` and `.bin`. No `--platforms` flag is needed — the
+target carries a transition onto the board's platform, so it cannot silently produce a host
+build. `-c opt` gives `-O2` (note: the CMake build ships `-Og`; see D8 in the decisions
+document).
+
+To flash — this needs ST's OpenOCD, see [Flashing](#flashing):
+
+```bash
+bazel run //projects/flexptp_threadx_netx_demo:flash
+```
+
+Tests:
+
+```bash
+bazel test //...
+```
+
+### With CMake
+
 ### Prerequisites
 
 | Tool | Needed for | Note |

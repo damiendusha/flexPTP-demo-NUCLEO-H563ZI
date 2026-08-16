@@ -21,7 +21,7 @@ from pathlib import Path
 
 from checks import (ALL_CHECKS, STAGES, STAGES_WITHOUT_IP_THREAD, STAGES_WITHOUT_PHY,
                     CheckResult, Context, Status)
-from hil import Board, BoardError, OpenOcd
+from hil import DEFAULT_OPENOCD, Board, BoardError, OpenOcd
 
 GREEN, RED, YELLOW, DIM, RESET = (
     "\033[32m",
@@ -47,6 +47,9 @@ def parse_args() -> argparse.Namespace:
     sel.add_argument("--checks", help="comma-separated check names")
     p.add_argument("--list", action="store_true", help="list checks and stages, then exit")
     p.add_argument("--port", default="/dev/ttyACM0")
+    p.add_argument("--openocd", type=Path,
+                   help="OpenOCD to use. Defaults to the search in hil.find_openocd(): "
+                        "$OPENOCD, then toolchains/openocd/bin/openocd, then PATH.")
     p.add_argument("--iface", default="enp5s0", help="host interface facing the board")
     p.add_argument("--flash", type=Path, help="flash this ELF before running")
     p.add_argument("--elf", type=Path,
@@ -121,14 +124,18 @@ def main() -> int:
     if args.flash:
         print(f"{DIM}flashing {args.flash}{RESET}")
         try:
-            OpenOcd().flash(args.flash)
+            OpenOcd(binary=args.openocd or DEFAULT_OPENOCD).flash(args.flash)
         except BoardError as e:
             print(f"{RED}flash failed:{RESET} {e}")
             return 2
 
     results: list[CheckResult] = []
     try:
-        with Board(port=args.port) as board:
+        # The SAME OpenOCD for flashing and for reset(). Board() constructs its own by
+        # default, so not threading the flag here would let one run flash with one binary and
+        # reset with another.
+        with Board(port=args.port,
+                   openocd=OpenOcd(binary=args.openocd or DEFAULT_OPENOCD)) as board:
             for name in names:
                 print(f"{DIM}· {name}…{RESET}", flush=True)
                 try:

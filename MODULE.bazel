@@ -12,6 +12,7 @@ module(
 
 bazel_dep(name = "rules_cc", version = "0.2.22")
 bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_shell", version = "0.6.1")
 
 # ---------------------------------------------------------------------------
 # The Arm GNU toolchain
@@ -39,6 +40,11 @@ register_toolchains("//toolchain:arm_none_eabi_cortex_m33_toolchain")
 # These were submodules. The pins are the commits the submodules pointed at, and the four
 # patches that used to be working-tree edits are attached to the fetch. See
 # //bazel/repositories.bzl.
+# ST's OpenOCD fork, located on the machine rather than fetched: upstream cannot program an
+# STM32H5 and ST publishes no standalone binary of the fork. See //bazel/openocd.bzl.
+openocd = use_extension("//bazel:openocd.bzl", "openocd")
+use_repo(openocd, "openocd")
+
 vendored = use_extension("//bazel:repositories.bzl", "vendored")
 use_repo(
     vendored,

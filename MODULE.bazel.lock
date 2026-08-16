@@ -191,6 +191,19 @@
   },
   "selectedYankedVersions": {},
   "moduleExtensions": {
+    "//bazel:openocd.bzl%openocd": {
+      "general": {
+        "bzlTransitiveDigest": "YT3CfNRf4dkFzMuXMnW418NRAsjMYijElgq9PVjsjl4=",
+        "usagesDigest": "s5mSdbUOtz9Jy8XoDMeeOvx01EcejOyxfjnXaV8Q00k=",
+        "recordedInputs": [],
+        "generatedRepoSpecs": {
+          "openocd": {
+            "repoRuleId": "@@//bazel:openocd.bzl%_openocd_repository",
+            "attributes": {}
+          }
+        }
+      }
+    },
     "//bazel:repositories.bzl%vendored": {
       "general": {
         "bzlTransitiveDigest": "qvcGT7eH3K9q9DlJsiadH9qJP0RrXKVpKbr5KubqNbM=",

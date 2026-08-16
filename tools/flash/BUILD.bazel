@@ -1,0 +1,10 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+exports_files(["flash.bzl"])
+
+sh_test(
+    name = "openocd_capability_test",
+    srcs = ["openocd_capability_test.sh"],
+    args = ["$(location @openocd//:openocd)"],
+    data = ["@openocd//:openocd"],
+)

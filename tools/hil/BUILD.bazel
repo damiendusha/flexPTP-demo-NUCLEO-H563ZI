@@ -1,0 +1,14 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+# Run under sh_test rather than py_test: the project needs no rules_python today (D2), and these
+# tests import only the standard library. If rules_python arrives for another reason, this
+# should become a py_test.
+sh_test(
+    name = "find_openocd_test",
+    srcs = ["run_unittest.sh"],
+    args = ["test_find_openocd"],
+    data = [
+        "hil.py",
+        "test_find_openocd.py",
+    ],
+)

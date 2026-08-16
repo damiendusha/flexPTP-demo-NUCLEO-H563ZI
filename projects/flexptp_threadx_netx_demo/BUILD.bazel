@@ -5,6 +5,7 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//bazel:flexptp.bzl", "flexptp_library")
 load("//tools/build_rules:firmware.bzl", "stm32_firmware")
+load("//tools/flash:flash.bzl", "stm32_flash_binary")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -363,4 +364,13 @@ stm32_firmware(
         ":app",
         ":startup",
     ],
+)
+
+# bazel run //projects/flexptp_threadx_netx_demo:flash
+#
+# The ELF is transitioned onto the target platform by the rule, so this cannot flash a host
+# build -- which matters more once phase 8 puts a second image in the tree.
+stm32_flash_binary(
+    name = "flash",
+    elf_image = ":flexptp-demo.elf",
 )
