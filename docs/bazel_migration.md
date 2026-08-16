@@ -1,8 +1,21 @@
 # Bazel migration plan
 
-Status: **plan only — nothing here has been landed.** The toolchain design in
-[§3](#3-the-toolchain) was prototyped and verified working before this plan was written;
-everything else is design.
+Status: **phases 0–4 landed and verified on hardware; phases 5–7 outstanding.**
+
+| Phase | State |
+|---|---|
+| D9 — remove EtherLib | landed |
+| 0 — restructure into `projects/`, under CMake | landed; image section-identical to the pre-move build |
+| 1 — the toolchain | landed |
+| 2 — vendored trees as git repositories | landed, with one caveat in [§1.3](#13-the-four-patches) |
+| 3 — first-party libraries | landed |
+| 4 — the firmware binary | landed; **S8 13/13 on hardware** from a Bazel-built image. One piece of residual work — see [§5.3](#53-the-firmware-binary) |
+| 5 — flashing | outstanding |
+| 6 — host tests | outstanding |
+| 7 — delete CMake | outstanding |
+
+CMake still builds and still passes S8 at every point, so there is a working fallback until
+phase 7 removes it.
 
 This document sets out how to move this project from CMake
 ([`CMakeLists.txt`](../CMakeLists.txt) + [`build.sh`](../build.sh)) to Bazel, without Pigweed,
@@ -175,6 +188,13 @@ new_git_repository(
 The patch files are standard `git diff` output with `a/`/`b/` prefixes, so `-p1` is correct
 and they need no regeneration. A `BUILD.bazel` with `exports_files()` must be added under
 `patches/flexptp/` and `patches/embfmt/` to make them addressable as labels.
+
+**Verified in phase 2, with one caveat worth stating precisely.** The patched files in the
+fetched repository match the patched submodule — except that two of the four differ by exactly
+one byte. `git apply`, which `build.sh` uses, preserves upstream's missing newline at end of
+file; Bazel's patch application adds one. Content is identical once that is normalised, and a
+trailing newline is inert in C, so this changes nothing about the compiled output. It is
+recorded because "byte-for-byte" was the acceptance criterion and this is not quite that.
 
 **This is a genuine improvement, and it retires a whole class of failure.** The patches become
 part of the fetch, inside the repository cache, keyed by content. There is no
@@ -653,6 +673,38 @@ needed an explicit property because `-T` on the link line told CMake nothing —
 [`CMakeLists.txt`](../CMakeLists.txt) records that P3.8's section reorder appeared to do
 nothing until the ELF was deleted by hand. **That bug is structurally impossible in Bazel.**
 
+#### Residual: the platform transition is written but not wired in
+
+[§4.1](#41-platforms-and-constraints) says `stm32_firmware()` carries a transition onto
+`//toolchain:cortex_m33`, so that `bazel build` on the firmware produces a Cortex-M33 image
+whatever `--platforms` says and **cannot silently produce a host build**. As landed in phase 4
+it does not: the transition rule exists in `tools/build_rules/firmware.bzl` but nothing uses it,
+and the firmware is built with `--config=target` instead.
+
+What that costs today is small — a flag, and the `.bazelrc` already defines it. What it costs
+if left is the property the transition exists for: `bazel build //...` on the host skips the
+firmware as incompatible rather than building it, so there is nothing that produces the image
+without someone remembering the flag.
+
+**Why it is not a five-minute change.** The transition has to cover the *whole* macro, not just
+the `cc_binary`. The `.hex` and `.bin` genrules resolve `$(OBJCOPY)` from
+`@rules_cc//cc:current_cc_toolchain`, so if they run in the host configuration they get the host
+objcopy and the ELF from a different configuration than the one that produced it — which fails
+confusingly rather than loudly. Both need the transition, or the artefacts need to be produced
+inside a single rule that applies it once.
+
+Two ways to finish it, in rough order of preference:
+
+1. **A rule that wraps the whole set** — declare the ELF, `.map`, `.hex` and `.bin` as outputs
+   of one rule carrying `cfg = _target_platform_transition`, so there is exactly one
+   configuration boundary and the genrules disappear.
+2. **The transition on each of the three targets**, which is less code but three places to get
+   the configuration right rather than one, and leaves the boundary implicit.
+
+Until then, build the firmware with `--config=target`. Phase 5's flash rule already needs its
+own transition ([§8.1](#81-the-flash-rule--pure-starlark-no-new-bcr)) for the same reason and
+against the same hazard, so the two are worth doing together.
+
 ### 5.4 flexPTP
 
 flexPTP is the one dependency whose CMake integration does not map one-to-one, because
@@ -753,15 +805,21 @@ this project currently has.
 `$(RULEDIR)` is not available in `linkopts` ([decisions §1.5](bazel_decisions.md#15-two-traps-found-while-prototyping)),
 and `cc_binary` cannot declare extra outputs, so `-Wl,-Map=` cannot be expressed.
 
-The fix is a small Starlark rule in `tools/build_rules/firmware.bzl` that performs the link
-itself via `cc_common.link()`, declaring both the ELF and the `.map` as outputs and adding
-`-Wl,-Map=<declared path>` to `user_link_flags`. This is the same rule that already has to
-exist for `.hex`/`.bin`/`size`, so it is not extra machinery — but it must be built, and it is
-the one piece of the plan with no working prototype behind it.
+**Resolved in phase 4, and not the way this section predicted.** It planned a custom link rule
+via `cc_common.link()`. None was needed: `rules_cc` ships a **`generate_linkmap`** feature that
+does exactly this job, emitting `-Wl,-Map={output_execpath}.map` against the link action's own
+output path — which is the piece `linkopts` cannot reach.
 
-Fallback if that proves awkward: keep `cc_binary` and add a genrule that re-links from the
-same inputs purely to produce the map. Wasteful and it can drift from the real link; not
-recommended, recorded only so the option is on the table.
+```python
+cc_binary(name = "x.elf", features = ["generate_linkmap"], ...)   # -> x.elf.map
+```
+
+One trap, and it is silent: the feature must be listed in the **toolchain's `known_features`**
+(`@rules_cc//cc/toolchains/args/generate_linkmap:feature`). Request it on a target without
+that and nothing happens — no error, no `.map`, and `aquery` shows no `-Wl,-Map=` on the link.
+
+The custom-rule design is not wasted: [§5.3](#53-the-firmware-binary) still wants a single rule
+wrapping the ELF and its artefacts, for the *configuration* reason rather than the output one.
 
 ### 7.2 The build-id check
 
