@@ -1069,7 +1069,27 @@ The `//P/...` packages of [§5.2](#52-first-party-libraries) and `//third_party/
    `text`/`data`/`bss` delta beyond a few hundred bytes means a flag was lost, and the one most
    likely to be lost silently is `-Wl,--gc-sections`, whose removal grew the Release image from
    167 424 B to 233 924 B (finding H-3).
-6. **`//tools/ci:uid_access_test` passes on the `opt` image** — the F62 re-check D8 requires.
+6. ~~**`//tools/ci:uid_access_test` passes on the `opt` image**~~ — **not built, and the reason
+   matters.** This criterion assumed the UID access would be locatable in the disassembly of an
+   `-O2` image. It is not: the constant `0x08FFF800` appears in neither the Bazel nor the CMake
+   `-O2` image in any recoverable form — not as a literal pool entry, not as a `movw`/`movt`
+   pair — because the read is inlined into its caller and the address folded. That is precisely
+   what [`CMakeLists.txt`](../CMakeLists.txt) predicted when it declined to re-check F62 at
+   `-O2`: "drv_initialize() is inlined away at those levels and the UID base register was not
+   tracked through the inlined code."
+
+   So the static check is not cheaply constructible, and writing one that passes vacuously would
+   be worse than not having it. **What replaces it is direct functional evidence**, which is
+   stronger than the plan expected to be able to get:
+
+   - the board does not HardFault, which is F62's failure mode;
+   - the MAC address it derives from the UID is well-formed — observed over ARP as
+     `56:00:1e:00:04:51`: locally-administered bit set, multicast bit clear, not all-zero. A
+     byte-wide read of that region faults before it can produce anything; a wrong-width read
+     that somehow survived would not produce a correctly-formed address.
+
+   The residual gap is honest and unchanged from the CMake build's own position: this is
+   evidence about the paths S8 exercises, not a proof about all code.
 
 **Expect the PTP offset to move, and do not read it as a regression.** D8 ships `-O2` where
 CMake shipped `-Og`, and [`CMakeLists.txt`](../CMakeLists.txt) records the hardware figures for
@@ -1097,6 +1117,34 @@ in both, and the board gets an address, which settles it.
 
 **Residual work:** the platform transition is written but not wired in, so the firmware needs
 `--config=target` — see [§5.3](#53-the-firmware-binary).
+
+#### Final comparison against CMake, at a matched `-O2`
+
+Run before phase 7 deletes CMake, because after that "identical to the CMake image" stops being
+a checkable claim.
+
+| | Bazel `-c opt` | CMake `-O2` |
+|---|---|---|
+| `text` | 144 632 | 148 504 |
+| `data` | 2 648 | 2 648 |
+| `bss` | 175 336 | 175 336 |
+| defined symbols | 1 260 | 1 265 |
+
+`data` and `bss` are **identical**. The allocated section list is identical in name, count and
+order, and every section matches in size except `.text` and one 4-byte section.
+
+The `text` delta is 3 872 B, Bazel smaller, and it is **inlining variation in both directions**
+rather than missing code:
+
+- present only in CMake: `MemAlloc` and `MemInit` (both `static` in ST's `cmsis_os2.c`, inlined
+  away by the Bazel build), `HAL_RCC_GetSysClockFreq.part.0` and two `UART_RxISR_*.part.0`
+  partial-inlining clones, and a group of `_nx_dhcp_*` helpers;
+- present only in Bazel: `UART_EndRxTransfer`, `UART_WaitOnFlagUntilTimeout`, `mtx_add`,
+  `mtx_mul`, several `ptp_*` helpers, and `_nx_dhcp_add_option_parameter_request.isra.0` — the
+  `.isra` clone of one of the "missing" DHCP functions.
+
+The DHCP group looked alarming and is not: `_nx_dhcp_create` and `_nx_dhcp_start` are defined in
+both, and the board gets an address over DHCP on every hardware run.
 
 ### Phase 5 — Flashing
 
