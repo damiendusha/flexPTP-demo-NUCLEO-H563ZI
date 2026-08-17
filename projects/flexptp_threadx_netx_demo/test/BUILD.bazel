@@ -13,98 +13,7 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 # Tier 1 moved to //lib/test in phase 9, with the code it tests.
 
 
-# ---------------------------------------------------------------------------
-# Tier 2 -- the MAC driver against a software DMA model
-# ---------------------------------------------------------------------------
-#
-# Two constraints carried over from CMake, both load-bearing:
-#
-#   INCLUDE ORDER. host/ must come FIRST so its core_cm33.h, system_stm32h5xx.h and
-#   cmsis_compiler.h shadow ARM's. ARM's cmsis_gcc.h emits `mrs r0, ipsr` for __get_IPSR(),
-#   which x86 cannot assemble. Everything below the shim is the REAL thing -- ST's CMSIS device
-#   header and ST's HAL headers -- so the register layouts under test are the same definitions
-#   the firmware compiles against, following the pinned HAL automatically. Nothing is
-#   hand-copied. Bazel offers no direct control over include order across deps, so the shim
-#   directory is forced ahead with an explicit -I in copts rather than left to `includes`.
-#
-#   -no-pie / -fno-pie. The driver casts pointers to uint32_t because on the target they are 32
-#   bits; -no-pie puts .text low enough that a function pointer still fits in the uint32_t
-#   ETHHW_DescExt.tsCbPtr field. Without it the transmit-timestamp callback truncates and the
-#   first dispatch jumps into nowhere. Applies to the test binaries too, not just the library.
-cc_library(
-    name = "host_shims",
-    hdrs = glob(["host/*.h"]),
-    includes = ["host"],
-)
-
-cc_library(
-    name = "host_mac_drv",
-    srcs = [
-        "host/host_arena.c",
-        "host/host_mmio.c",
-        "mac_drv_uut.c",
-    ],
-    hdrs = [
-        "host/host_arena.h",
-        "host/host_mmio.h",
-    ],
-    copts = [
-        "-Iprojects/flexptp_threadx_netx_demo/test/host",
-        "-Wall",
-        "-Wextra",
-        "-Wno-unused-parameter",
-        # The pointer/int casts are deliberate and handled by keeping every such object in the
-        # MAP_32BIT arena; warning about them here says nothing useful.
-        "-Wno-pointer-to-int-cast",
-        "-Wno-int-to-pointer-cast",
-        "-fno-pie",
-    ],
-    defines = [
-        "STM32H563xx",
-        "USE_HAL_DRIVER",
-    ],
-    includes = ["."],
-    linkopts = ["-no-pie"],
-    # No shared object: -no-pie and a .so are contradictory, and Bazel builds one for a
-    # cc_library by default.
-    linkstatic = True,
-    deps = [
-        ":host_shims",
-        "//projects/flexptp_threadx_netx_demo:hal_conf",
-        "//projects/flexptp_threadx_netx_demo:mac_drv_textual",
-        "//third_party/CMSIS:cmsis",
-        "@stm32h5_hal//:hal_headers",
-    ],
-)
-
-cc_library(
-    name = "eth_model",
-    srcs = ["eth_model.cpp"],
-    hdrs = ["eth_model.hpp"],
-    copts = ["-Iprojects/flexptp_threadx_netx_demo/test/host"],
-    includes = ["."],
-    linkstatic = True,
-    deps = [":host_mac_drv"],
-)
-
-[
-    cc_test(
-        name = name,
-        size = "small",
-        srcs = ["%s.cpp" % name],
-        copts = ["-Iprojects/flexptp_threadx_netx_demo/test/host"],
-        linkopts = ["-no-pie"],
-        deps = [
-            ":eth_model",
-            "@googletest//:gtest_main",
-        ],
-    )
-    for name in [
-        "test_host_harness",
-        "test_rx_ring",
-        "test_tx_ring",
-    ]
-]
+# Tier 2 moved to //lib/test in phase 9, with the driver it tests.
 
 # ---------------------------------------------------------------------------
 # Tier 3 -- real ThreadX on the host, for the context rules
@@ -126,7 +35,7 @@ cc_library(
         "-w",
         # host/ FIRST: its cmsis_compiler.h shadows ARM's, whose __get_IPSR() emits
         # `mrs r0, ipsr` -- an instruction x86 cannot assemble.
-        "-Iprojects/flexptp_threadx_netx_demo/test/host",
+        "-Ilib/test/host",
     ],
     defines = [
         "USE_DYNAMIC_MEMORY_ALLOCATION",
@@ -135,7 +44,7 @@ cc_library(
     ],
     linkstatic = True,
     deps = [
-        ":host_shims",
+        "//lib/test:host_shims",
         "//third_party/CMSIS:cmsis",
         "@threadx//:threadx_linux",
     ],
@@ -147,7 +56,7 @@ cc_test(
     name = "test_rtos_context",
     size = "medium",
     srcs = ["test_rtos_context.cpp"],
-    copts = ["-Iprojects/flexptp_threadx_netx_demo/test/host"],
+    copts = ["-Ilib/test/host"],
     deps = [
         ":host_cmsis_rtos",
         "@googletest//:gtest",
@@ -161,7 +70,7 @@ cc_test(
         "test_blocking_fifo.cpp",
         "//projects/flexptp_threadx_netx_demo:blocking_io/blocking_fifo.c",
     ],
-    copts = ["-Iprojects/flexptp_threadx_netx_demo/test/host"],
+    copts = ["-Ilib/test/host"],
     deps = [
         ":host_cmsis_rtos",
         "//projects/flexptp_threadx_netx_demo:blocking_io_headers",
@@ -178,7 +87,7 @@ cc_test(
         "//projects/flexptp_threadx_netx_demo:blocking_io/blocking_fifo.c",
     ],
     copts = [
-        "-Iprojects/flexptp_threadx_netx_demo/test/host",
+        "-Ilib/test/host",
         "-Wno-unused-parameter",
     ],
     deps = [

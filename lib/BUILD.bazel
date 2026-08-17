@@ -58,3 +58,81 @@ cc_library(
     features = FIRST_PARTY,
     includes = ["runtime"],
 )
+
+# ---------------------------------------------------------------------------
+# Tier 2 -- the hardware layer
+# ---------------------------------------------------------------------------
+#
+# Same silicon, same registers, and mac_drv.h is stack-agnostic by design: it was written that
+# way so the driver could outlive a change of network stack, which is exactly what happened.
+
+# The console's INTERFACE. The implementation stays per-project for now, because it creates an
+# RTOS thread and the two firmwares' CMSIS-RTOS2 wrappers are different objects -- that is tier
+# 3. Sharing the header alone is enough for the driver: MSG() resolves at link time against
+# whichever implementation the firmware links.
+cc_library(
+    name = "io_headers",
+    hdrs = glob(["io/*.h"]),
+    includes = ["."],
+    strip_include_prefix = "io",
+    include_prefix = "standard_output",
+)
+
+# The MAC driver, at the DMA descriptor level. Always built, in both firmwares: it owns the PTP
+# clock registers the flexPTP hardware port reaches, which is why it stayed compiled even in the
+# configurations that linked no network stack at all.
+cc_library(
+    name = "mac_drv",
+    srcs = [
+        "eth/mac_drv.c",
+        "eth/phy_drv/phy_common.c",
+    ],
+    hdrs = [
+        "eth/mac_drv.h",
+        "eth/phy_drv/phy_common.h",
+    ],
+    features = FIRST_PARTY,
+    includes = [
+        ".",
+        "eth",
+    ],
+    target_compatible_with = ["//toolchain:stm32h563"],
+    deps = [
+        ":io_headers",
+        "@stm32h5_hal//:hal",
+    ],
+)
+
+# mac_drv.c for TEXTUAL inclusion, which is how the host harness reaches its file statics.
+cc_library(
+    name = "mac_drv_textual",
+    hdrs = [
+        "eth/mac_drv.h",
+        "eth/phy_drv/phy_common.h",
+    ],
+    includes = [
+        ".",
+        "eth",
+    ],
+    textual_hdrs = [
+        "eth/mac_drv.c",
+        "eth/phy_drv/phy_common.c",
+    ],
+    deps = [":io_headers"],
+)
+
+# flexPTP's STM32H563 hardware port. Sources rather than a library: it is compiled INTO flexPTP,
+# which each project instantiates with its own configuration.
+exports_files([
+    "ptp/ptp_port_stm32h563.c",
+    "ptp/ptp_port_stm32h563.h",
+])
+
+cc_library(
+    name = "ptp_port_headers",
+    hdrs = ["ptp/ptp_port_stm32h563.h"],
+    includes = [
+        ".",
+        "ptp",
+    ],
+)

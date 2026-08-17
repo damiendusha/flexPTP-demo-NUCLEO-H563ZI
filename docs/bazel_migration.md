@@ -14,7 +14,7 @@ Status: **phases 0–4 landed and verified on hardware; phases 5–7 outstanding
 | 6 — host tests | **landed** — 13/13, and both mutation checks still bite |
 | 7 — delete CMake | **landed** |
 | 8 — the FreeRTOS + lwIP project | **landed** — both firmwares build and pass on hardware; D15 partially met |
-| 9 — unification | **tier 1 landed** — the pure-logic units are shared; tiers 2–4 outstanding |
+| 9 — unification | **tiers 1–2 landed** — pure units and the hardware layer are shared; tiers 3–4 outstanding |
 
 CMake still builds and still passes S8 at every point, so there is a working fallback until
 phase 7 removes it.
@@ -1812,9 +1812,17 @@ duplication rather than by prediction. Rough order, easiest and safest first:
    `blocking_fifo` is deliberately held back to tier 3 despite this section originally listing
    it here: it includes `cmsis_os2.h`, so it belongs with the CMSIS-RTOS2 layer rather than with
    the units that depend on nothing.
-2. **The hardware layer.** `mac_drv.c` + `phy_drv/`, and `ptp_port_stm32h563.c`. Same silicon,
-   same registers, and `mac_drv.h` is stack-agnostic by design. Covered by the ring/harness host
-   tests plus HIL.
+2. **The hardware layer. DONE.** `mac_drv.c`, `phy_drv/` and `ptp_port_stm32h563.c` are in
+   `//lib`, with the ring and harness tests in `//lib/test`. Same silicon, same registers, and
+   `mac_drv.h` is stack-agnostic by design — it was written that way so the driver could outlive
+   a change of network stack, which is exactly what happened. **Both build IDs unchanged.**
+
+   One thing had to come with it that this section did not anticipate: the **console's headers**.
+   `mac_drv.c` calls `MSG()`, so it needs `standard_output.h` — but not the implementation, which
+   creates an RTOS thread and is therefore still per-project. `//lib:io_headers` shares the
+   interface alone and the symbol resolves at link against whichever implementation the firmware
+   links. That is the tier boundary being less clean than the list implies: a tier-2 file needed
+   a tier-3 header, and splitting interface from implementation was what let it move.
 3. **The CMSIS-RTOS2 layer.** `cli.c`, `serial_io.c`, `standard_output/`, and the shared half of
    `cmds.c`. These are portable *because* the project is CMSIS-RTOS2 throughout
    ([§13.2](#132-where-the-freertos--lwip-firmware-comes-from)) — one API, two implementations

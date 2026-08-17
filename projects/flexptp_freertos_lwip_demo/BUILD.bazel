@@ -55,18 +55,6 @@ cc_library(
     deps = ["//third_party/CMSIS:cmsis"],
 )
 
-# Headers-only view of the console, for lwIP: its port's cc.h routes LWIP_PLATFORM_DIAG through
-# this project's serial output, so every lwIP translation unit needs the declaration.
-cc_library(
-    name = "standard_output_headers",
-    hdrs = [
-        "standard_output/serial_io.h",
-        "standard_output/standard_output.h",
-        "standard_output/term_colors.h",
-    ],
-    includes = ["."],
-)
-
 # lwIP's options header, plus the port's arch/ headers, which lwIP includes as <arch/cc.h>.
 cc_library(
     name = "lwip_config",
@@ -77,7 +65,7 @@ cc_library(
     ],
     deps = [
         ":freertos_config",
-        ":standard_output_headers",
+        "//lib:io_headers",
         "@freertos//:headers",
     ],
 )
@@ -159,13 +147,11 @@ cc_library(
         "standard_output/standard_output.c",
     ],
     hdrs = [
-        "standard_output/serial_io.h",
-        "standard_output/standard_output.h",
-        "standard_output/term_colors.h",
     ],
     features = FIRST_PARTY,
     target_compatible_with = TARGET_ONLY,
     deps = [
+        "//lib:io_headers",
         ":blocking_io",
         ":includes",
         ":cmsis_rtos",
@@ -181,6 +167,7 @@ cc_library(
     features = FIRST_PARTY,
     target_compatible_with = TARGET_ONLY,
     deps = [
+        "//lib:io_headers",
         ":blocking_io",
         ":includes",
         ":standard_output",
@@ -190,25 +177,6 @@ cc_library(
 
 
 
-
-cc_library(
-    name = "mac_drv",
-    srcs = [
-        "eth/mac_drv.c",
-        "eth/phy_drv/phy_common.c",
-    ],
-    hdrs = [
-        "eth/mac_drv.h",
-        "eth/phy_drv/phy_common.h",
-    ],
-    features = FIRST_PARTY,
-    target_compatible_with = TARGET_ONLY,
-    deps = [
-        ":includes",
-        ":standard_output",
-        "@stm32h5_hal//:hal",
-    ],
-)
 
 # The lwIP-facing glue, from master: this is the half that differs from the ThreadX project.
 cc_library(
@@ -227,7 +195,7 @@ cc_library(
         "//lib:eth_framer",
         "//lib:eth_link_state",
         ":includes",
-        ":mac_drv",
+        "//lib:mac_drv",
         ":standard_output",
         "@lwip",
     ],
@@ -269,7 +237,7 @@ cc_library(
     name = "flexptp_config",
     hdrs = [
         "flexptp_options.h",
-        "ptp/ptp_port_stm32h563.h",
+        "//lib:ptp/ptp_port_stm32h563.h",
     ],
     features = FIRST_PARTY,
     includes = [
@@ -280,7 +248,7 @@ cc_library(
     deps = [
         ":cli",
         ":includes",
-        ":mac_drv",
+        "//lib:mac_drv",
         ":standard_output",
         "@embfmt",
         "@flexptp//:headers",
@@ -293,13 +261,13 @@ flexptp_library(
     config = ":flexptp_config",
     features = FIRST_PARTY,
     nsd_srcs = ["@flexptp//:nsd_lwip_srcs"],
-    port_srcs = ["ptp/ptp_port_stm32h563.c"],
+    port_srcs = ["//lib:ptp/ptp_port_stm32h563.c"],
     target_compatible_with = TARGET_ONLY,
     deps = [
         ":cmsis_rtos",
         ":eth",
         ":includes",
-        ":mac_drv",
+        "//lib:mac_drv",
         "//lib:ptp_units",
         ":standard_output",
         "@lwip",
@@ -329,7 +297,7 @@ cc_library(
         ":flexptp_config",
         ":includes",
         ":lwip_port",
-        ":mac_drv",
+        "//lib:mac_drv",
         ":standard_output",
         "@lwip",
         "@stm32h5_hal//:hal",

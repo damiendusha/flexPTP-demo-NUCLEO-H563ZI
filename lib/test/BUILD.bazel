@@ -25,3 +25,95 @@ load("@rules_cc//cc:defs.bzl", "cc_test")
         ("test_sysmem_bounds", "//lib:sysmem_bounds"),
     ]
 ]
+
+# ---------------------------------------------------------------------------
+# Tier 2 -- the MAC driver against a software DMA model
+# ---------------------------------------------------------------------------
+#
+# Moved here with the driver in phase 9. Two constraints carried from the CMake build, both
+# load-bearing:
+#
+#   INCLUDE ORDER. host/ must come FIRST so its core_cm33.h, system_stm32h5xx.h and
+#   cmsis_compiler.h shadow ARM's -- ARM's cmsis_gcc.h emits `mrs r0, ipsr` for __get_IPSR(),
+#   which x86 cannot assemble. Everything below the shim is the REAL thing: ST's CMSIS device
+#   header and ST's HAL headers, so the register layouts under test are the definitions the
+#   firmware compiles against, following the pinned HAL automatically.
+#
+#   -no-pie / -fno-pie. The driver casts pointers to uint32_t because on the target they are 32
+#   bits; -no-pie puts .text low enough that a function pointer still fits in the uint32_t
+#   ETHHW_DescExt.tsCbPtr field. Without it the transmit-timestamp callback truncates and the
+#   first dispatch jumps into nowhere.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "host_shims",
+    hdrs = glob(["host/*.h"]),
+    includes = ["host"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "host_mac_drv",
+    srcs = [
+        "host/host_arena.c",
+        "host/host_mmio.c",
+        "mac_drv_uut.c",
+    ],
+    hdrs = [
+        "host/host_arena.h",
+        "host/host_mmio.h",
+    ],
+    copts = [
+        "-Ilib/test/host",
+        "-Wall",
+        "-Wextra",
+        "-Wno-unused-parameter",
+        # Deliberate, and handled by keeping every such object in the MAP_32BIT arena.
+        "-Wno-pointer-to-int-cast",
+        "-Wno-int-to-pointer-cast",
+        "-fno-pie",
+    ],
+    defines = [
+        "STM32H563xx",
+        "USE_HAL_DRIVER",
+    ],
+    includes = ["."],
+    linkopts = ["-no-pie"],
+    linkstatic = True,
+    deps = [
+        ":host_shims",
+        "//lib:mac_drv_textual",
+        "//projects/flexptp_threadx_netx_demo:hal_conf",
+        "//third_party/CMSIS:cmsis",
+        "@stm32h5_hal//:hal_headers",
+    ],
+)
+
+cc_library(
+    name = "eth_model",
+    srcs = ["eth_model.cpp"],
+    hdrs = ["eth_model.hpp"],
+    copts = ["-Ilib/test/host"],
+    includes = ["."],
+    linkstatic = True,
+    deps = [":host_mac_drv"],
+)
+
+[
+    cc_test(
+        name = name,
+        size = "small",
+        srcs = ["%s.cpp" % name],
+        copts = ["-Ilib/test/host"],
+        linkopts = ["-no-pie"],
+        deps = [
+            ":eth_model",
+            "@googletest//:gtest_main",
+        ],
+    )
+    for name in [
+        "test_host_harness",
+        "test_rx_ring",
+        "test_tx_ring",
+    ]
+]
