@@ -150,12 +150,18 @@ cc_args(
         # for an image it did not test (finding GI-01).
         "-Wl,--build-id=sha1",
         "-Wl,--print-memory-usage",
-        "-Wl,--start-group",
-        "-lc",
-        "-lm",
-        "-lstdc++",
-        "-lsupc++",
-        "-Wl,--end-group",
+        # NOTE: --start-group -lc -lm -lstdc++ -lsupc++ --end-group is deliberately NOT here.
+        #
+        # cc_args on the toolchain are emitted BEFORE the object files. A library group in that
+        # position is inert: the linker reads the archives with nothing yet unresolved, takes
+        # nothing from them, and then meets the objects' undefined references with no archives
+        # left to satisfy them. It looked correct and did nothing -- the giveaway was that
+        # adding a std::vector failed at LINK with "undefined reference to operator delete"
+        # instead of linking and being caught by tools/ci/check_cxx_rules.sh, which is how the
+        # CMake build behaves.
+        #
+        # The group belongs in the firmware's linkopts, which are user link flags and are
+        # emitted after the objects. See stm32_firmware() in tools/build_rules/firmware.bzl.
     ],
 )
 

@@ -1,0 +1,22 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+# The C++ rules -- no dynamic allocation, no exceptions, no RTTI -- asserted against the LINKED
+# IMAGE rather than against the sources, for the same reason `cpp_ctor` in tools/hil/ asks the
+# running board whether static constructors ran: a rule about what the firmware contains is a
+# question for the firmware, not for grep (finding CX-07).
+#
+# A test rather than a CI step, so it runs on every `bazel test` instead of only in CI.
+sh_test(
+    name = "cxx_rules_test",
+    srcs = ["check_cxx_rules.sh"],
+    args = [
+        "$(location //projects/flexptp_threadx_netx_demo:flexptp-demo_elf)",
+        "$(location @arm_gnu_toolchain//:bin/arm-none-eabi-nm)",
+    ],
+    data = [
+        "//projects/flexptp_threadx_netx_demo:flexptp-demo_elf",
+        "@arm_gnu_toolchain//:bin/arm-none-eabi-nm",
+    ],
+    # The ELF is a target-platform artefact; the test itself runs on the host.
+    target_compatible_with = ["@platforms//os:linux"],
+)

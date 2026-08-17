@@ -49,7 +49,17 @@ def _stm32_artifacts_impl(ctx):
             progress_message = "Extracting %s from %s" % (fmt, elf.basename),
         )
 
-    return [DefaultInfo(files = depset([elf, hex_out, bin_out]))]
+    return [
+        DefaultInfo(files = depset([elf, hex_out, bin_out])),
+        # The ELF on its own, reachable through the transition. Anything on the host that needs
+        # the image -- the C++ rules test, a flash target -- wants this rather than the
+        # untransitioned cc_binary, which is incompatible with a host platform.
+        OutputGroupInfo(
+            bin = depset([bin_out]),
+            elf = depset([elf]),
+            hex = depset([hex_out]),
+        ),
+    ]
 
 _stm32_artifacts = rule(
     implementation = _stm32_artifacts_impl,
@@ -92,7 +102,18 @@ def stm32_firmware(
         name = elf,
         additional_linker_inputs = [linker_script],
         features = ["generate_linkmap"],
-        linkopts = ["-T $(location %s)" % linker_script],
+        linkopts = [
+            "-T $(location %s)" % linker_script,
+            # AFTER the objects, which is the only position where a library group does anything
+            # -- see the note in //toolchain:link_flags. linkopts are user link flags and are
+            # emitted after the inputs; toolchain cc_args are not.
+            "-Wl,--start-group",
+            "-lc",
+            "-lm",
+            "-lstdc++",
+            "-lsupc++",
+            "-Wl,--end-group",
+        ],
         # Tagged manual so a wildcard build reaches the firmware through :name, which carries
         # the transition, rather than building this directly in whatever configuration happens
         # to be current.

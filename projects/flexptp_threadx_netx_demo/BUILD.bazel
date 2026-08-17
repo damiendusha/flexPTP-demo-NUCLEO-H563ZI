@@ -137,7 +137,12 @@ cc_library(
     srcs = ["eth/eth_framer.cpp"],
     hdrs = ["eth/eth_framer.h"],
     features = FIRST_PARTY,
-    includes = ["."],
+    # As with :ptp_units -- "." for qualified includes from the driver, "eth" so the unit and
+    # its test can include it unqualified.
+    includes = [
+        ".",
+        "eth",
+    ],
 )
 
 cc_library(
@@ -145,7 +150,12 @@ cc_library(
     srcs = ["eth/eth_link_state.cpp"],
     hdrs = ["eth/eth_link_state.h"],
     features = FIRST_PARTY,
-    includes = ["."],
+    # As with :ptp_units -- "." for qualified includes from the driver, "eth" so the unit and
+    # its test can include it unqualified.
+    includes = [
+        ".",
+        "eth",
+    ],
 )
 
 # The MAC driver. Stack-agnostic and always built: it owns the PTP clock registers the flexPTP
@@ -167,6 +177,66 @@ cc_library(
         ":standard_output",
         "@stm32h5_hal//:hal",
     ],
+)
+
+# mac_drv.c exposed for TEXTUAL inclusion, which is how test/mac_drv_uut.c reaches the driver's
+# file statics -- it #includes the .c verbatim. textual_hdrs rather than srcs: compiling it here
+# as well as in :mac_drv would be duplicate symbols.
+exports_files(["blocking_io/blocking_fifo.c"])
+
+cc_library(
+    name = "blocking_io_headers",
+    hdrs = ["blocking_io/blocking_fifo.h"],
+    includes = [
+        ".",
+        "blocking_io",
+    ],
+    visibility = ["//projects/flexptp_threadx_netx_demo/test:__pkg__"],
+)
+
+# cli.c for TEXTUAL inclusion: test/cli_uut.c includes it verbatim to reach the file statics.
+cc_library(
+    name = "cli_textual",
+    hdrs = ["cli/cli.h"],
+    includes = [
+        ".",
+        "cli",
+    ],
+    textual_hdrs = ["cli/cli.c"],
+    visibility = ["//projects/flexptp_threadx_netx_demo/test:__pkg__"],
+    deps = [
+        ":blocking_io_headers",
+        ":standard_output_headers",
+    ],
+)
+
+cc_library(
+    name = "standard_output_headers",
+    hdrs = [
+        "standard_output/serial_io.h",
+        "standard_output/standard_output.h",
+        "standard_output/term_colors.h",
+    ],
+    includes = ["."],
+    visibility = ["//projects/flexptp_threadx_netx_demo/test:__pkg__"],
+)
+
+cc_library(
+    name = "mac_drv_textual",
+    hdrs = [
+        "eth/mac_drv.h",
+        "eth/phy_drv/phy_common.h",
+    ],
+    deps = [":standard_output_headers"],
+    includes = [
+        ".",
+        "eth",
+    ],
+    textual_hdrs = [
+        "eth/mac_drv.c",
+        "eth/phy_drv/phy_common.c",
+    ],
+    visibility = ["//projects/flexptp_threadx_netx_demo/test:__pkg__"],
 )
 
 # The stack-facing glue.
@@ -227,6 +297,15 @@ exports_files(["startup/stm32h563zitx_FLASH.ld"])
 #
 # A library in its own right rather than sources compiled into flexPTP, because the Ethernet
 # driver calls into it as well; compiling it in both places would be duplicate symbols.
+# Header-only, and host-buildable: the bounds arithmetic _sbrk relies on, extracted so it can be
+# tested without a target.
+cc_library(
+    name = "sysmem_bounds",
+    hdrs = ["sysmem_bounds.h"],
+    features = FIRST_PARTY,
+    includes = ["."],
+)
+
 cc_library(
     name = "ptp_units",
     srcs = [
@@ -242,7 +321,12 @@ cc_library(
         "ptp/ptp_tx_registry.h",
     ],
     features = FIRST_PARTY,
-    includes = ["."],
+    # Both: "." so the Ethernet driver can say <ptp/ptp_tx_registry.h>, and "ptp" so the units
+    # and their tests can include each other unqualified, as they do under CMake.
+    includes = [
+        ".",
+        "ptp",
+    ],
 )
 
 # The transmit-timestamp registry's target half. Kept out of :ptp_units because it needs
@@ -357,6 +441,7 @@ cc_library(
     alwayslink = True,
 )
 
+# Visible to //tools/ci so the C++ rules can be asserted against the linked image.
 stm32_firmware(
     name = "flexptp-demo",
     linker_script = "startup/stm32h563zitx_FLASH.ld",
@@ -373,4 +458,11 @@ stm32_firmware(
 stm32_flash_binary(
     name = "flash",
     elf_image = ":flexptp-demo.elf",
+)
+
+# The ELF alone, through the firmware's platform transition, for host-side consumers.
+filegroup(
+    name = "flexptp-demo_elf",
+    srcs = [":flexptp-demo"],
+    output_group = "elf",
 )

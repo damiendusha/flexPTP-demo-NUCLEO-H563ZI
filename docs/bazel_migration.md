@@ -11,7 +11,7 @@ Status: **phases 0–4 landed and verified on hardware; phases 5–7 outstanding
 | 3 — first-party libraries | landed |
 | 4 — the firmware binary | landed; **S8 13/13 on hardware** from a Bazel-built image. One piece of residual work — see [§5.3](#53-the-firmware-binary) |
 | 5 — flashing | **landed**, except the `source` OpenOCD mode — `bazel run …:flash` verified on hardware |
-| 6 — host tests | outstanding |
+| 6 — host tests | **landed** — 13/13, and both mutation checks still bite |
 | 7 — delete CMake | outstanding |
 | 8 — the FreeRTOS + lwIP project | outstanding |
 | 9 — unification | outstanding |
@@ -858,11 +858,12 @@ This is stricter than today, where warnings only fail in CI.
 
 ### 7.4 The C++ rules check
 
-[`tools/ci/check_cxx_rules.sh`](../tools/ci/check_cxx_rules.sh) runs `nm` over the linked image
-looking for `operator new`, `__cxa_throw` and RTTI vtables. It takes an ELF path and an
-optional `nm` path, so it ports as-is — but it should become a `sh_test` with the ELF and the
-toolchain's `nm` as data dependencies, rather than a CI step with a hardcoded path into
-`toolchains/`. Then it runs on every `bazel test`, not only in CI.
+**Done.** `//tools/ci:cxx_rules_test` is an `sh_test` taking the ELF and the toolchain's `nm` as
+data, so it runs on every `bazel test` rather than only in CI. The ELF reaches it through an
+`elf` output group on the firmware rule — the raw `cc_binary` is incompatible with a host
+platform, so a host-side test cannot depend on it directly.
+
+Verified non-vacuous: a `std::vector` in an NSD unit fails it on `_ZdlPv`.
 
 The script's fallback path to `toolchains/arm-gnu-toolchain-15.3.rel1-.../bin/arm-none-eabi-nm`
 must be updated or bypassed — under Bazel that directory is not where the compiler lives.
@@ -1144,10 +1145,37 @@ Two findings worth carrying forward:
 
 Tiers 1, 2, 3 from [§6](#6-host-tests), in that order.
 
-*Accepts when:* `bazel test //...` runs all 13 binaries green, and mutation checks still
-bite — specifically, reintroducing F57 must make `test_tx_ring` **fail on timeout** rather than
-hang the runner, and adding a `std::vector` to an NSD unit must fail the C++ rules test.
-A green suite that no longer detects these is not a ported suite.
+**Landed. 13/13, and both mutation checks verified.**
+
+- Reintroducing F57 — hoisting `ETHHW_ProcessTx()`'s per-pass descriptor count out of the retry
+  loop — makes `test_tx_ring` **TIMEOUT**, not hang the runner.
+- Adding a `std::vector` to an NSD unit fails the C++ rules test on `_ZdlPv`, the exact symbol
+  CX-07's original verification named.
+
+**The second mutation found a real defect first.** It initially failed at *link* with
+"undefined reference to `operator delete`" instead of linking and being caught by the check —
+which is not how the CMake build behaves. The cause: the
+`--start-group -lc -lm -lstdc++ -lsupc++ --end-group` block was in the toolchain's `cc_args`,
+and those are emitted **before** the object files. A library group in that position is inert —
+the linker reads the archives with nothing yet unresolved, takes nothing, and then meets the
+objects' undefined references with no archives left. It looked right and did nothing. Moving it
+to the firmware's `linkopts`, which are user link flags emitted after the inputs, restored
+CMake's behaviour and changed the image by 4 bytes.
+
+That is worth noting as a general hazard: **a flag being present in the link command is not
+evidence it is doing anything.**
+
+Three mechanics the port needed:
+
+- `googletest` is **1.18.0**, not the 1.15.2 the CMake suite pins. 1.15.2's own `BUILD.bazel`
+  uses bare `cc_library`, which Bazel 9 removed, and the failure reads
+  `no such target '@googletest//:gtest_main'` — which does not obviously mean "too old".
+- `.bazelrc` sets `-std=c++20` for host and target. Bazel defaults to C++17 and the first-party
+  C++ is written against 20.
+- `mac_drv.c` and `cli.c` are exposed as `textual_hdrs`, because `mac_drv_uut.c` and `cli_uut.c`
+  `#include` the `.c` verbatim to reach file statics. `srcs` would compile them twice.
+- Tier 2 needs `linkstatic = True`: `-no-pie` and a `.so` are contradictory, and Bazel builds a
+  `.so` for a `cc_library` by default.
 
 Independent of phases 4–5 and can be done in parallel by a second pair of hands.
 

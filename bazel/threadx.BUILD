@@ -45,3 +45,39 @@ cc_library(
     target_compatible_with = ["@flexptp_demo//toolchain:stm32h563"],
     deps = [":tx_user"],
 )
+
+# The Linux port, for the host suite.
+#
+# Two named targets rather than one with a select() on the port: the ports differ in SOURCES,
+# not just flags, and two names debug better. What differs by configuration -- the byte-pool
+# sizes -- is on the consumer, not here.
+#
+# This is what makes the context tests possible at all: the restriction they pin lives in
+# common/src/txe_queue_send.c, so the Linux port enforces it identically to the Cortex-M33 one.
+cc_library(
+    name = "threadx_linux",
+    srcs = glob([
+        "common/src/*.c",
+        "ports/linux/gnu/src/*.c",
+    ]),
+    hdrs = glob([
+        "common/inc/*.h",
+        "ports/linux/gnu/inc/*.h",
+    ]),
+    copts = ["-w"],
+    defines = [
+        "TX_INCLUDE_USER_DEFINE_FILE",
+        # The Linux port hands ThreadX a single malloc() of this size as its unused memory, and
+        # the CMSIS-RTOS2 wrapper carves BOTH byte pools out of it. The default 64000 is smaller
+        # than the pools, and overrunning it is not an allocation failure --
+        # _tx_byte_pool_create() writes its first block header past the end and segfaults.
+        "TX_LINUX_MEMORY_SIZE=4194304",
+    ],
+    includes = [
+        "common/inc",
+        "ports/linux/gnu/inc",
+    ],
+    linkopts = ["-lpthread"],
+    visibility = ["//visibility:public"],
+    deps = [":tx_user"],
+)

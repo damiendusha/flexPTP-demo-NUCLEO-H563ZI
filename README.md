@@ -91,7 +91,8 @@ To flash — this needs ST's OpenOCD, see [Flashing](#flashing):
 bazel run //projects/flexptp_threadx_netx_demo:flash
 ```
 
-Tests:
+Tests — the host suite, the C++ rules asserted against the linked image, and the OpenOCD
+capability check, all in one invocation:
 
 ```bash
 bazel test //...

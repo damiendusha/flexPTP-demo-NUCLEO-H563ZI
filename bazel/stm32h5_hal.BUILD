@@ -17,6 +17,20 @@ label_flag(
     build_setting_default = "@flexptp_demo//projects/flexptp_threadx_netx_demo:hal_conf",
 )
 
+# Headers only, for the host test suite: mac_drv.c is compiled for x86 there and needs ST's real
+# HAL and CMSIS definitions, so that register layouts and bit positions come from the same place
+# the firmware gets them rather than from a hand-copied fake that can drift.
+cc_library(
+    name = "hal_headers",
+    hdrs = glob(["Inc/**/*.h"]),
+    copts = ["-w"],
+    includes = [
+        "Inc",
+        "Inc/Legacy",
+    ],
+    deps = [":hal_conf"],
+)
+
 cc_library(
     name = "hal",
     srcs = glob(

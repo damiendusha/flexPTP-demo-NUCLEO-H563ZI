@@ -3,6 +3,15 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+# The wrapper's single source, exposed for the host suite, which compiles it with different pool
+# sizes and against the ThreadX Linux port.
+exports_files(["cmsis_os2.c"])
+
+filegroup(
+    name = "cmsis_os2_src",
+    srcs = ["cmsis_os2.c"],
+)
+
 cc_library(
     name = "cmsis_rtos_tx",
     srcs = ["cmsis_os2.c"],
