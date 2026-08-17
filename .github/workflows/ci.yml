@@ -60,14 +60,21 @@ jobs:
           key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel.lock', 'MODULE.bazel') }}
           restore-keys: bazel-${{ runner.os }}-
 
+      # OpenOCD's configure needs these. The default openocd=source mode builds ST's fork, and
+      # a runner has no OpenOCD to fall back on -- `=local` FAILS here rather than skipping,
+      # which a clean-clone test caught after this job was first written that way.
+      - name: Install OpenOCD build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y libusb-1.0-0-dev pkg-config autoconf automake libtool
+
       # One invocation covers the host unit tests, the C++ rules asserted against the linked
-      # image, and the resolver tests -- host and target are two platforms in one graph, so
-      # there is no separate test root to configure.
+      # image, the OpenOCD capability check and the resolver tests -- host and target are two
+      # platforms in one graph, so there is no separate test root to configure.
       #
-      # --//tools/flash:openocd=local keeps CI off the OpenOCD source build, which takes minutes
-      # and needs libusb headers, and nothing here flashes a board.
+      # This builds ST's OpenOCD the first time, which is minutes; the Bazel cache above keys on
+      # MODULE.bazel, so it only rebuilds when the pin moves. Worth it: it means CI proves a
+      # clean clone can flash, which is the property phase 7 relied on to delete build.sh.
       - name: Test
-        run: bazel test //... --//tools/flash:openocd=local
+        run: bazel test //...
 
   static-analysis:
     name: Static analysis

@@ -1247,7 +1247,19 @@ Independent of phases 4–5 and can be done in parallel by a second pair of hand
 
 ### Phase 7 — Delete CMake
 
-**Landed.** Removed: `CMakeLists.txt` and the seven nested ones, `CMakePresets.json`, `cmake/`,
+**Landed, and a clean clone is the proof:** `git clone` then
+`bazel build --config=opt //projects/flexptp_threadx_netx_demo:flexptp-demo` produces the
+firmware in ~34 s with no submodule init, no patch step and no toolchain download step — and the
+build ID is *identical* to the working tree's, so the result is reproducible rather than merely
+working. `bazel test //...` from that clone is 16/16.
+
+That clean clone also **caught a bug in the rewritten CI**: the test job used
+`--//tools/flash:openocd=local`, and a runner has no local OpenOCD, so the resolver failed the
+job rather than skipping. CI now uses the default `source` mode with the OpenOCD build
+prerequisites installed — which is better than the flag it replaced, because it makes CI prove
+the property phase 7 depended on: that a clean clone can flash.
+
+Removed: `CMakeLists.txt` and the seven nested ones, `CMakePresets.json`, `cmake/`,
 `Middlewares/*.cmake`, `build.sh` (D7), `.gitmodules`, and the submodule trees themselves.
 
 **`patches/` is NOT deleted, and this plan was wrong to list it.** Deleting it broke the build
