@@ -466,3 +466,16 @@ filegroup(
     srcs = [":flexptp-demo"],
     output_group = "elf",
 )
+
+# Every source in this project, for //tools/ci:seeding_test to compare the two trees.
+filegroup(
+    name = "all_sources",
+    srcs = glob([
+        "**/*.c",
+        "**/*.h",
+        "**/*.cpp",
+        "**/*.s",
+        "**/*.S",
+        "**/*.ld",
+    ], allow_empty = True),
+)

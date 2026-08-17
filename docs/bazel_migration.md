@@ -1309,10 +1309,17 @@ on platform ([decisions §5](bazel_decisions.md#5-why-not-imus-embedded_cc_binar
 1. **`bazel build //...` builds both firmwares** in one invocation. This is the monorepo payoff
    and the thing CMake cannot do; if it needs two invocations something is a global flag that
    should be a per-project dependency.
-2. **The seeding rule holds, checked rather than asserted.** For every file taken from `master`,
-   `git log` it on the `bazel` line: any commit after `5e25b7b` means it is on the wrong side of
-   [§13.3](#133-layout-two-independent-projects-first)'s table and a fix has been silently
-   reverted.
+2. **The seeding rule holds, checked rather than asserted** — `//tools/ci:seeding_test`.
+   Note the `git log 5e25b7b..bazel` form this plan originally proposed **does not work**: phase
+   0 moved every candidate file, and a rename is a delete plus an add, so every one comes back
+   flagged whether it diverged or not. The check compares the two project trees instead: a file
+   present in both must be identical unless it is on an explicit per-project list.
+
+   It also asserts the **cross-project invariants** — settings the two firmwares must agree on
+   even in files that legitimately differ. The initial PTP profile is the first: `main.c` is
+   per-project, so the file comparison skips it, and a profile mismatch is silent on both sides
+   (PTP has no handshake). Restoring the FreeRTOS project with master's `gPTP` default is
+   exactly how that presented — `ptp_start` passed and SLAVE never arrived.
 3. **The ThreadX firmware is unchanged.** Its ELF sections must match the pre-phase-8 build.
    Adding a second project must not perturb the first, and the way it would is a `label_flag`
    default quietly repointed — which is invisible in a diff and obvious in a size comparison.

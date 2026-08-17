@@ -45,9 +45,44 @@ while IFS= read -r rel; do
     fi
 done < <(cd "$RT" && find . -type f \( -name '*.c' -o -name '*.h' -o -name '*.cpp' -o -name '*.s' -o -name '*.S' -o -name '*.ld' \) | sed 's|^\./||')
 
+# Invariants that hold ACROSS the two projects even in files that legitimately differ.
+#
+# main.c is per-project -- different RTOS, different stack, different bring-up -- so the
+# whole-file comparison above deliberately skips it. That would let these drift silently, and
+# one of them is a setting whose mismatch is invisible on both sides.
+check_same() {
+    local what="$1" pattern="$2" a b
+    a=$(grep -hoE "$pattern" "${TX}/main.c" 2>/dev/null | head -1)
+    b=$(grep -hoE "$pattern" "${RT}/main.c" 2>/dev/null | head -1)
+    if [ -z "$a" ] || [ -z "$b" ]; then
+        echo "  MISSING   ${what}: not found in one or both projects"
+        fail=1
+    elif [ "$a" != "$b" ]; then
+        echo "  DIVERGED  ${what}"
+        echo "            ${TX}: ${a}"
+        echo "            ${RT}: ${b}"
+        fail=1
+    else
+        echo "  ok        ${what}: ${a}"
+    fi
+}
+
+# The initial PTP profile. Both firmwares must boot into the same one.
+#
+# PTP has no handshake, so a profile mismatch between board and master is SILENT on both sides
+# -- see the project's ptp_profiles.md. 'default' is plain IEEE 1588 over UDP/IPv4 with E2E
+# delay measurement: the preset that survives ordinary switches, and the one a stock ptp4l with
+# no config file matches. 'gPTP' does not, because its destination MAC is in the 802.1D
+# reserved range conformant bridges must not forward -- which is exactly how it presented when
+# the FreeRTOS project was first restored: PTP_START passed, SLAVE never arrived.
+check_same "initial PTP profile" 'FLEXPTP_INITIAL_PROFILE \(\"[a-zA-Z0-9]+\"\)'
+
 if [ "$fail" -ne 0 ]; then
     echo
-    echo "Seed common files from ${TX}, not from master. See docs/bazel_migration.md §13.3."
+    echo "Two things this can mean:"
+    echo "  DIVERGED on a common file -- seed it from ${TX}, not from master, or the fixes"
+    echo "    master predates are being reverted. See docs/bazel_migration.md §13.3."
+    echo "  DIVERGED on a cross-project invariant -- the two firmwares must agree on it."
     exit 1
 fi
-echo "Seeding rule holds: every common file matches the ThreadX project."
+echo "Seeding rule holds: common files match, and the cross-project invariants agree."

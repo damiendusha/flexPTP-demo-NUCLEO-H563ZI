@@ -20,3 +20,31 @@ sh_test(
     # The ELF is a target-platform artefact; the test itself runs on the host.
     target_compatible_with = ["@platforms//os:linux"],
 )
+
+sh_test(
+    name = "cxx_rules_freertos_test",
+    srcs = ["check_cxx_rules.sh"],
+    args = [
+        "$(location //projects/flexptp_freertos_lwip_demo:flexptp-demo-freertos_elf)",
+        "$(location @arm_gnu_toolchain//:bin/arm-none-eabi-nm)",
+    ],
+    data = [
+        "//projects/flexptp_freertos_lwip_demo:flexptp-demo-freertos_elf",
+        "@arm_gnu_toolchain//:bin/arm-none-eabi-nm",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+# The monorepo's cross-project rules: common files identical between the two firmwares, and the
+# invariants they must agree on even in files that legitimately differ.
+#
+# Getting either wrong is not a build failure -- it is a silently older or silently
+# unsynchronisable firmware -- which is why it is a test rather than a review habit.
+sh_test(
+    name = "seeding_test",
+    srcs = ["check_seeding.sh"],
+    data = [
+        "//projects/flexptp_freertos_lwip_demo:all_sources",
+        "//projects/flexptp_threadx_netx_demo:all_sources",
+    ],
+)
