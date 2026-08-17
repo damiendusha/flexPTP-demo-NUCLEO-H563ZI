@@ -24,6 +24,13 @@ PER_PROJECT=(
     cmds.c
     cmds.h
     flexptp_options.h
+
+    # D15: the CMSIS-RTOS2 context tests are RE-DERIVED for each kernel, not translated. The
+    # ISR half is common -- it is ST's wrapper's rule, and both wrappers have it -- but the
+    # timer-thread half is ThreadX's own restriction (F80) and has no FreeRTOS counterpart.
+    # A file that differs here is expected; a file that were identical would mean one of the
+    # two firmwares is being tested against the other kernel's rules.
+    test/test_rtos_context.cpp
 )
 
 is_per_project() {

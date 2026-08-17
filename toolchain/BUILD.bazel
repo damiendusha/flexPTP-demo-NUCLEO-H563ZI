@@ -296,3 +296,10 @@ toolchain(
     toolchain = ":host_pkgconfig",
     toolchain_type = "@rules_foreign_cc//toolchains:pkgconfig_toolchain",
 )
+
+# For select()ing on "is this the board?" -- the platform-driven half of the configuration
+# question in docs/bazel_decisions.md §5.
+config_setting(
+    name = "is_cortex_m33",
+    constraint_values = [":stm32h563"],
+)

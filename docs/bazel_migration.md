@@ -1333,9 +1333,23 @@ on platform ([decisions §5](bazel_decisions.md#5-why-not-imus-embedded_cc_binar
    images in the tree, "flashed the wrong thing" becomes a plausible mistake rather than a
    theoretical one.
 6. **`check_docs_links.py` is clean** after the documents move.
-7. **D15's FreeRTOS context tests exist and are re-derived, not translated** — the ISR half
-   ported verbatim, the timer-thread half replaced by FreeRTOS's own rule, and the file
-   recording that F80 has no FreeRTOS counterpart ([§13.6](#136-what-gets-harder)).
+7. **D15's FreeRTOS context tests exist and are re-derived, not translated.** **Partially met,
+   and the shortfall is recorded rather than papered over.**
+
+   The **ISR half ports verbatim and passes**: ST's FreeRTOS-backed `cmsis_os2.c` has the same
+   `IS_IRQ_MODE() && timeout != 0 → osErrorParameter` guard as its ThreadX sibling, so the rule
+   that guards why `ptp_tx_timestamp.c` exists is checked on both firmwares.
+
+   The **timer-thread half is DISABLED**. Every test that drives a CMSIS-RTOS2 timer callback
+   segfaults on the FreeRTOS POSIX port — including one that only reads `__get_IPSR()` and
+   blocks nothing, so the fault is in the timer path itself rather than in the blocking call.
+   That leaves "FreeRTOS's timer service task may block, so F80 has no counterpart here"
+   **unproven**: a reasonable reading of FreeRTOS's design, and what ST's wrapper implies, but
+   not something this suite demonstrates. Whether the fault is in the POSIX port, in ST's
+   wrapper on a host, or in the harness is not established.
+
+   A passing test asserting an unverified claim would be worse than a disabled one saying so,
+   which is what the file now does.
 
 **Prerequisite:** finish the platform transition first ([§5.3](#53-the-firmware-binary)).
 Criterion 5 depends on it, and a second project is the point at which building the wrong

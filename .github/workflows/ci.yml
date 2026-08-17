@@ -13,12 +13,20 @@ on:
 
 jobs:
   build:
-    name: Firmware (${{ matrix.config }})
+    name: ${{ matrix.project }} (${{ matrix.config }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         config: [dbg, opt]
+        project:
+          - flexptp_threadx_netx_demo
+          - flexptp_freertos_lwip_demo
+        include:
+          - project: flexptp_threadx_netx_demo
+            target: flexptp-demo
+          - project: flexptp_freertos_lwip_demo
+            target: flexptp-demo-freertos
 
     steps:
       - uses: actions/checkout@v4
@@ -37,15 +45,15 @@ jobs:
       # are -Werror inside the build itself (D13), so a warning fails the compile rather than
       # being detected afterwards.
       - name: Build
-        run: bazel build --config=${{ matrix.config }} //projects/flexptp_threadx_netx_demo:flexptp-demo
+        run: bazel build --config=${{ matrix.config }} //projects/${{ matrix.project }}:${{ matrix.target }}
 
       - uses: actions/upload-artifact@v4
         with:
-          name: flexptp-demo-${{ matrix.config }}
+          name: ${{ matrix.target }}-${{ matrix.config }}
           path: |
-            bazel-bin/projects/flexptp_threadx_netx_demo/flexptp-demo.elf
-            bazel-bin/projects/flexptp_threadx_netx_demo/flexptp-demo.elf.map
-            bazel-bin/projects/flexptp_threadx_netx_demo/flexptp-demo.hex
+            bazel-bin/projects/${{ matrix.project }}/${{ matrix.target }}.elf
+            bazel-bin/projects/${{ matrix.project }}/${{ matrix.target }}.elf.map
+            bazel-bin/projects/${{ matrix.project }}/${{ matrix.target }}.hex
 
   test:
     name: Tests
@@ -77,8 +85,14 @@ jobs:
         run: bazel test //...
 
   static-analysis:
-    name: Static analysis
+    name: Static analysis (${{ matrix.project }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - flexptp_threadx_netx_demo
+          - flexptp_freertos_lwip_demo
     steps:
       - uses: actions/checkout@v4
 
@@ -97,13 +111,13 @@ jobs:
             --inline-suppr \
             --std=c11 \
             --platform=unix32 \
-            -DSTM32H563xx -DUSE_HAL_DRIVER -DETH_NETXDUO -DCMSIS_OS2 -DPPS_SIMPLE \
-            -I projects/flexptp_threadx_netx_demo -I third_party \
+            -DSTM32H563xx -DUSE_HAL_DRIVER -DCMSIS_OS2 -DPPS_SIMPLE \
+            -I projects/${{ matrix.project }} -I third_party \
             --suppress=missingInclude \
             --suppress=missingIncludeSystem \
             --suppress=unusedFunction \
             --suppress=unmatchedSuppression \
-            projects/flexptp_threadx_netx_demo/
+            projects/${{ matrix.project }}/
 
   docs:
     name: Docs cross-references

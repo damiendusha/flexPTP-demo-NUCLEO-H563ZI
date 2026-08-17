@@ -28,8 +28,28 @@ cc_library(
     deps = ["//third_party/CMSIS:cmsis"],
 )
 
-cc_library(
+# The FreeRTOS configuration @freertos reaches this project through, and it is PLATFORM
+# DEPENDENT.
+#
+# The firmware's FreeRTOSConfig.h configures a Cortex-M33: interrupt priorities, a 30 KB heap,
+# and configAPPLICATION_ALLOCATED_HEAP=1 so the heap can be placed by the linker script. None of
+# that is meaningful on a host, and the last one is not merely useless -- heap_4.c then expects
+# the application to define ucHeap, which a test binary does not, and the failure is an
+# undefined reference a long way from its cause.
+#
+# A select() rather than a transition, because the difference is driven by the PLATFORM: see
+# docs/bazel_decisions.md §5, which works out that only @flexptp needs two configurations on the
+# same platform and everything else here is a select.
+alias(
     name = "freertos_config",
+    actual = select({
+        "//toolchain:is_cortex_m33": ":freertos_config_target",
+        "//conditions:default": "//projects/flexptp_freertos_lwip_demo/test:freertos_config_host",
+    }),
+)
+
+cc_library(
+    name = "freertos_config_target",
     hdrs = ["FreeRTOSConfig.h"],
     includes = ["."],
     deps = ["//third_party/CMSIS:cmsis"],
