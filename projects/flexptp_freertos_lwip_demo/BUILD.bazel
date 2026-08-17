@@ -1,0 +1,80 @@
+# The FreeRTOS + lwIP firmware.
+#
+# The second project of the monorepo (D10/D11). Deliberately independent of
+# //projects/flexptp_threadx_netx_demo for now: the two carry their own copies of the common
+# files, and phase 9 factors them out against two real applications rather than against a guess.
+#
+# The common files here were seeded from the ThreadX project, NOT from master -- master's copies
+# are ~1000 lines behind and include the F57, F62, GI-01 and GI-02 fixes. Only the FreeRTOS and
+# lwIP glue comes from master. tools/ci/check_seeding.sh asserts that, and it is a real hazard:
+# getting it wrong is not a build failure, it is a silently older firmware.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# --- Configuration headers: the seam the vendored libraries reach this project through -------
+
+cc_library(
+    name = "hal_conf",
+    hdrs = ["stm32h5xx_hal_conf.h"],
+    defines = [
+        "STM32H563xx",
+        "USE_HAL_DRIVER",
+    ],
+    includes = ["."],
+    deps = ["//third_party/CMSIS:cmsis"],
+)
+
+cc_library(
+    name = "freertos_config",
+    hdrs = ["FreeRTOSConfig.h"],
+    includes = ["."],
+    deps = ["//third_party/CMSIS:cmsis"],
+)
+
+# Headers-only view of the console, for lwIP: its port's cc.h routes LWIP_PLATFORM_DIAG through
+# this project's serial output, so every lwIP translation unit needs the declaration.
+cc_library(
+    name = "standard_output_headers",
+    hdrs = [
+        "standard_output/serial_io.h",
+        "standard_output/standard_output.h",
+        "standard_output/term_colors.h",
+    ],
+    includes = ["."],
+)
+
+# lwIP's options header, plus the port's arch/ headers, which lwIP includes as <arch/cc.h>.
+cc_library(
+    name = "lwip_config",
+    hdrs = ["lwipopts.h"] + glob(["lwip_port/arch/*.h"]),
+    includes = [
+        ".",
+        "lwip_port",
+    ],
+    deps = [
+        ":freertos_config",
+        ":standard_output_headers",
+        "@freertos//:headers",
+    ],
+)
+
+cc_library(
+    name = "project_defines",
+    defines = [
+        "CMSIS_OS2",
+        "PPS_SIMPLE",
+        "ETH_LWIP",
+        r'ETH_STACK=\"LWIP\"',
+        r'PROJECT_NAME=\"flexptp-demo-freertos\"',
+    ],
+)
+
+cc_library(
+    name = "includes",
+    includes = ["."],
+    deps = [
+        ":hal_conf",
+        ":project_defines",
+    ],
+)

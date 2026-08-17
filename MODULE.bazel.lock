@@ -247,7 +247,7 @@
     },
     "//bazel:repositories.bzl%vendored": {
       "general": {
-        "bzlTransitiveDigest": "qvcGT7eH3K9q9DlJsiadH9qJP0RrXKVpKbr5KubqNbM=",
+        "bzlTransitiveDigest": "68SO2faVho61C/6n5PhGsWjr1tLF4azu5BBrJyY9wM8=",
         "usagesDigest": "TXFRr/ekOJ4WkENAUY1PQ7JCVxHUmRqoFm+HcCVY/SY=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"
@@ -315,10 +315,18 @@
               "remote": "https://github.com/epagris/embfmt.git"
             }
           },
+          "freertos": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:git.bzl%git_repository",
+            "attributes": {
+              "build_file": "@@//bazel:freertos.BUILD",
+              "commit": "9b777ae5c5b8e9e456065a00294d1e5f5f9facf5",
+              "remote": "https://github.com/FreeRTOS/FreeRTOS-Kernel.git"
+            }
+          },
           "lwip": {
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:git.bzl%git_repository",
             "attributes": {
-              "build_file_content": "# Pinned, not built. See docs/bazel_decisions.md.\nfilegroup(name = \"srcs\", srcs = glob([\"**\"], allow_empty = True), visibility = [\"//visibility:public\"])\n",
+              "build_file": "@@//bazel:lwip.BUILD",
               "commit": "3d896ba0a37ff3ce73270ca5e230707fe47f60e3",
               "remote": "https://github.com/lwip-tcpip/lwip.git"
             }

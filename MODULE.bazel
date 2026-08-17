@@ -72,6 +72,7 @@ use_repo(
     "cmsis_rtos_threadx",
     "embfmt",
     "flexptp",
+    "freertos",
     "lwip",
     "netxduo",
     "stm32h5_hal",

@@ -80,15 +80,23 @@ def _vendored_impl(_mctx):
         remote = "https://github.com/epagris/embfmt.git",
     )
 
-    # lwIP: pinned but NOT built, and deliberately without a BUILD file (D9). It returns in
-    # phase 8 with the FreeRTOS project. The pin is 34 commits past STABLE-2_2_1_RELEASE and
-    # its tip is "tcp_in: Add bounds check for next option byte" -- ahead of the newest release
-    # on purpose, which is also why a registry module would be the wrong source for it.
+    # FreeRTOS, for the second project (D14). git rather than BCR: the registry tops out at
+    # 11.1.0 and this firmware was validated against V11.3.0, whose pin master carries as
+    # "the CM33 port API is load-bearing for this project".
+    new_git_repository(
+        name = "freertos",
+        build_file = "//bazel:freertos.BUILD",
+        commit = "9b777ae5c5b8e9e456065a00294d1e5f5f9facf5",  # V11.3.0
+        remote = "https://github.com/FreeRTOS/FreeRTOS-Kernel.git",
+    )
+
+    # lwIP, built from phase 8 for the FreeRTOS project. The pin is 34 commits past
+    # STABLE-2_2_1_RELEASE and its tip is "tcp_in: Add bounds check for next option byte" --
+    # ahead of the newest release on purpose, which is also why a registry module would be the
+    # wrong source for it even if one existed. It does not; lwIP is not on BCR.
     new_git_repository(
         name = "lwip",
-        build_file_content = """# Pinned, not built. See docs/bazel_decisions.md.
-filegroup(name = "srcs", srcs = glob(["**"], allow_empty = True), visibility = ["//visibility:public"])
-""",
+        build_file = "//bazel:lwip.BUILD",
         commit = "3d896ba0a37ff3ce73270ca5e230707fe47f60e3",  # STABLE-2_2_1_RELEASE-34
         remote = "https://github.com/lwip-tcpip/lwip.git",
     )
