@@ -132,31 +132,7 @@ cc_library(
 # The pure-logic units, extracted from the driver so they can be tested off-target. They depend
 # on nothing but stdint, which is the whole point -- and is why they are the first thing phase 9
 # will unify between the two projects.
-cc_library(
-    name = "eth_framer",
-    srcs = ["eth/eth_framer.cpp"],
-    hdrs = ["eth/eth_framer.h"],
-    features = FIRST_PARTY,
-    # As with :ptp_units -- "." for qualified includes from the driver, "eth" so the unit and
-    # its test can include it unqualified.
-    includes = [
-        ".",
-        "eth",
-    ],
-)
 
-cc_library(
-    name = "eth_link_state",
-    srcs = ["eth/eth_link_state.cpp"],
-    hdrs = ["eth/eth_link_state.h"],
-    features = FIRST_PARTY,
-    # As with :ptp_units -- "." for qualified includes from the driver, "eth" so the unit and
-    # its test can include it unqualified.
-    includes = [
-        ".",
-        "eth",
-    ],
-)
 
 # The MAC driver. Stack-agnostic and always built: it owns the PTP clock registers the flexPTP
 # hardware port reaches, which is why it stayed compiled even when no stack was linked.
@@ -253,12 +229,12 @@ cc_library(
     features = FIRST_PARTY,
     target_compatible_with = TARGET_ONLY,
     deps = [
-        ":eth_framer",
-        ":eth_link_state",
+        "//lib:eth_framer",
+        "//lib:eth_link_state",
         ":includes",
         ":mac_drv",
         ":ptp_tx_timestamp",
-        ":ptp_units",
+        "//lib:ptp_units",
         ":standard_output",
         "@netxduo",
     ],
@@ -299,35 +275,7 @@ exports_files(["startup/stm32h563zitx_FLASH.ld"])
 # driver calls into it as well; compiling it in both places would be duplicate symbols.
 # Header-only, and host-buildable: the bounds arithmetic _sbrk relies on, extracted so it can be
 # tested without a target.
-cc_library(
-    name = "sysmem_bounds",
-    hdrs = ["sysmem_bounds.h"],
-    features = FIRST_PARTY,
-    includes = ["."],
-)
 
-cc_library(
-    name = "ptp_units",
-    srcs = [
-        "ptp/ptp_endpoint.cpp",
-        "ptp/ptp_nsd_lifecycle.cpp",
-        "ptp/ptp_ts_codec.cpp",
-        "ptp/ptp_tx_registry.cpp",
-    ],
-    hdrs = [
-        "ptp/ptp_endpoint.h",
-        "ptp/ptp_nsd_lifecycle.h",
-        "ptp/ptp_ts_codec.h",
-        "ptp/ptp_tx_registry.h",
-    ],
-    features = FIRST_PARTY,
-    # Both: "." so the Ethernet driver can say <ptp/ptp_tx_registry.h>, and "ptp" so the units
-    # and their tests can include each other unqualified, as they do under CMake.
-    includes = [
-        ".",
-        "ptp",
-    ],
-)
 
 # The transmit-timestamp registry's target half. Kept out of :ptp_units because it needs
 # CMSIS-RTOS2 and flexPTP's headers, and :ptp_units' whole value is that it needs neither -- it
@@ -346,7 +294,7 @@ cc_library(
     deps = [
         ":flexptp_config",
         ":includes",
-        ":ptp_units",
+        "//lib:ptp_units",
         ":standard_output",
         "@cmsis_rtos_threadx//:cmsis_rtos_tx",
         "@flexptp//:headers",
@@ -401,7 +349,7 @@ flexptp_library(
         ":includes",
         ":mac_drv",
         ":ptp_tx_timestamp",
-        ":ptp_units",
+        "//lib:ptp_units",
         ":standard_output",
         "@cmsis_rtos_threadx//:cmsis_rtos_tx",
         "@netxduo",
@@ -420,13 +368,11 @@ cc_library(
         "sysmem.c",
         "system_stm32h5xx.c",
     ],
-    hdrs = [
-        "cmds.h",
-        "sysmem_bounds.h",
-    ],
+    hdrs = ["cmds.h"],
     features = FIRST_PARTY,
     target_compatible_with = TARGET_ONLY,
     deps = [
+        "//lib:sysmem_bounds",
         ":cli",
         ":eth",
         ":flexptp",

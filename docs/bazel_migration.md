@@ -14,7 +14,7 @@ Status: **phases 0–4 landed and verified on hardware; phases 5–7 outstanding
 | 6 — host tests | **landed** — 13/13, and both mutation checks still bite |
 | 7 — delete CMake | **landed** |
 | 8 — the FreeRTOS + lwIP project | **landed** — both firmwares build and pass on hardware; D15 partially met |
-| 9 — unification | outstanding |
+| 9 — unification | **tier 1 landed** — the pure-logic units are shared; tiers 2–4 outstanding |
 
 CMake still builds and still passes S8 at every point, so there is a working fallback until
 phase 7 removes it.
@@ -1801,10 +1801,17 @@ same judgement applies: rewriting an archive to hide a move falsifies the record
 Once both projects build and both pass HIL, factor the common code out — driven by observed
 duplication rather than by prediction. Rough order, easiest and safest first:
 
-1. **The pure-logic units.** `ptp_endpoint`, `ptp_ts_codec`, `ptp_tx_registry`,
-   `ptp_nsd_lifecycle`, `eth_framer`, `eth_link_state`, `blocking_fifo`, `sysmem_bounds.h`.
-   They depend on nothing but `stdint` — that is precisely why they were extracted — and the
-   host tests already pin their behaviour. Near-zero risk.
+1. **The pure-logic units. DONE.** `ptp_endpoint`, `ptp_ts_codec`, `ptp_tx_registry`,
+   `ptp_nsd_lifecycle`, `eth_framer`, `eth_link_state` and `sysmem_bounds.h` now live in
+   `//lib`, with their tests in `//lib/test`. They depend on nothing but `stdint` — that is
+   precisely why they were extracted — and the host tests already pinned their behaviour.
+
+   **Both firmwares' build IDs were unchanged by the move**, which is criterion 3 doing its job:
+   a unified file that changes an image is a file that was not actually common.
+
+   `blocking_fifo` is deliberately held back to tier 3 despite this section originally listing
+   it here: it includes `cmsis_os2.h`, so it belongs with the CMSIS-RTOS2 layer rather than with
+   the units that depend on nothing.
 2. **The hardware layer.** `mac_drv.c` + `phy_drv/`, and `ptp_port_stm32h563.c`. Same silicon,
    same registers, and `mac_drv.h` is stack-agnostic by design. Covered by the ring/harness host
    tests plus HIL.

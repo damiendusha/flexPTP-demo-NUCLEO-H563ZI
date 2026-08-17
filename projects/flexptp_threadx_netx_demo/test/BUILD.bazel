@@ -10,37 +10,8 @@
 # here says nothing about codegen defects or anything downstream of the timestamp capture.
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 
-# Tier 1 -- pure logic, no fakes.
-#
-# These depend on nothing but stdint, which is the point of extracting them: no ThreadX, no
-# NetX Duo, no mocks. They are also the only tier that needs no special handling at all.
-[
-    cc_test(
-        name = name,
-        size = "small",
-        srcs = ["%s.cpp" % name],
-        deps = [dep, "@googletest//:gtest_main"],
-    )
-    for name, dep in [
-        ("test_ptp_tx_registry", "//projects/flexptp_threadx_netx_demo:ptp_units"),
-        ("test_ptp_ts_codec", "//projects/flexptp_threadx_netx_demo:ptp_units"),
-        ("test_ptp_endpoint", "//projects/flexptp_threadx_netx_demo:ptp_units"),
-        ("test_ptp_nsd_lifecycle", "//projects/flexptp_threadx_netx_demo:ptp_units"),
-        ("test_eth_framer", "//projects/flexptp_threadx_netx_demo:eth_framer"),
-        ("test_eth_link_state", "//projects/flexptp_threadx_netx_demo:eth_link_state"),
-    ]
-]
+# Tier 1 moved to //lib/test in phase 9, with the code it tests.
 
-# Header-only; needs the project root on the include path for sysmem_bounds.h.
-cc_test(
-    name = "test_sysmem_bounds",
-    size = "small",
-    srcs = ["test_sysmem_bounds.cpp"],
-    deps = [
-        "//projects/flexptp_threadx_netx_demo:sysmem_bounds",
-        "@googletest//:gtest_main",
-    ],
-)
 
 # ---------------------------------------------------------------------------
 # Tier 2 -- the MAC driver against a software DMA model

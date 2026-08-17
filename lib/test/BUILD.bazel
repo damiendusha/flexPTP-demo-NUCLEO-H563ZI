@@ -1,0 +1,27 @@
+# Tests for the shared units.
+#
+# They moved here with the code they test, in phase 9. Keeping them in one project's test
+# directory would have meant the other firmware's copy of the same code was covered only by
+# implication -- and after unification there is no other copy, so the question does not arise.
+#
+# These are §13.8's tier 1: they depend on nothing but stdint, which is what made the code safe
+# to unify first and makes the tests trivial to state.
+load("@rules_cc//cc:defs.bzl", "cc_test")
+
+[
+    cc_test(
+        name = name,
+        size = "small",
+        srcs = ["%s.cpp" % name],
+        deps = [dep, "@googletest//:gtest_main"],
+    )
+    for name, dep in [
+        ("test_ptp_tx_registry", "//lib:ptp_units"),
+        ("test_ptp_ts_codec", "//lib:ptp_units"),
+        ("test_ptp_endpoint", "//lib:ptp_units"),
+        ("test_ptp_nsd_lifecycle", "//lib:ptp_units"),
+        ("test_eth_framer", "//lib:eth_framer"),
+        ("test_eth_link_state", "//lib:eth_link_state"),
+        ("test_sysmem_bounds", "//lib:sysmem_bounds"),
+    ]
+]

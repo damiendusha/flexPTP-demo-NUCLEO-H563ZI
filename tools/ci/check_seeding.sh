@@ -17,6 +17,11 @@ set -uo pipefail
 TX=projects/flexptp_threadx_netx_demo
 RT=projects/flexptp_freertos_lwip_demo
 
+# Phase 9 note: files that are UNIFIED no longer appear in either project and so are not
+# compared here at all -- //lib is the single copy, and there is nothing left to drift. This
+# check therefore shrinks as unification proceeds, and what remains in it is the still-duplicated
+# surface. See docs/bazel_migration.md §13.8.
+#
 # Files that legitimately differ between the two projects: the RTOS and stack bindings, the
 # application entry point, and the configuration headers.
 PER_PROJECT=(

@@ -1,0 +1,60 @@
+# Code common to both firmwares.
+#
+# Phase 9 of the Bazel migration (D11): the two projects were kept deliberately independent
+# while the second was brought up, and what is genuinely shared is factored out afterwards --
+# against two real applications rather than against a guess about what one of them would need.
+#
+# This is tier 1 of the order in docs/bazel_migration.md §13.8: units that depend on nothing but
+# stdint. They were extracted from the driver in the first place so they could be tested
+# off-target, which is also what makes them the safest thing to unify -- the host suite already
+# pins their behaviour, and //tools/ci:seeding_test had been asserting the two projects' copies
+# were byte-identical, so there is nothing to reconcile.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+FIRST_PARTY = ["first_party_warnings"]
+
+# The flexPTP network-stack-driver logic, lifted out of the NSD so it could be tested without a
+# board, an RTOS or a network stack.
+cc_library(
+    name = "ptp_units",
+    srcs = glob(["ptp/*.cpp"]),
+    hdrs = glob(["ptp/*.h"]),
+    features = FIRST_PARTY,
+    includes = [
+        ".",
+        "ptp",
+    ],
+)
+
+# The framing and link-state decisions lifted out of the Ethernet driver (TS-04, CX-06).
+cc_library(
+    name = "eth_framer",
+    srcs = ["eth/eth_framer.cpp"],
+    hdrs = ["eth/eth_framer.h"],
+    features = FIRST_PARTY,
+    includes = [
+        ".",
+        "eth",
+    ],
+)
+
+cc_library(
+    name = "eth_link_state",
+    srcs = ["eth/eth_link_state.cpp"],
+    hdrs = ["eth/eth_link_state.h"],
+    features = FIRST_PARTY,
+    includes = [
+        ".",
+        "eth",
+    ],
+)
+
+# The bounds arithmetic _sbrk relies on. Header-only.
+cc_library(
+    name = "sysmem_bounds",
+    hdrs = ["runtime/sysmem_bounds.h"],
+    features = FIRST_PARTY,
+    includes = ["runtime"],
+)
