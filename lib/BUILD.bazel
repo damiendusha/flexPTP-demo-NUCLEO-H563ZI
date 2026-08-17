@@ -136,3 +136,95 @@ cc_library(
         "ptp",
     ],
 )
+
+# ---------------------------------------------------------------------------
+# Tier 3 -- the CMSIS-RTOS2 layer
+# ---------------------------------------------------------------------------
+#
+# These are portable between the two firmwares for one reason, and it is the reason the monorepo
+# is natural rather than forced: the project is CMSIS-RTOS2 throughout. cmsis_os2.h is ARM's and
+# RTOS-agnostic, so this code compiles against the API and each firmware links its own
+# implementation underneath -- ST's ThreadX-backed wrapper in one, its FreeRTOS-backed one in
+# the other. Middlewares/CMakeLists.txt made exactly this observation when the kernel was
+# swapped: "the application never called FreeRTOS in any quantity".
+#
+# Neither library names an RTOS. The osThreadNew() and osMutexAcquire() calls resolve at link
+# against whichever wrapper the firmware pulls in.
+
+# The FIFO source, for the host tests that compile it against a real kernel.
+exports_files(["blocking_io/blocking_fifo.c"])
+
+cc_library(
+    name = "blocking_io",
+    srcs = ["blocking_io/blocking_fifo.c"],
+    hdrs = ["blocking_io/blocking_fifo.h"],
+    features = FIRST_PARTY,
+    includes = [
+        ".",
+        "blocking_io",
+    ],
+    target_compatible_with = ["//toolchain:stm32h563"],
+    deps = ["//third_party/CMSIS:cmsis"],
+)
+
+# cli.c for TEXTUAL inclusion: the CLI test includes the .c verbatim to reach its file statics.
+cc_library(
+    name = "cli_textual",
+    hdrs = ["cli/cli.h"],
+    includes = [
+        ".",
+        "cli",
+    ],
+    textual_hdrs = ["cli/cli.c"],
+    deps = [
+        ":blocking_io_headers",
+        ":io_headers",
+    ],
+)
+
+cc_library(
+    name = "blocking_io_headers",
+    hdrs = ["blocking_io/blocking_fifo.h"],
+    includes = [
+        ".",
+        "blocking_io",
+    ],
+)
+
+cc_library(
+    name = "cli",
+    srcs = ["cli/cli.c"],
+    hdrs = ["cli/cli.h"],
+    features = FIRST_PARTY,
+    includes = [
+        ".",
+        "cli",
+    ],
+    target_compatible_with = ["//toolchain:stm32h563"],
+    deps = [
+        ":blocking_io",
+        ":io_headers",
+        "//third_party/CMSIS:cmsis",
+    ],
+)
+
+# The console. serial_io.c splits into a hardware half and an RTOS half deliberately -- see the
+# note in main.c of either firmware: ThreadX's CMSIS-RTOS2 wrapper carves its byte pools inside
+# osKernelInitialize(), so nothing can be allocated before it, and both firmwares now follow
+# that order.
+cc_library(
+    name = "standard_output",
+    srcs = [
+        "io/serial_io.c",
+        "io/standard_output.c",
+    ],
+    features = FIRST_PARTY,
+    target_compatible_with = ["//toolchain:stm32h563"],
+    deps = [
+        ":blocking_io",
+        ":io_headers",
+        "//third_party/CMSIS:cmsis",
+        "@embfmt",
+        "@stm32h5_hal//:hal",
+    ],
+)

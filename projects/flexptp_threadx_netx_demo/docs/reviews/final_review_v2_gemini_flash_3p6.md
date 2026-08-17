@@ -15,7 +15,7 @@ The audit encompasses full static analysis and verification across every first-p
 - **Application & Initialization:** [`Src/main.c`](../../main.c), [`Src/cmds.c`](../../cmds.c), [`Src/syscall.c`](../../syscall.c), [`Src/sysmem.c`](../../sysmem.c), [`Src/system_stm32h5xx.c`](../../system_stm32h5xx.c)
 - **Ethernet MAC & PHY Drivers:** [`Drivers/EthDrv/mac_drv.c`](../../../../lib/eth/mac_drv.c), [`Drivers/EthDrv/mac_drv.h`](../../../../lib/eth/mac_drv.h), [`Drivers/EthDrv/eth_drv_lwip.c`](../../../../Drivers/EthDrv/eth_drv_lwip.c), [`Drivers/EthDrv/eth_drv_etherlib.c`](../../../../Drivers/EthDrv/eth_drv_etherlib.c), [`Drivers/EthDrv/phy_drv/phy_common.c`](../../../../lib/eth/phy_drv/phy_common.c), [`Drivers/EthDrv/phy_drv/phy_common.h`](../../../../lib/eth/phy_drv/phy_common.h)
 - **PTP Hardware Subsystem:** [`Src/flexptp_port/ptp_port_stm32h563.c`](../../../../lib/ptp/ptp_port_stm32h563.c), [`Src/flexptp_port/ptp_port_stm32h563.h`](../../../../lib/ptp/ptp_port_stm32h563.h)
-- **I/O & Diagnostic Infrastructure:** [`Src/standard_output/serial_io.c`](../../standard_output/serial_io.c), [`Src/standard_output/standard_output.c`](../../standard_output/standard_output.c), [`Modules/blocking_io/blocking_fifo.c`](../../blocking_io/blocking_fifo.c), [`Modules/blocking_io/blocking_fifo.h`](../../blocking_io/blocking_fifo.h), [`Src/cliutils/cli.c`](../../cli/cli.c), [`Src/cliutils/cli.h`](../../cli/cli.h)
+- **I/O & Diagnostic Infrastructure:** [`Src/standard_output/serial_io.c`](../../../../lib/io/serial_io.c), [`Src/standard_output/standard_output.c`](../../../../lib/io/standard_output.c), [`Modules/blocking_io/blocking_fifo.c`](../../../../lib/blocking_io/blocking_fifo.c), [`Modules/blocking_io/blocking_fifo.h`](../../../../lib/blocking_io/blocking_fifo.h), [`Src/cliutils/cli.c`](../../../../lib/cli/cli.c), [`Src/cliutils/cli.h`](../../../../lib/cli/cli.h)
 - **Network Interface Integration:** [`Src/ethernet/ethernet_lwip.c`](../../../../Src/ethernet/ethernet_lwip.c), [`Src/ethernet/ethernet_etherlib.c`](../../../../Src/ethernet/ethernet_etherlib.c)
 - **Configuration & Headers:** [`Inc/FreeRTOSConfig.h`](../../../../Inc/FreeRTOSConfig.h), [`Inc/lwipopts.h`](../../../../Inc/lwipopts.h), [`Inc/flexptp_options.h`](../../flexptp_options.h), [`Inc/etherlib_options.h`](../../../../Inc/etherlib_options.h), [`Inc/stm32h5xx_hal_conf.h`](../../stm32h5xx_hal_conf.h), [`Modules/lwip_port/arch/cc.h`](../../../../Modules/lwip_port/arch/cc.h)
 - **Linker & Build Orchestration:** [`stm32h563zitx_FLASH.ld`](../../startup/stm32h563zitx_FLASH.ld), [`CMakeLists.txt`](../../../../CMakeLists.txt), [`build.sh`](../../../../build.sh), [`cmake/gcc-arm-none-eabi.cmake`](../../../../cmake/gcc-arm-none-eabi.cmake), [`.github/workflows/ci.yml`](../../../../.github/workflows/ci.yml)
@@ -79,7 +79,7 @@ LOW       N16   CI/Workflow      GitHub Actions CI pipeline lacks pipefail (fail
 
 #### N1 — `BFifo` Full vs Empty Ambiguity Causes Complete Diagnostic Blackout
 
-- **Locations:** [`Modules/blocking_io/blocking_fifo.c:26-40`](../../blocking_io/blocking_fifo.c#L26), [`Modules/blocking_io/blocking_fifo.c:42-95`](../../blocking_io/blocking_fifo.c#L42)
+- **Locations:** [`Modules/blocking_io/blocking_fifo.c:26-40`](../../../../lib/blocking_io/blocking_fifo.c#L26), [`Modules/blocking_io/blocking_fifo.c:42-95`](../../../../lib/blocking_io/blocking_fifo.c#L42)
 - **Impact:** Complete loss of queued console diagnostics; persistent CPU spinning in serial thread; silent overwrite of backlog data.
 
 ##### Defect Analysis
@@ -291,7 +291,7 @@ Redirect `LWIP_PLATFORM_ASSERT` to `serial_io_panic_write()` and halt:
 
 #### N6 — Contradictory and Unsafe ISR Logging Contract Between Modules
 
-- **Locations:** [`Src/standard_output/standard_output.c:33-46`](../../standard_output/standard_output.c#L33), [`Src/standard_output/serial_io.c:120-131`](../../standard_output/serial_io.c#L120), [`Drivers/EthDrv/mac_drv.c:9-17`](../../../../lib/eth/mac_drv.c#L9)
+- **Locations:** [`Src/standard_output/standard_output.c:33-46`](../../../../lib/io/standard_output.c#L33), [`Src/standard_output/serial_io.c:120-131`](../../../../lib/io/serial_io.c#L120), [`Drivers/EthDrv/mac_drv.c:9-17`](../../../../lib/eth/mac_drv.c#L9)
 - **Impact:** System hang inside ISR if diagnostic output is attempted during high console FIFO utilization.
 
 ##### Defect Analysis
@@ -314,7 +314,7 @@ In `serial_io_write()`, check execution context: if inside an ISR (`__get_IPSR()
 
 #### N7 — `bfifo_pop()` Releases Write Semaphore During Active Concurrent Push
 
-- **Locations:** [`Modules/blocking_io/blocking_fifo.c:142`](../../blocking_io/blocking_fifo.c#L142), [`Modules/blocking_io/blocking_fifo.c:49`](../../blocking_io/blocking_fifo.c#L49)
+- **Locations:** [`Modules/blocking_io/blocking_fifo.c:142`](../../../../lib/blocking_io/blocking_fifo.c#L142), [`Modules/blocking_io/blocking_fifo.c:49`](../../../../lib/blocking_io/blocking_fifo.c#L49)
 - **Impact:** Memory corruption and interleaved output when multiple producers push to `BFifo`.
 
 ##### Defect Analysis
@@ -332,7 +332,7 @@ Separate buffer space signaling from mutual exclusion: use a dedicated `osMutexI
 
 #### N8 — CLI Tokenizer Buffer Overflow & Multi-Threaded Re-Entrancy Hazard
 
-- **Locations:** [`Src/cliutils/cli.c:78-106`](../../cli/cli.c#L78), [`Src/cliutils/cli.c:453`](../../cli/cli.c#L453)
+- **Locations:** [`Src/cliutils/cli.c:78-106`](../../../../lib/cli/cli.c#L78), [`Src/cliutils/cli.c:453`](../../../../lib/cli/cli.c#L453)
 - **Impact:** 1-byte BSS corruption; CLI command parsing corruption when background threads register commands.
 
 ##### Defect Analysis
@@ -362,7 +362,7 @@ Insert `__DMB()` before transferring descriptor ownership (`DES3 = OWN`) and `__
 
 - **N10 — EtherLib RX Descriptor Leak on Allocation Failure:** [`Drivers/EthDrv/eth_drv_etherlib.c:134`](../../../../Drivers/EthDrv/eth_drv_etherlib.c#L134) returns `0` instead of `ETHHW_RET_RX_PROCESSED` when `dynmem_alloc()` fails. This leaves `inFlight = 1`, permanently removing the descriptor from the ring.
 - **N11 — Unbounded Stack Allocation in EtherLib UDP Callback:** [`Src/ethernet/ethernet_etherlib.c:7-13`](../../../../Src/ethernet/ethernet_etherlib.c#L7) allocates `char str[packet->payloadSize + 1]` on the stack, exposing the task to potential stack exhaustion on large frames.
-- **N12 — Unterminated `strncpy` in CLI Parsing:** [`Src/cliutils/cli.c:94, 102, 506`](../../cli/cli.c#L94) does not ensure null-termination when source strings equal or exceed maximum token length.
+- **N12 — Unterminated `strncpy` in CLI Parsing:** [`Src/cliutils/cli.c:94, 102, 506`](../../../../lib/cli/cli.c#L94) does not ensure null-termination when source strings equal or exceed maximum token length.
 - **N13 — Ethernet MAC Frame Check Sequence (FCS) Forwarded in Payload:** [`Drivers/EthDrv/mac_drv.c:143`](../../../../lib/eth/mac_drv.c#L143) leaves `ETH_MACCR_CST` and `ETH_MACCR_ACS` clear, causing the MAC to append 4-byte CRC trailers to received packet buffers.
 - **N14 — Transmit Drop Masked from lwIP Stack:** [`Drivers/EthDrv/eth_drv_lwip.c:290-308`](../../../../Drivers/EthDrv/eth_drv_lwip.c#L290) unconditionally returns `ERR_OK` even when `ETHHW_Transmit()` drops a frame due to descriptor exhaustion.
 - **N15 — Overridden `LWIP_PROVIDE_ERRNO` Definition:** [`Inc/lwipopts.h:239`](../../../../Inc/lwipopts.h#L239) undefines `LWIP_PROVIDE_ERRNO`, but [`Modules/lwip_port/arch/cc.h:42`](../../../../Modules/lwip_port/arch/cc.h#L42) redefines it unconditionally.
@@ -450,7 +450,7 @@ graph TD
 ### Prioritized Sequence
 
 1. **Immediate Remediation (Pre-Deployment):**
-   - **N1 & N7:** Rewrite [`Modules/blocking_io/blocking_fifo.c`](../../blocking_io/blocking_fifo.c) with unambiguous monotonic index math and a dedicated writer mutex.
+   - **N1 & N7:** Rewrite [`Modules/blocking_io/blocking_fifo.c`](../../../../lib/blocking_io/blocking_fifo.c) with unambiguous monotonic index math and a dedicated writer mutex.
    - **N2 & N9:** Add `volatile` qualifiers to `ETHHW_Desc` in [`Drivers/EthDrv/mac_drv.h`](../../../../lib/eth/mac_drv.h) and insert `__DMB()` / `__DSB()` memory barriers in [`Drivers/EthDrv/mac_drv.c`](../../../../lib/eth/mac_drv.c).
    - **N3:** Add `WRITE_REG(ETH->DMACRDTPR, 0)` to `ETHHW_RestoreRXDesc()` and log `DMACSR_AIS` flags in `ETHHW_ISR()`.
    - **N4:** Initialize `phyName = ""` in [`Drivers/EthDrv/phy_drv/phy_common.c`](../../../../lib/eth/phy_drv/phy_common.c).
@@ -458,7 +458,7 @@ graph TD
 2. **Diagnostics & Robustness Hardening:**
    - **N5:** Redefine `LWIP_PLATFORM_ASSERT` in [`Modules/lwip_port/arch/cc.h`](../../../../Modules/lwip_port/arch/cc.h) to call `serial_io_panic_write()` and halt, eliminating ~9 KB of dead `printf` bloat.
    - **N6:** Enforce non-blocking panic writes for any logging attempted from ISR context.
-   - **N8:** Expand `pLineCpy` buffer size in [`Src/cliutils/cli.c`](../../cli/cli.c) and switch to `strtok_r()`.
+   - **N8:** Expand `pLineCpy` buffer size in [`Src/cliutils/cli.c`](../../../../lib/cli/cli.c) and switch to `strtok_r()`.
 
 3. **Infrastructure & Build Polish:**
    - **N16:** Add `set -o pipefail` to [`.github/workflows/ci.yml`](../../../../.github/workflows/ci.yml).

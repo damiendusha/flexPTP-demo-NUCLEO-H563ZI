@@ -124,56 +124,8 @@ TARGET_ONLY = ["//toolchain:stm32h563"]
 # Duo is. Phase 9 unifies what is genuinely common; until then the duplication is deliberate
 # (D11) and tools/ci/check_seeding.sh keeps the copies identical.
 
-cc_library(
-    name = "blocking_io",
-    srcs = ["blocking_io/blocking_fifo.c"],
-    hdrs = ["blocking_io/blocking_fifo.h"],
-    features = FIRST_PARTY,
-    includes = [
-        ".",
-        "blocking_io",
-    ],
-    target_compatible_with = TARGET_ONLY,
-    deps = [
-        ":includes",
-        ":cmsis_rtos",
-    ],
-)
 
-cc_library(
-    name = "standard_output",
-    srcs = [
-        "standard_output/serial_io.c",
-        "standard_output/standard_output.c",
-    ],
-    hdrs = [
-    ],
-    features = FIRST_PARTY,
-    target_compatible_with = TARGET_ONLY,
-    deps = [
-        "//lib:io_headers",
-        ":blocking_io",
-        ":includes",
-        ":cmsis_rtos",
-        "@embfmt",
-        "@stm32h5_hal//:hal",
-    ],
-)
 
-cc_library(
-    name = "cli",
-    srcs = ["cli/cli.c"],
-    hdrs = ["cli/cli.h"],
-    features = FIRST_PARTY,
-    target_compatible_with = TARGET_ONLY,
-    deps = [
-        "//lib:io_headers",
-        ":blocking_io",
-        ":includes",
-        ":standard_output",
-        ":cmsis_rtos",
-    ],
-)
 
 
 
@@ -196,7 +148,7 @@ cc_library(
         "//lib:eth_link_state",
         ":includes",
         "//lib:mac_drv",
-        ":standard_output",
+        "//lib:standard_output",
         "@lwip",
     ],
 )
@@ -246,10 +198,10 @@ cc_library(
     ],
     target_compatible_with = TARGET_ONLY,
     deps = [
-        ":cli",
+        "//lib:cli",
         ":includes",
         "//lib:mac_drv",
-        ":standard_output",
+        "//lib:standard_output",
         "@embfmt",
         "@flexptp//:headers",
         "@lwip",
@@ -269,7 +221,7 @@ flexptp_library(
         ":includes",
         "//lib:mac_drv",
         "//lib:ptp_units",
-        ":standard_output",
+        "//lib:standard_output",
         "@lwip",
         "@stm32h5_hal//:hal",
     ],
@@ -290,7 +242,7 @@ cc_library(
     target_compatible_with = TARGET_ONLY,
     deps = [
         "//lib:sysmem_bounds",
-        ":cli",
+        "//lib:cli",
         ":cmsis_rtos",
         ":eth",
         ":flexptp",
@@ -298,7 +250,7 @@ cc_library(
         ":includes",
         ":lwip_port",
         "//lib:mac_drv",
-        ":standard_output",
+        "//lib:standard_output",
         "@lwip",
         "@stm32h5_hal//:hal",
     ],

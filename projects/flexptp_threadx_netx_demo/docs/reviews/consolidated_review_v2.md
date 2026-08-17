@@ -71,8 +71,8 @@ port.
 
 ### N1 — `BFifo` reports empty when exactly full
 
-**Where:** [`blocking_fifo.c:26-40`](../../blocking_io/blocking_fifo.c#L26),
-[`blocking_fifo.c:42-95`](../../blocking_io/blocking_fifo.c#L42)
+**Where:** [`blocking_fifo.c:26-40`](../../../../lib/blocking_io/blocking_fifo.c#L26),
+[`blocking_fifo.c:42-95`](../../../../lib/blocking_io/blocking_fifo.c#L42)
 **Affects:** the 16 KB console FIFO and the 512-byte CLI input FIFO.
 
 Two indices, no count and no reserved slot, so `writeIdx == readIdx` encodes both *empty* and
@@ -286,8 +286,8 @@ below to become moot.
 
 ### N6 — The ISR logging contract is self-contradictory
 
-**Where:** [`standard_output.c:33-46`](../../standard_output/standard_output.c#L33),
-[`serial_io.c:120-131`](../../standard_output/serial_io.c#L120),
+**Where:** [`standard_output.c:33-46`](../../../../lib/io/standard_output.c#L33),
+[`serial_io.c:120-131`](../../../../lib/io/serial_io.c#L120),
 [`mac_drv.c:9-17`](../../../../lib/eth/mac_drv.c#L9)
 
 Three comments written in the same review cycle disagree: `mac_drv.c` says its timeout reports
@@ -333,8 +333,8 @@ its use, and N3's fix proposes another ISR-context `MSG()`.
 
 ### N7 — `bfifo_pop()` hands the write token to a second writer
 
-**Where:** [`blocking_fifo.c:49`](../../blocking_io/blocking_fifo.c#L49),
-[`blocking_fifo.c:142`](../../blocking_io/blocking_fifo.c#L142)
+**Where:** [`blocking_fifo.c:49`](../../../../lib/blocking_io/blocking_fifo.c#L49),
+[`blocking_fifo.c:142`](../../../../lib/blocking_io/blocking_fifo.c#L142)
 
 `writeSem` does two jobs — "space exists" and "no other writer inside `bfifo_push()`" — and
 `bfifo_pop()` releases it unconditionally from the consumer thread, without regard for a
@@ -344,7 +344,7 @@ and writer B entering `bfifo_push()` is enough: both compute block sizes from th
 
 There is more than one producer, and the `MSG()` mutex does not cover them: `MSGraw()` and
 `MSGchar()` go straight to `serial_io_write()`
-([`standard_output.c:97-103`](../../standard_output/standard_output.c#L97)), and the CLI echoes
+([`standard_output.c:97-103`](../../../../lib/io/standard_output.c#L97)), and the CLI echoes
 every keystroke that way from the `cli` thread while other threads log.
 
 *Scope note:* the damage is confined to FIFO contents and indices — interleaved and partly
@@ -360,7 +360,7 @@ the space signal. Same object as N1 — do both in one pass over a 161-line file
 
 ### N8 — CLI tokenizer: one-byte overflow and cross-thread reuse
 
-**Where:** [`cli.c:78-106`](../../cli/cli.c#L78), [`cli.c:453`](../../cli/cli.c#L453)
+**Where:** [`cli.c:78-106`](../../../../lib/cli/cli.c#L78), [`cli.c:453`](../../../../lib/cli/cli.c#L453)
 
 `sLineBuf` is `CLI_LINEBUF_LENGTH + 1` (192 B) and `get_line()` can fill all of it; `pLineCpy`
 inside `tokenize_cli_line()` is `CLI_LINEBUF_LENGTH` (191 B). A maximum-length line is therefore
@@ -404,7 +404,7 @@ tail write, in both paths (see the N3 snippet).
 |---|---|---|
 | **N10** | [`eth_drv_etherlib.c:139-142`](../../../../Drivers/EthDrv/eth_drv_etherlib.c#L139) | On `dynmem_alloc()` failure the callback returns 0, which means "the receive thread owns it now" — but nobody took it, and `inFlight` stays set. Each failure retires one descriptor permanently; 24 of them is N3 by another route. The lwIP path gets this right ([`eth_drv_lwip.c:393-397`](../../../../Drivers/EthDrv/eth_drv_lwip.c#L393)). **Fix:** return `ETHHW_RET_RX_PROCESSED`, and drop the `MSG()` — this runs in the ETH ISR (N6). Not compiled today; P5.21/P5.22 prepared this path precisely so its first build is not a debugging session. |
 | **N11** | [`ethernet_etherlib.c:7-13`](../../../../Src/ethernet/ethernet_etherlib.c#L7) | `char str[packet->payloadSize + 1]` — a VLA sized off the wire, memcpy'd into, no bound and no zero-length guard. 1.5 KB of stack at MTU, attacker-chosen in any case. **Fix:** fixed buffer + `MIN()`. |
-| **N12** | [`cli.c:94`](../../cli/cli.c#L94), [`:102`](../../cli/cli.c#L102), [`:506`](../../cli/cli.c#L506) | `strncpy` leaves tokens ≥ `MAX_TOK_LEN` (32) and help lines ≥ `MAX_HELP_LEN` (192) unterminated; later `strcmp`s run into the next array element. Longest help today is ~75 chars, so latent — but nothing enforces that. **Fix:** copy `n-1`, terminate explicitly. |
+| **N12** | [`cli.c:94`](../../../../lib/cli/cli.c#L94), [`:102`](../../../../lib/cli/cli.c#L102), [`:506`](../../../../lib/cli/cli.c#L506) | `strncpy` leaves tokens ≥ `MAX_TOK_LEN` (32) and help lines ≥ `MAX_HELP_LEN` (192) unterminated; later `strcmp`s run into the next array element. Longest help today is ~75 chars, so latent — but nothing enforces that. **Fix:** copy `n-1`, terminate explicitly. |
 | **N13** | [`mac_drv.c:143`](../../../../lib/eth/mac_drv.c#L143) | `WRITE_REG(eth->MACCR, mode \| ETH_MACCR_IPC)` clears `ACS` and `CST`, so the reported packet length — and every RX pbuf — includes the 4-byte FCS. ST's HAL enables both by default (`stm32h5xx_hal_eth.c:3042,3048`). Harmless in the paths exercised (lwIP trims IPv4 by header length, flexPTP parses by field), but a max frame occupies 1518 of 1528 bytes and any future code trusting `size` is wrong by 4. **Fix (optional):** add `ETH_MACCR_CST \| ETH_MACCR_ACS`, or say at the register write that it is deliberate. |
 | **N14** | [`eth_drv_lwip.c:290-308`](../../../../Drivers/EthDrv/eth_drv_lwip.c#L290) | `ETHHW_Transmit()` can drop the frame (and with N2, does so on the first try at `-O2`) but returns `void`; `low_level_output()` unconditionally does `LINK_STATS_INC(link.xmit); return ERR_OK;`. **Fix:** return `bool`, map onto `ERR_IF` + `link.drop`, following the reasoning already written for the over-length case (not `ERR_MEM`). |
 | **N15** | [`lwipopts.h:238-239`](../../../../Inc/lwipopts.h#L238), [`cc.h:42`](../../../../Modules/lwip_port/arch/cc.h#L42) | `lwip/opt.h` includes `lwipopts.h` first and `arch/cc.h` later, so the bare `#define LWIP_PROVIDE_ERRNO` in `cc.h` undoes the `#undef`. Benign here, but the comment claims a configuration the build does not have. **Fix:** delete the define from `cc.h` — that is the port file this project owns. |
@@ -510,7 +510,7 @@ sequence; the differences are noted.
 
 **Phase 1 — one file, two findings, highest certainty**
 1. **N1 + N7** — rewrite the index arithmetic in
-   [`blocking_fifo.c`](../../blocking_io/blocking_fifo.c) so full and empty are
+   [`blocking_fifo.c`](../../../../lib/blocking_io/blocking_fifo.c) so full and empty are
    distinguishable, and split writer exclusion from the space signal. All five functions change
    together.
 2. **N4** — one-line initialiser; it is a boot-time HardFault on a plausible board revision.
@@ -546,8 +546,8 @@ Free-running indices masked on access (`mem[idx & (size - 1)]`, `used = writeIdx
 require a **power-of-two** buffer size, twice over: the mask is only equivalent to a modulo for
 powers of two, and the unsigned subtraction only survives the 2³² counter wrap if the size
 divides 2³². Both current buffers qualify — `SERIAL_IO_FIFO_LEN` = 16384 = 2¹⁴
-([`serial_io.c:13`](../../standard_output/serial_io.c#L13)) and `CLI_INPUT_FIFO_BUFSIZE` = 512
-= 2⁹ ([`cli.c:39`](../../cli/cli.c#L39)) — and these are the only two `BFifo` instances in
+([`serial_io.c:13`](../../../../lib/io/serial_io.c#L13)) and `CLI_INPUT_FIFO_BUFSIZE` = 512
+= 2⁹ ([`cli.c:39`](../../../../lib/cli/cli.c#L39)) — and these are the only two `BFifo` instances in
 the project.
 
 Two things follow that the observation itself does not cover:
@@ -558,8 +558,8 @@ Two things follow that the observation itself does not cover:
    would get silent corruption rather than a diagnostic, which is the same shape of trap as N1
    itself.
 2. **The existing guard is already being thrown away.** `bfifo_create()` returns `bool`, and
-   **both call sites discard it** ([`serial_io.c:27`](../../standard_output/serial_io.c#L27),
-   [`cli.c:58`](../../cli/cli.c#L58)) — today that means a failed `osSemaphoreNew()` goes
+   **both call sites discard it** ([`serial_io.c:27`](../../../../lib/io/serial_io.c#L27),
+   [`cli.c:58`](../../../../lib/cli/cli.c#L58)) — today that means a failed `osSemaphoreNew()` goes
    unnoticed too. Any masking rewrite must add `size && ((size & (size - 1)) == 0)` to that
    return value *and* make both callers check it.
 

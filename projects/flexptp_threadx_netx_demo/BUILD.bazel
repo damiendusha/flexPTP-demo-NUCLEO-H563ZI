@@ -81,52 +81,8 @@ TARGET_ONLY = ["//toolchain:stm32h563"]
 # Libraries
 # ---------------------------------------------------------------------------
 
-cc_library(
-    name = "blocking_io",
-    srcs = ["blocking_io/blocking_fifo.c"],
-    hdrs = ["blocking_io/blocking_fifo.h"],
-    features = FIRST_PARTY,
-    target_compatible_with = TARGET_ONLY,
-    deps = [
-        ":includes",
-        "@cmsis_rtos_threadx//:cmsis_rtos_tx",
-    ],
-)
 
-cc_library(
-    name = "standard_output",
-    srcs = [
-        "standard_output/serial_io.c",
-        "standard_output/standard_output.c",
-    ],
-    hdrs = [
-    ],
-    features = FIRST_PARTY,
-    target_compatible_with = TARGET_ONLY,
-    deps = [
-        "//lib:io_headers",
-        ":blocking_io",
-        ":includes",
-        "@cmsis_rtos_threadx//:cmsis_rtos_tx",
-        "@embfmt",
-        "@stm32h5_hal//:hal",
-    ],
-)
 
-cc_library(
-    name = "cli",
-    srcs = ["cli/cli.c"],
-    hdrs = ["cli/cli.h"],
-    features = FIRST_PARTY,
-    target_compatible_with = TARGET_ONLY,
-    deps = [
-        "//lib:io_headers",
-        ":blocking_io",
-        ":includes",
-        ":standard_output",
-        "@cmsis_rtos_threadx//:cmsis_rtos_tx",
-    ],
-)
 
 # The pure-logic units, extracted from the driver so they can be tested off-target. They depend
 # on nothing but stdint, which is the whole point -- and is why they are the first thing phase 9
@@ -138,31 +94,7 @@ cc_library(
 # as well as in :mac_drv would be duplicate symbols.
 exports_files(["blocking_io/blocking_fifo.c"])
 
-cc_library(
-    name = "blocking_io_headers",
-    hdrs = ["blocking_io/blocking_fifo.h"],
-    includes = [
-        ".",
-        "blocking_io",
-    ],
-    visibility = ["//projects/flexptp_threadx_netx_demo/test:__pkg__"],
-)
 
-# cli.c for TEXTUAL inclusion: test/cli_uut.c includes it verbatim to reach the file statics.
-cc_library(
-    name = "cli_textual",
-    hdrs = ["cli/cli.h"],
-    includes = [
-        ".",
-        "cli",
-    ],
-    textual_hdrs = ["cli/cli.c"],
-    visibility = ["//projects/flexptp_threadx_netx_demo/test:__pkg__"],
-    deps = [
-        ":blocking_io_headers",
-        "//lib:io_headers",
-    ],
-)
 
 # The stack-facing glue.
 cc_library(
@@ -184,7 +116,7 @@ cc_library(
         "//lib:mac_drv",
         ":ptp_tx_timestamp",
         "//lib:ptp_units",
-        ":standard_output",
+        "//lib:standard_output",
         "@netxduo",
     ],
 )
@@ -244,7 +176,7 @@ cc_library(
         ":flexptp_config",
         ":includes",
         "//lib:ptp_units",
-        ":standard_output",
+        "//lib:standard_output",
         "@cmsis_rtos_threadx//:cmsis_rtos_tx",
         "@flexptp//:headers",
     ],
@@ -268,10 +200,10 @@ cc_library(
     ],
     target_compatible_with = TARGET_ONLY,
     deps = [
-        ":cli",
+        "//lib:cli",
         ":includes",
         "//lib:mac_drv",
-        ":standard_output",
+        "//lib:standard_output",
         "@embfmt",
         "@flexptp//:headers",
     ],
@@ -299,7 +231,7 @@ flexptp_library(
         "//lib:mac_drv",
         ":ptp_tx_timestamp",
         "//lib:ptp_units",
-        ":standard_output",
+        "//lib:standard_output",
         "@cmsis_rtos_threadx//:cmsis_rtos_tx",
         "@netxduo",
         "@stm32h5_hal//:hal",
@@ -322,13 +254,13 @@ cc_library(
     target_compatible_with = TARGET_ONLY,
     deps = [
         "//lib:sysmem_bounds",
-        ":cli",
+        "//lib:cli",
         ":eth",
         ":flexptp",
         ":flexptp_config",
         ":includes",
         "//lib:mac_drv",
-        ":standard_output",
+        "//lib:standard_output",
         "@cmsis_rtos_threadx//:cmsis_rtos_tx",
         "@netxduo",
         "@stm32h5_hal//:hal",

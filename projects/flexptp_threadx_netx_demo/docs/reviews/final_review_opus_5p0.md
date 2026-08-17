@@ -111,7 +111,7 @@ figures, the boot sequence, and the descriptor/register audit.
 
 **A1 — The console has no mutual exclusion, and it is the system's only diagnostic.**
 `MSG()` formats into a single 2049-byte `static char lineBuf`
-([standard_output.c:12](../../standard_output/standard_output.c#L12)) with no lock. It is
+([standard_output.c:12](../../../../lib/io/standard_output.c#L12)) with no lock. It is
 called from at least six threads: `cli`, `ptp`, `init`, `rx`, `tcpip_thread`
 (`link_chg_cb`) and `Tmr Svc` (`check_dhcp_state`). The FIFO underneath *is* serialised —
 but only inside `bfifo_push()`, long after the shared buffer has been written. Two
@@ -313,7 +313,7 @@ handlers, and faults. Since F54 made MDIO waits time out rather than hang, this 
 *expected* path for a wiring or power fault.
 
 **B2 — `cli_remove_command()` returns while holding the mutex.**
-[`cli.c:517-534`](../../cli/cli.c#L517)
+[`cli.c:517-534`](../../../../lib/cli/cli.c#L517)
 
 ```c
 void cli_remove_command(int cmdIdx) {
@@ -330,7 +330,7 @@ thread with it. `cli_remove_command_array()` walks a caller-supplied list termin
 `-1`, so a stale handle is enough.
 
 **B3 — Removing a command leaves dangling pointers into the next command's help buffer.**
-[`cli.c:527`](../../cli/cli.c#L527) and [`cli.c:120,141,160-166`](../../cli/cli.c#L120)
+[`cli.c:527`](../../../../lib/cli/cli.c#L527) and [`cli.c:120,141,160-166`](../../../../lib/cli/cli.c#L120)
 
 `struct CliCommand` stores `pHelp[MAX_HELP_LEN]` **inline**, with `pHint` and `pPadding`
 pointing into it. `cli_remove_command()` shifts entries with
@@ -350,7 +350,7 @@ same command is registered twice, and `ptphw_register_cli_commands()` re-registe
 ### Medium
 
 **B5 — Arrow-key history acts on the previous keypress, and a long escape sequence
-overflows the stack.** [`cli.c:315,357-398`](../../cli/cli.c#L357)
+overflows the stack.** [`cli.c:315,357-398`](../../../../lib/cli/cli.c#L357)
 
 ```c
 char escParam[4];                      /* uninitialised */
@@ -406,13 +406,13 @@ A stalled TX DMA hangs whichever thread is transmitting — under `LWIP_TCPIP_CO
 that is `tcpip_thread`, holding the core lock, which takes the whole network stack with it.
 
 **B8 — `insert_carriage_return()` can write one byte past its buffer.**
-[`standard_output.c:14-29`](../../standard_output/standard_output.c#L14)
+[`standard_output.c:14-29`](../../../../lib/io/standard_output.c#L14)
 
 The guard `(i < len) && (len <= maxLen)` is evaluated at loop entry, but the body increments
 `len` and then writes `str[len]`. With `maxLen` = 2048 and a message that reaches that
 length through `\r` insertions, `str[2049]` is written into a `char[2049]`.
 
-**B9 — Register-count clamp uses the wrong constant.** [`cli.c:468-469`](../../cli/cli.c#L468)
+**B9 — Register-count clamp uses the wrong constant.** [`cli.c:468-469`](../../../../lib/cli/cli.c#L468)
 
 ```c
 tokenize_cli_line(pCmdParsHelp, pCmd->ppTok, MAX_TOK_LEN,
@@ -455,12 +455,12 @@ that does — `phy_thread` correctly goes through `tcpip_callback()`, and flexPT
 `nsd_lwip.c` correctly brackets its sends with `LOCK_TCPIP_CORE()`.
 
 **B13 — `serial_io_thread()` can block forever on a DMA error.**
-[`serial_io.c:134-135`](../../standard_output/serial_io.c#L134) ignores
+[`serial_io.c:134-135`](../../../../lib/io/serial_io.c#L134) ignores
 `HAL_UART_Transmit_DMA()`'s return and then waits `osWaitForever` on a completion flag that
 only the success path sets. This is precisely the console-death signature described in F51.
 
 **B14 — Console output is silently truncated when the FIFO fills.**
-`serial_io_write()` ([serial_io.c:120-122](../../standard_output/serial_io.c#L120)) drops
+`serial_io_write()` ([serial_io.c:120-122](../../../../lib/io/serial_io.c#L120)) drops
 `bfifo_push()`'s return value, which is the *actually pushed* size. `bfifo_push_all()`
 exists for exactly this.
 
@@ -493,12 +493,12 @@ Release. `relWithDebInfo` and `minSizeRel` receive no project optimisation flags
 falling back to CMake defaults; neither has been built or tested.
 
 **B21 — `get_line()`'s left-trim never reaches the caller.**
-[`cli.c:411-413`](../../cli/cli.c#L411) advances a local `pStr` pointer. `task_cli()`
+[`cli.c:411-413`](../../../../lib/cli/cli.c#L411) advances a local `pStr` pointer. `task_cli()`
 then passes the *original* `sLineBuf` to `process_cli_line()`, so a command typed with
 leading whitespace fails to match. Right-trim works (it writes in place).
 
 **B22 — `MSGchar(int c)` takes the address of an `int` and sends one byte.**
-[`standard_output.c:45-47`](../../standard_output/standard_output.c#L45) — correct only on
+[`standard_output.c:45-47`](../../../../lib/io/standard_output.c#L45) — correct only on
 little-endian. Also `last_char` (line 31) is written and never read.
 
 ---

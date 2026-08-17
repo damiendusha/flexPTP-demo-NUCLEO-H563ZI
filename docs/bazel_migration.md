@@ -14,7 +14,7 @@ Status: **phases 0–4 landed and verified on hardware; phases 5–7 outstanding
 | 6 — host tests | **landed** — 13/13, and both mutation checks still bite |
 | 7 — delete CMake | **landed** |
 | 8 — the FreeRTOS + lwIP project | **landed** — both firmwares build and pass on hardware; D15 partially met |
-| 9 — unification | **tiers 1–2 landed** — pure units and the hardware layer are shared; tiers 3–4 outstanding |
+| 9 — unification | **tiers 1–3 landed** — the application layer is shared; tier 4 outstanding |
 
 CMake still builds and still passes S8 at every point, so there is a working fallback until
 phase 7 removes it.
@@ -1823,11 +1823,20 @@ duplication rather than by prediction. Rough order, easiest and safest first:
    interface alone and the symbol resolves at link against whichever implementation the firmware
    links. That is the tier boundary being less clean than the list implies: a tier-2 file needed
    a tier-3 header, and splitting interface from implementation was what let it move.
-3. **The CMSIS-RTOS2 layer.** `cli.c`, `serial_io.c`, `standard_output/`, and the shared half of
-   `cmds.c`. These are portable *because* the project is CMSIS-RTOS2 throughout
-   ([§13.2](#132-where-the-freertos--lwip-firmware-comes-from)) — one API, two implementations
-   underneath. Note `cmds.c` is not wholly common: `ethinfo`/`ethstat` and any stack-specific
-   command stay per-project.
+3. **The CMSIS-RTOS2 layer. DONE.** `cli.c`, `serial_io.c`, `standard_output.c` and
+   `blocking_fifo.c` are in `//lib`. **Both build IDs unchanged.**
+
+   These moved with less friction than tier 2, which is the opposite of what the tier order
+   suggests — and the reason is the one
+   [§13.2](#132-where-the-freertos--lwip-firmware-comes-from) gives: the project is CMSIS-RTOS2
+   throughout. `cmsis_os2.h` is ARM's and RTOS-agnostic, so **neither library names an RTOS**;
+   `osThreadNew()` and `osMutexAcquire()` resolve at link against whichever wrapper the firmware
+   pulls in. `Middlewares/CMakeLists.txt` made exactly this observation when the kernel was
+   swapped — "the application never called FreeRTOS in any quantity" — and this is that
+   observation cashed in.
+
+   `cmds.c` stays per-project, as this section anticipated: `ethinfo`/`ethstat` and the
+   stack-specific commands differ.
 4. **The runtime odds and ends.** `syscall.c`, `sysmem.c`, `cpp_support.cpp`,
    `system_stm32h5xx.c`, `startup_stm32h563zitx.s` and the linker script.
 5. **Judgement calls, deliberately last.** `stm32h5xx_hal_conf.h` carries `HAL_ETH_USE_PTP` and

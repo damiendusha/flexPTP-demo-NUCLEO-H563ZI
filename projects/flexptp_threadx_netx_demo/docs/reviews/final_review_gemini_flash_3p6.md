@@ -116,7 +116,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ### 4.1 Critical & High-Severity Defects (B1 – B10)
 
 #### [B1] Recursive Mutex Deadlock on Duplicate CLI Command Registration
-- **Location:** [Src/cliutils/cli.c:461, 506, 519](../../cli/cli.c#L461)
+- **Location:** [Src/cliutils/cli.c:461, 506, 519](../../../../lib/cli/cli.c#L461)
 - **Mechanism:**
   `cli_register_command()` acquires `modifyMtx` via `osMutexAcquire(modifyMtx, osWaitForever)`. If an identical command has been previously registered (`duplicate_idx > -1`), it calls `cli_remove_command(duplicate_idx)`.
   In `cli_remove_command()`, the very first operation is:
@@ -216,7 +216,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ---
 
 #### [B5] Stack Buffer Overflow in ANSI Escape Sequence Parser
-- **Location:** [Src/cliutils/cli.c:314, 358, 396](../../cli/cli.c#L314)
+- **Location:** [Src/cliutils/cli.c:314, 358, 396](../../../../lib/cli/cli.c#L314)
 - **Mechanism:**
   In `get_line()`:
   ```c
@@ -242,7 +242,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ---
 
 #### [B6] Out-of-Bounds 1-Byte Write in `insert_carriage_return`
-- **Location:** [Src/standard_output/standard_output.c:16-28](../../standard_output/standard_output.c#L16-L28)
+- **Location:** [Src/standard_output/standard_output.c:16-28](../../../../lib/io/standard_output.c#L16-L28)
 - **Mechanism:**
   ```c
   #define STDIO_OUTPUT_LINEBUF_LEN (2048)
@@ -277,7 +277,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ---
 
 #### [B7] Race Condition and Thread Safety Violation in `MSG()`
-- **Location:** [Src/standard_output/standard_output.c:12, 33-43](../../standard_output/standard_output.c#L12)
+- **Location:** [Src/standard_output/standard_output.c:12, 33-43](../../../../lib/io/standard_output.c#L12)
 - **Mechanism:**
   `MSG(...)` formats messages using a single shared static buffer:
   ```c
@@ -418,7 +418,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
   ```
 
 #### [B12] Ineffective Left-Trim in `get_line()`
-- **Location:** [Src/cliutils/cli.c:411-413](../../cli/cli.c#L411-L413)
+- **Location:** [Src/cliutils/cli.c:411-413](../../../../lib/cli/cli.c#L411-L413)
 - **Mechanism:**
   ```c
   while ((*pStr) <= ' ' && (*pStr != '\0')) {
@@ -506,20 +506,20 @@ This document numbers every finding, evaluates the architecture, resolves docume
 The following checklist tracks every identified item across all categories, mapped directly to its unique Finding ID:
 
 ### Priority 1: Critical Stability & Concurrency Fixes (Immediate)
-- [ ] **[ACT-01]** **Ref: [B1]** — Fix recursive mutex deadlock in [Src/cliutils/cli.c:56](../../cli/cli.c#L56): Initialize `modifyMtx` with `osMutexRecursive`.
+- [ ] **[ACT-01]** **Ref: [B1]** — Fix recursive mutex deadlock in [Src/cliutils/cli.c:56](../../../../lib/cli/cli.c#L56): Initialize `modifyMtx` with `osMutexRecursive`.
 - [ ] **[ACT-02]** **Ref: [B3]** — Fix Write-1-to-Clear status corruption in [Drivers/EthDrv/mac_drv.c:522-540](../../../../lib/eth/mac_drv.c#L522-L540): Replace `SET_BIT` with direct assignment `WRITE_REG(ETH->DMACSR, ...)`.
 - [ ] **[ACT-03]** **Ref: [B2]** — Add bounded timeout / yield in [Drivers/EthDrv/mac_drv.c:552](../../../../lib/eth/mac_drv.c#L552) to prevent infinite CPU spin on descriptor exhaustion.
 - [ ] **[ACT-04]** **Ref: [B4]** — Fix sequence delta calculation in [Drivers/EthDrv/mac_drv.c:473](../../../../lib/eth/mac_drv.c#L473) to `(int16_t)(txCntr - state->txCntAcked)`.
-- [ ] **[ACT-05]** **Ref: [B5]** — Add array bounds check on `paramIdx < sizeof(escParam)` in [Src/cliutils/cli.c:396](../../cli/cli.c#L396).
-- [ ] **[ACT-06]** **Ref: [B6]** — Change loop boundary to `len < maxLen` in [Src/standard_output/standard_output.c:16](../../standard_output/standard_output.c#L16).
+- [ ] **[ACT-05]** **Ref: [B5]** — Add array bounds check on `paramIdx < sizeof(escParam)` in [Src/cliutils/cli.c:396](../../../../lib/cli/cli.c#L396).
+- [ ] **[ACT-06]** **Ref: [B6]** — Change loop boundary to `len < maxLen` in [Src/standard_output/standard_output.c:16](../../../../lib/io/standard_output.c#L16).
 - [ ] **[ACT-07]** **Ref: [B10], [I3]** — Reorder [stm32h563zitx_FLASH.ld:153-169](../../startup/stm32h563zitx_FLASH.ld#L153-L169) to place `.FreeRTOS_sec` before `._user_heap_stack`.
 
 ### Priority 2: Robustness & Thread Safety (High)
-- [ ] **[ACT-08]** **Ref: [B7], [I5]** — Add mutex synchronization or critical section around `lineBuf` in [Src/standard_output/standard_output.c:33](../../standard_output/standard_output.c#L33).
+- [ ] **[ACT-08]** **Ref: [B7], [I5]** — Add mutex synchronization or critical section around `lineBuf` in [Src/standard_output/standard_output.c:33](../../../../lib/io/standard_output.c#L33).
 - [ ] **[ACT-09]** **Ref: [B8]** — Add timeout counter to `phy_soft_reset()` loop in [Drivers/EthDrv/phy_drv/phy_common.c:441](../../../../lib/eth/phy_drv/phy_common.c#L441).
 - [ ] **[ACT-10]** **Ref: [B9]** — Add null-check for `phyFetchLinkStatusCb` in [Drivers/EthDrv/phy_drv/phy_common.c:515](../../../../lib/eth/phy_drv/phy_common.c#L515).
 - [ ] **[ACT-11]** **Ref: [B11]** — Add check for `p->tot_len <= ETH_TX_BUF_SIZE` in [Drivers/EthDrv/eth_drv_lwip.c:218](../../../../Drivers/EthDrv/eth_drv_lwip.c#L218).
-- [ ] **[ACT-12]** **Ref: [B12]** — Fix left-trim pointer bug in `get_line()` in [Src/cliutils/cli.c:411-413](../../cli/cli.c#L411-L413).
+- [ ] **[ACT-12]** **Ref: [B12]** — Fix left-trim pointer bug in `get_line()` in [Src/cliutils/cli.c:411-413](../../../../lib/cli/cli.c#L411-L413).
 
 ### Priority 3: Build System & Documentation Sync (Medium)
 - [ ] **[ACT-13]** **Ref: [D1]** — Correct comment in [Src/main.c:83-85](../../main.c#L83-L85) regarding `pll1_q_ck` vs. HCLK.

@@ -1783,7 +1783,7 @@ for a quiet one, which is the wrong direction for this project.
 
 **The FIFO already had an unsynchronised interrupt producer.** `serial_io_rx_callback()` runs
 in the USART3 receive ISR and pushes every keystroke into the CLI's input FIFO
-([`cli.c:475`](../cli/cli.c#L475)). Its `osSemaphoreAcquire()` had always been failing
+([`cli.c:475`](../../../lib/cli/cli.c#L475)). Its `osSemaphoreAcquire()` had always been failing
 silently there, so that push proceeded with no exclusion at all against a concurrent thread
 push. Making the acquire failure fatal — the obvious hardening — therefore *dropped every
 keystroke* and left a board that booted, printed and pinged normally with a completely dead

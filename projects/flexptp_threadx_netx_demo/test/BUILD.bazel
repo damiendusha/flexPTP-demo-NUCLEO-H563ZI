@@ -68,12 +68,12 @@ cc_test(
     size = "medium",
     srcs = [
         "test_blocking_fifo.cpp",
-        "//projects/flexptp_threadx_netx_demo:blocking_io/blocking_fifo.c",
+        "//lib:blocking_io/blocking_fifo.c",
     ],
     copts = ["-Ilib/test/host"],
     deps = [
         ":host_cmsis_rtos",
-        "//projects/flexptp_threadx_netx_demo:blocking_io_headers",
+        "//lib:blocking_io_headers",
         "@googletest//:gtest",
     ],
 )
@@ -84,7 +84,7 @@ cc_test(
     srcs = [
         "cli_uut.c",
         "test_cli.cpp",
-        "//projects/flexptp_threadx_netx_demo:blocking_io/blocking_fifo.c",
+        "//lib:blocking_io/blocking_fifo.c",
     ],
     copts = [
         "-Ilib/test/host",
@@ -92,8 +92,8 @@ cc_test(
     ],
     deps = [
         ":host_cmsis_rtos",
-        "//projects/flexptp_threadx_netx_demo:blocking_io_headers",
-        "//projects/flexptp_threadx_netx_demo:cli_textual",
+        "//lib:blocking_io_headers",
+        "//lib:cli_textual",
         "@googletest//:gtest",
     ],
 )

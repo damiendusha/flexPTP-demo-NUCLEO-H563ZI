@@ -63,8 +63,8 @@ stated separately in each item.
 
 #### N1 — The FIFO reports empty when it is exactly full *(NEW)*
 
-[`blocking_fifo.c:26-40`](../../blocking_io/blocking_fifo.c#L26) ·
-[`blocking_fifo.c:42-95`](../../blocking_io/blocking_fifo.c#L42)
+[`blocking_fifo.c:26-40`](../../../../lib/blocking_io/blocking_fifo.c#L26) ·
+[`blocking_fifo.c:42-95`](../../../../lib/blocking_io/blocking_fifo.c#L42)
 
 `BFifo` tracks only `readIdx` and `writeIdx`, and derives occupancy from them:
 
@@ -110,7 +110,7 @@ transmitted twice.
 **Reachability.** The console FIFO drains at 11.5 KB/s (115200 8N1), so filling 16 KB needs a
 burst that outruns the UART — not normal PTP logging, but easily a `?` help dump chased by
 several `ptp log … on` streams, or any future code that prints in a loop. The CLI *input* FIFO
-([`cli.c:39-41`](../../cli/cli.c#L39), 512 bytes) has the same defect and a far lower
+([`cli.c:39-41`](../../../../lib/cli/cli.c#L39), 512 bytes) has the same defect and a far lower
 bar: a 512-byte paste into the terminal reaches it directly.
 
 Note that P5.4 made this **more** likely, not less. `bfifo_push_all()` loops until everything
@@ -318,8 +318,8 @@ flash back as `printf` drops out of the link.
 
 #### N6 — `MSG()` is documented as ISR-safe in one file and ISR-unsafe in another *(NEW)*
 
-[`standard_output.c:33-46`](../../standard_output/standard_output.c#L33) ·
-[`serial_io.c:120-131`](../../standard_output/serial_io.c#L120) ·
+[`standard_output.c:33-46`](../../../../lib/io/standard_output.c#L33) ·
+[`serial_io.c:120-131`](../../../../lib/io/serial_io.c#L120) ·
 [`mac_drv.c:9-17`](../../../../lib/eth/mac_drv.c#L9)
 
 Three comments, written during the same review cycle, disagree:
@@ -356,8 +356,8 @@ three comments so they agree.
 
 #### N7 — `bfifo_pop()` hands the write token to a second writer *(NEW)*
 
-[`blocking_fifo.c:142`](../../blocking_io/blocking_fifo.c#L142) ·
-[`blocking_fifo.c:49`](../../blocking_io/blocking_fifo.c#L49)
+[`blocking_fifo.c:142`](../../../../lib/blocking_io/blocking_fifo.c#L142) ·
+[`blocking_fifo.c:49`](../../../../lib/blocking_io/blocking_fifo.c#L49)
 
 `writeSem` is created with count 1 and is used as a writer mutex: `bfifo_push()` acquires it on
 entry and releases it on exit only if space remains. But `bfifo_pop()` releases it
@@ -376,7 +376,7 @@ mid-byte-range and one message is partly overwritten.
 
 There is more than one producer in practice, and the `MSG()` mutex does not cover them:
 `MSGraw()` and `MSGchar()` go straight to `serial_io_write()`
-([`standard_output.c:97-103`](../../standard_output/standard_output.c#L97)), and the CLI
+([`standard_output.c:97-103`](../../../../lib/io/standard_output.c#L97)), and the CLI
 echoes every keystroke that way from the `cli` thread while other threads log.
 
 **Fix.** The write token is doing two jobs — "there is space" and "no other writer" — and they
@@ -386,7 +386,7 @@ both are worth fixing in one pass over a 161-line file.
 
 #### N8 — `tokenize_cli_line()` overflows its copy by one byte, and is shared across threads *(NEW)*
 
-[`cli.c:78-106`](../../cli/cli.c#L78) · [`cli.c:453`](../../cli/cli.c#L453)
+[`cli.c:78-106`](../../../../lib/cli/cli.c#L78) · [`cli.c:453`](../../../../lib/cli/cli.c#L453)
 
 ```c
 #define CLI_LINEBUF_LENGTH (191)
@@ -488,8 +488,8 @@ compiled, cheap to fix now. **Fix:** a fixed bounded buffer and `MIN(payloadSize
 
 #### N12 — `strncpy` without termination in two CLI paths *(NEW)*
 
-[`cli.c:94`](../../cli/cli.c#L94) · [`cli.c:102`](../../cli/cli.c#L102) ·
-[`cli.c:506`](../../cli/cli.c#L506)
+[`cli.c:94`](../../../../lib/cli/cli.c#L94) · [`cli.c:102`](../../../../lib/cli/cli.c#L102) ·
+[`cli.c:506`](../../../../lib/cli/cli.c#L506)
 
 `strncpy(&ppTok[i][0], pTok, tokMaxLen)` leaves the token unterminated when it is exactly
 `MAX_TOK_LEN` (32) characters or longer; every later `strcmp` then runs off the end of the
