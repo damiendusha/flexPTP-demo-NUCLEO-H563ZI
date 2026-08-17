@@ -179,7 +179,7 @@ host's — is right either way.
 
 *"Add a comment block … warning against enabling DCACHE"* is already done, twice: the
 linker script carries exactly that warning at the `.EthDrv_sec` placement
-([`stm32h563zitx_FLASH.ld:170-179`](../../startup/stm32h563zitx_FLASH.ld#L170)), and `design_doc.md`
+([`stm32h563zitx_FLASH.ld:170-179`](../../../../lib/startup/stm32h563zitx_FLASH.ld#L170)), and `design_doc.md`
 devotes a [whole section](../design_doc.md#caches-and-dma-coherency) to it.
 
 The *other* half of the suggestion — an `#error` directive — is new and worth doing,

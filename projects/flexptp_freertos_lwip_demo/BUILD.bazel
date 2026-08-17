@@ -17,16 +17,6 @@ package(default_visibility = ["//visibility:public"])
 
 # --- Configuration headers: the seam the vendored libraries reach this project through -------
 
-cc_library(
-    name = "hal_conf",
-    hdrs = ["stm32h5xx_hal_conf.h"],
-    defines = [
-        "STM32H563xx",
-        "USE_HAL_DRIVER",
-    ],
-    includes = ["."],
-    deps = ["//third_party/CMSIS:cmsis"],
-)
 
 # The FreeRTOS configuration @freertos reaches this project through, and it is PLATFORM
 # DEPENDENT.
@@ -85,7 +75,7 @@ cc_library(
     name = "includes",
     includes = ["."],
     deps = [
-        ":hal_conf",
+        "//lib:hal_conf",
         ":project_defines",
     ],
 )
@@ -107,7 +97,7 @@ cc_library(
     target_compatible_with = ["//toolchain:stm32h563"],
     deps = [
         ":freertos_config",
-        ":hal_conf",
+        "//lib:hal_conf",
         "//third_party/CMSIS:cmsis",
         "@freertos",
         "@stm32h5_hal//:hal_headers",
@@ -170,15 +160,7 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "startup",
-    srcs = ["startup/startup_stm32h563zitx.s"],
-    target_compatible_with = TARGET_ONLY,
-    deps = [":includes"],
-    alwayslink = True,
-)
 
-exports_files(["startup/stm32h563zitx_FLASH.ld"])
 
 # --- flexPTP, and the firmware ---------------------------------------------------------------
 
@@ -231,17 +213,12 @@ cc_library(
     name = "app",
     srcs = [
         "cmds.c",
-        "cpp_support.cpp",
         "main.c",
-        "syscall.c",
-        "sysmem.c",
-        "system_stm32h5xx.c",
     ],
     hdrs = ["cmds.h"],
     features = FIRST_PARTY,
     target_compatible_with = TARGET_ONLY,
     deps = [
-        "//lib:sysmem_bounds",
         "//lib:cli",
         ":cmsis_rtos",
         ":eth",
@@ -259,10 +236,11 @@ cc_library(
 
 stm32_firmware(
     name = "flexptp-demo-freertos",
-    linker_script = "startup/stm32h563zitx_FLASH.ld",
+    linker_script = "//lib:startup/stm32h563zitx_FLASH.ld",
     deps = [
+        "//lib:runtime",
+        "//lib:startup",
         ":app",
-        ":startup",
     ],
 )
 

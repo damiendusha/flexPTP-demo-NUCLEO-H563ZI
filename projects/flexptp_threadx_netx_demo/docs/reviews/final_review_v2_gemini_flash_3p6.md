@@ -12,13 +12,13 @@
 This is an independent, fresh comprehensive audit (Pass 2 / v2) of the **flexPTP** IEEE 1588 / 802.1AS precision time protocol demonstration firmware ported to the STMicroelectronics **STM32H563ZI** microcontroller.
 
 The audit encompasses full static analysis and verification across every first-party translation unit, peripheral driver, memory layout configuration, build orchestration script, and operating system integration layer:
-- **Application & Initialization:** [`Src/main.c`](../../main.c), [`Src/cmds.c`](../../cmds.c), [`Src/syscall.c`](../../syscall.c), [`Src/sysmem.c`](../../sysmem.c), [`Src/system_stm32h5xx.c`](../../system_stm32h5xx.c)
+- **Application & Initialization:** [`Src/main.c`](../../main.c), [`Src/cmds.c`](../../cmds.c), [`Src/syscall.c`](../../../../lib/runtime/syscall.c), [`Src/sysmem.c`](../../../../lib/runtime/sysmem.c), [`Src/system_stm32h5xx.c`](../../../../lib/runtime/system_stm32h5xx.c)
 - **Ethernet MAC & PHY Drivers:** [`Drivers/EthDrv/mac_drv.c`](../../../../lib/eth/mac_drv.c), [`Drivers/EthDrv/mac_drv.h`](../../../../lib/eth/mac_drv.h), [`Drivers/EthDrv/eth_drv_lwip.c`](../../../../Drivers/EthDrv/eth_drv_lwip.c), [`Drivers/EthDrv/eth_drv_etherlib.c`](../../../../Drivers/EthDrv/eth_drv_etherlib.c), [`Drivers/EthDrv/phy_drv/phy_common.c`](../../../../lib/eth/phy_drv/phy_common.c), [`Drivers/EthDrv/phy_drv/phy_common.h`](../../../../lib/eth/phy_drv/phy_common.h)
 - **PTP Hardware Subsystem:** [`Src/flexptp_port/ptp_port_stm32h563.c`](../../../../lib/ptp/ptp_port_stm32h563.c), [`Src/flexptp_port/ptp_port_stm32h563.h`](../../../../lib/ptp/ptp_port_stm32h563.h)
 - **I/O & Diagnostic Infrastructure:** [`Src/standard_output/serial_io.c`](../../../../lib/io/serial_io.c), [`Src/standard_output/standard_output.c`](../../../../lib/io/standard_output.c), [`Modules/blocking_io/blocking_fifo.c`](../../../../lib/blocking_io/blocking_fifo.c), [`Modules/blocking_io/blocking_fifo.h`](../../../../lib/blocking_io/blocking_fifo.h), [`Src/cliutils/cli.c`](../../../../lib/cli/cli.c), [`Src/cliutils/cli.h`](../../../../lib/cli/cli.h)
 - **Network Interface Integration:** [`Src/ethernet/ethernet_lwip.c`](../../../../Src/ethernet/ethernet_lwip.c), [`Src/ethernet/ethernet_etherlib.c`](../../../../Src/ethernet/ethernet_etherlib.c)
-- **Configuration & Headers:** [`Inc/FreeRTOSConfig.h`](../../../../Inc/FreeRTOSConfig.h), [`Inc/lwipopts.h`](../../../../Inc/lwipopts.h), [`Inc/flexptp_options.h`](../../flexptp_options.h), [`Inc/etherlib_options.h`](../../../../Inc/etherlib_options.h), [`Inc/stm32h5xx_hal_conf.h`](../../stm32h5xx_hal_conf.h), [`Modules/lwip_port/arch/cc.h`](../../../../Modules/lwip_port/arch/cc.h)
-- **Linker & Build Orchestration:** [`stm32h563zitx_FLASH.ld`](../../startup/stm32h563zitx_FLASH.ld), [`CMakeLists.txt`](../../../../CMakeLists.txt), [`build.sh`](../../../../build.sh), [`cmake/gcc-arm-none-eabi.cmake`](../../../../cmake/gcc-arm-none-eabi.cmake), [`.github/workflows/ci.yml`](../../../../.github/workflows/ci.yml)
+- **Configuration & Headers:** [`Inc/FreeRTOSConfig.h`](../../../../Inc/FreeRTOSConfig.h), [`Inc/lwipopts.h`](../../../../Inc/lwipopts.h), [`Inc/flexptp_options.h`](../../flexptp_options.h), [`Inc/etherlib_options.h`](../../../../Inc/etherlib_options.h), [`Inc/stm32h5xx_hal_conf.h`](../../../../lib/runtime/stm32h5xx_hal_conf.h), [`Modules/lwip_port/arch/cc.h`](../../../../Modules/lwip_port/arch/cc.h)
+- **Linker & Build Orchestration:** [`stm32h563zitx_FLASH.ld`](../../../../lib/startup/stm32h563zitx_FLASH.ld), [`CMakeLists.txt`](../../../../CMakeLists.txt), [`build.sh`](../../../../build.sh), [`cmake/gcc-arm-none-eabi.cmake`](../../../../cmake/gcc-arm-none-eabi.cmake), [`.github/workflows/ci.yml`](../../../../.github/workflows/ci.yml)
 
 ### Summary of Build & Validation Checks
 
@@ -39,7 +39,7 @@ All 26 remediation items from the initial review cycles (spanning unbounded hard
 
 1. **Bounded Hardware Polling:** `ETHHW_WaitBitsClear()` replaces all infinite while-loops across MAC reset, MDIO reads/writes, PTP initialization, addend updates, and PPS pulse train control with deterministic spin timeouts.
 2. **`inFlight` Descriptor Hazard Resolution:** `ETHHW_DescExt.inFlight` guarantees that descriptors queued to `rx_thread` are not re-delivered by subsequent RX interrupts while waiting for thread-level consumption.
-3. **FreeRTOS Heap Protection:** The linker script [`stm32h563zitx_FLASH.ld`](../../startup/stm32h563zitx_FLASH.ld) explicitly places `.FreeRTOS_sec` prior to `._user_heap_stack`, preventing newlib `_sbrk()` from advancing into `ucHeap`.
+3. **FreeRTOS Heap Protection:** The linker script [`stm32h563zitx_FLASH.ld`](../../../../lib/startup/stm32h563zitx_FLASH.ld) explicitly places `.FreeRTOS_sec` prior to `._user_heap_stack`, preventing newlib `_sbrk()` from advancing into `ucHeap`.
 4. **Hardware Fault Diagnostic Handlers:** Naked assembly trampolines for `HardFault`, `MemManage`, `BusFault`, and `UsageFault` extract exception stack frames, decode CFSR/HFSR/BFAR/MMFAR, and write fatal crash dumps via polled non-blocking UART before halting.
 5. **Memory Layout Static Assertions:** `_Static_assert` enforces that `ETHHW_State` immediately precedes `DMARxDscrTab` with zero padding, guaranteeing that `ETHHW_GetState()` pointer arithmetic is structurally sound at compile time.
 6. **Thread Priority Rebalancing:** The `rx` thread runs at `osPriorityAboveNormal` (32), below `tcpip_thread` (40) but above CLI/logging threads (24), preventing console bursts from starving Ethernet descriptor recycling.
@@ -262,7 +262,7 @@ and ensure `phy_populate_handlers()` handles unmatched models safely.
 
 #### N5 — lwIP Assertions (`LWIP_PLATFORM_ASSERT`) Are Silent No-Ops and Drag ~9 KB Dead Code
 
-- **Locations:** [`Modules/lwip_port/arch/cc.h:83`](../../../../Modules/lwip_port/arch/cc.h#L83), [`Src/syscall.c:35, 80-90`](../../syscall.c#L35), [`Inc/lwipopts.h:48-62`](../../../../Inc/lwipopts.h#L48)
+- **Locations:** [`Modules/lwip_port/arch/cc.h:83`](../../../../Modules/lwip_port/arch/cc.h#L83), [`Src/syscall.c:35, 80-90`](../../../../lib/runtime/syscall.c#L35), [`Inc/lwipopts.h:48-62`](../../../../Inc/lwipopts.h#L48)
 - **Impact:** Core protocol invariant checks (e.g. `LWIP_ASSERT_CORE_LOCKED()`) fail silently; ~9 KB of Flash wasted on non-functional floating-point printf libraries.
 
 ##### Defect Analysis
@@ -272,7 +272,7 @@ and ensure `phy_populate_handlers()` handles unmatched models safely.
                                      x, __LINE__, __FILE__); } while(0)
 ```
 1. `printf` maps through newlib libc to `_write()`, which calls `__io_putchar()`.
-2. `__io_putchar()` is declared `__attribute__((weak))` in [`Src/syscall.c`](../../syscall.c) and is **never implemented**. The linker resolves the weak symbol to `0x0`, causing `_write` to drop all characters silently.
+2. `__io_putchar()` is declared `__attribute__((weak))` in [`Src/syscall.c`](../../../../lib/runtime/syscall.c) and is **never implemented**. The linker resolves the weak symbol to `0x0`, causing `_write` to drop all characters silently.
 3. `LWIP_PLATFORM_ASSERT` contains no `while(1)` or `abort()`. When an assertion fails, execution continues unchecked into corrupted memory or un-locked states.
 4. Calling `printf` forces the linker to include newlib's `_vfprintf_r` formatting engine, adding ~9 KB of dead code to Flash.
 

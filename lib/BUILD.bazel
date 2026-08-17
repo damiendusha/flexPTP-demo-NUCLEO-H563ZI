@@ -228,3 +228,63 @@ cc_library(
         "@stm32h5_hal//:hal",
     ],
 )
+
+# ---------------------------------------------------------------------------
+# Tier 4 -- the runtime, the reset vector and the memory map
+# ---------------------------------------------------------------------------
+
+# The HAL's configuration, and the device selection that goes with it.
+#
+# §13.8 listed this as a judgement call -- share it only if both firmwares genuinely want the
+# same values. They do, byte for byte: same part, same HAL modules, same HAL_ETH_USE_PTP and
+# ETH_RX_DESC_CNT. If one ever needs to differ, this goes back to being per-project behind the
+# label_flag @stm32h5_hal//:hal_conf already provides.
+cc_library(
+    name = "hal_conf",
+    hdrs = ["runtime/stm32h5xx_hal_conf.h"],
+    defines = [
+        "STM32H563xx",
+        "USE_HAL_DRIVER",
+    ],
+    includes = ["runtime"],
+    deps = ["//third_party/CMSIS:cmsis"],
+)
+
+# newlib's syscalls, the heap, the C++ runtime probe, and the clock tree.
+#
+# sysmem.c is the interesting one: _sbrk is bounded against the linker script's symbols so that
+# exhaustion REPORTS AND HALTS rather than silently returning memory that overlaps the stack.
+# cpp_support.cpp exists to make the C++ runtime observable on hardware -- the cpp_ctor check in
+# tools/hil/ asks the running board whether static constructors ran.
+cc_library(
+    name = "runtime",
+    srcs = [
+        "runtime/cpp_support.cpp",
+        "runtime/syscall.c",
+        "runtime/sysmem.c",
+        "runtime/system_stm32h5xx.c",
+    ],
+    features = FIRST_PARTY,
+    target_compatible_with = ["//toolchain:stm32h563"],
+    deps = [
+        ":hal_conf",
+        ":io_headers",
+        ":sysmem_bounds",
+        "@stm32h5_hal//:hal",
+    ],
+    alwayslink = True,
+)
+
+# The reset vector and the memory map. Both firmwares are the same part with the same layout;
+# what differs is what the RTOS adds -- ThreadX contributes tx_initialize_low_level.S, which
+# stays in that project because the clock, tick and end-of-RAM marker are its integrator's to
+# supply.
+cc_library(
+    name = "startup",
+    srcs = ["startup/startup_stm32h563zitx.s"],
+    target_compatible_with = ["//toolchain:stm32h563"],
+    deps = [":hal_conf"],
+    alwayslink = True,
+)
+
+exports_files(["startup/stm32h563zitx_FLASH.ld"])

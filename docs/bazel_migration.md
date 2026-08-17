@@ -14,7 +14,7 @@ Status: **phases 0–4 landed and verified on hardware; phases 5–7 outstanding
 | 6 — host tests | **landed** — 13/13, and both mutation checks still bite |
 | 7 — delete CMake | **landed** |
 | 8 — the FreeRTOS + lwIP project | **landed** — both firmwares build and pass on hardware; D15 partially met |
-| 9 — unification | **tiers 1–3 landed** — the application layer is shared; tier 4 outstanding |
+| 9 — unification | **all five tiers landed** — units, drivers, CMSIS-RTOS2 layer, runtime and startup, and the HAL config are all in `//lib` |
 
 CMake still builds and still passes S8 at every point, so there is a working fallback until
 phase 7 removes it.
@@ -632,7 +632,7 @@ warnings gate meaningful.
 
 The `startup_stm32h563xx.s` fix imu needs in its `stm32cubeh5` genrule (`sed 's/\.thumb_set /\.set /g'`)
 is **not** needed here: this project has its own
-[its own `startup/startup_stm32h563zitx.s`](../projects/flexptp_threadx_netx_demo/startup/startup_stm32h563zitx.s), not CubeH5's.
+[its own `startup/startup_stm32h563zitx.s`](../lib/startup/startup_stm32h563zitx.s), not CubeH5's.
 
 ### 5.2 First-party libraries
 
@@ -1837,12 +1837,32 @@ duplication rather than by prediction. Rough order, easiest and safest first:
 
    `cmds.c` stays per-project, as this section anticipated: `ethinfo`/`ethstat` and the
    stack-specific commands differ.
-4. **The runtime odds and ends.** `syscall.c`, `sysmem.c`, `cpp_support.cpp`,
-   `system_stm32h5xx.c`, `startup_stm32h563zitx.s` and the linker script.
-5. **Judgement calls, deliberately last.** `stm32h5xx_hal_conf.h` carries `HAL_ETH_USE_PTP` and
-   `ETH_RX_DESC_CNT`; share it only if both projects genuinely want the same values, otherwise
-   leave it per-project behind a `label_flag` like the others
-   ([§4.2](#42-configuration-headers)).
+4. **The runtime odds and ends. DONE.** `syscall.c`, `sysmem.c`, `cpp_support.cpp` and
+   `system_stm32h5xx.c` are in `//lib:runtime`; `startup_stm32h563zitx.s` and the linker script
+   are in `//lib:startup`. `ptp/ptp_tx_timestamp.c` was deleted rather than moved — it was
+   seeded into the FreeRTOS project and never built by either firmware.
+
+   **This is the first tier that changed an image**, and it is worth being precise about what
+   that means, because criterion 3 as written would reject it. The ThreadX `.text` grew by
+   **8 bytes**; `data` and `bss` were unchanged, and the defined-symbol sets of the two ELFs are
+   **identical**. The cause is that ThreadX's startup was one target — the reset vector plus
+   `tx_initialize_low_level.S` — and sharing the reset vector splits it into two archives, which
+   moves section padding. No source, no codegen, and no symbol changed.
+
+   So criterion 3 needs a sharper edge than "the image must not change": **the symbol set and
+   the section sizes are the invariant, and a build-ID change is a prompt to explain, not a
+   verdict.** Byte-identity is the right test while a move is a pure relocation, but it stops
+   being achievable the moment a move also regroups archives — and refusing tier 4 on those
+   8 bytes would have been rejecting a correct change on a link-layout artifact. What kept this
+   honest was that the check is cheap: `size` plus `nm --defined-only` on both ELFs answers it
+   directly, and *that* is the check to run when a build ID moves.
+5. **The HAL configuration. DONE.** `stm32h5xx_hal_conf.h` is `//lib:hal_conf`, and
+   `@stm32h5_hal//:hal_conf`'s `label_flag` now defaults there rather than at the ThreadX
+   project. This was listed as a judgement call — share it only if both projects genuinely want
+   the same values — and the answer turned out to be yes: `tools/ci/check_seeding.sh` had been
+   asserting the two copies byte-identical since phase 8, `HAL_ETH_USE_PTP` and `ETH_RX_DESC_CNT`
+   included. The `label_flag` seam stays regardless, so a third project can still override it
+   without disturbing these two ([§4.2](#42-configuration-headers)).
 
 **Never unified:** `main.c`, the config headers, `ethernet_*.c`, `eth_drv_*.c`, `nsd_*.c`, and
 the RTOS/stack `BUILD` wiring. Those *are* the difference between the two projects.

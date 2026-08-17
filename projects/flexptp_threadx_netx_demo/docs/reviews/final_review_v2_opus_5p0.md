@@ -258,8 +258,8 @@ outer default. Both remaining reads then behave.
 
 #### N5 — Every lwIP assertion is a silent no-op *(NEW)*
 
-[`cc.h:83`](../../../../Modules/lwip_port/arch/cc.h#L83) · [`syscall.c:35`](../../syscall.c#L35) ·
-[`syscall.c:80-90`](../../syscall.c#L80) · [`lwipopts.h:48-62`](../../../../Inc/lwipopts.h#L48)
+[`cc.h:83`](../../../../Modules/lwip_port/arch/cc.h#L83) · [`syscall.c:35`](../../../../lib/runtime/syscall.c#L35) ·
+[`syscall.c:80-90`](../../../../lib/runtime/syscall.c#L80) · [`lwipopts.h:48-62`](../../../../Inc/lwipopts.h#L48)
 
 The port's assertion macro is the lwIP stock one:
 

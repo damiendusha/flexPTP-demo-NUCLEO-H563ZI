@@ -131,7 +131,7 @@ The Gemini Pro 3.1 report failed to detect **all 10 active code defects and docu
 | **[B6]** | **String Out-of-Bounds Write** | [Src/standard_output/standard_output.c:16](../../../../lib/io/standard_output.c#L16) | **High** | `insert_carriage_return` writes `str[2049]` into 2049-byte `lineBuf` when string is at full capacity. |
 | **[B7]** | **`MSG()` Thread-Safety Race** | [Src/standard_output/standard_output.c:12](../../../../lib/io/standard_output.c#L12) | **High** | 6 threads format concurrently into a single un-locked `static char lineBuf`. |
 | **[B8] / [B9]** | **PHY Reset Loop & Null Pointer Dereference** | [Drivers/EthDrv/phy_drv/phy_common.c:441, 515](../../../../lib/eth/phy_drv/phy_common.c#L441) | **High** | Unbounded `phy_soft_reset()` loop and unguarded `phyFetchLinkStatusCb()` call causing HardFault on unknown PHY. |
-| **[B10]** | **Newlib Heap vs FreeRTOS Heap Collision** | [stm32h563zitx_FLASH.ld:153-169](../../startup/stm32h563zitx_FLASH.ld#L153-L169) | **High** | `._user_heap_stack` defines `_end` before `.FreeRTOS_sec`, causing `_sbrk()` to overlap `ucHeap`. |
+| **[B10]** | **Newlib Heap vs FreeRTOS Heap Collision** | [stm32h563zitx_FLASH.ld:153-169](../../../../lib/startup/stm32h563zitx_FLASH.ld#L153-L169) | **High** | `._user_heap_stack` defines `_end` before `.FreeRTOS_sec`, causing `_sbrk()` to overlap `ucHeap`. |
 | **[D1]** | **Stale HCLK Clock Comment** | [Src/main.c:83-85](../../main.c#L83-L85) | **Medium** | Comment claims PTP clock is HCLK, contradicting lines 61–64 of `main.c` and `ptp_clock.md`. |
 | **[U1]** | **Silent Patch Loss on Clone** | `build.sh` / `patches/` | **High** | `build.sh` runs `git submodule update` which discards submodule working-tree patches without re-applying them. |
 

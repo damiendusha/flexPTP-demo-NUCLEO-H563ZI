@@ -107,7 +107,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 | **[D5]** | **Duplicate Source Listings in CMake** | [CMakeLists.txt:35-40](../../../../CMakeLists.txt#L35-L40), [Src/CMakeLists.txt:1-13](../../CMakeLists.txt#L1-L13) | [docs/design_doc.md:632-663](../design_doc.md#L632-L663) | `main.c`, `syscall.c`, `sysmem.c` are added to target sources in the root `CMakeLists.txt` AND in `Src/CMakeLists.txt`. | Consolidate source lists by removing duplicates in `Src/CMakeLists.txt` or root `CMakeLists.txt`. |
 | **[D6]** | **Spelling Typo in Boot Banner** | [Src/main.c:133](../../main.c#L133) | [README.md:116](../../../../README.md#L116) | `print_welcome_message()` contains `"flexPTP is currenty compiled against..."` (`currenty` instead of `currently`). | Fix spelling in `Src/main.c:133`. |
 | **[D7]** | **Preprocessor Macro Typo in Hardware Port** | [Src/flexptp_port/ptp_port_stm32h563.c:71](../../../../lib/ptp/ptp_port_stm32h563.c#L71) | [Src/flexptp_port/ptp_port_stm32h563.c:43](../../../../lib/ptp/ptp_port_stm32h563.c#L43) | `#error "No decision was made on how the PPS signal is generated! Please define either PPS_SIMPLE or PPL_PULSETRAIN!"` (contains `PPL_PULSETRAIN` instead of `PPS_PULSETRAIN`). | Fix typo in error directive. |
-| **[D8]** | **HAL Conf Comment Inversion** | [Inc/stm32h5xx_hal_conf.h:268-269](../../stm32h5xx_hal_conf.h#L268-L269) | — | Comment for `USE_HAL_OPAMP_REGISTER_CALLBACKS` says "OTFDEC", while `USE_HAL_OTFDEC_REGISTER_CALLBACKS` says "OPAMP". | Swap comments to match their respective macros. |
+| **[D8]** | **HAL Conf Comment Inversion** | [Inc/stm32h5xx_hal_conf.h:268-269](../../../../lib/runtime/stm32h5xx_hal_conf.h#L268-L269) | — | Comment for `USE_HAL_OPAMP_REGISTER_CALLBACKS` says "OTFDEC", while `USE_HAL_OTFDEC_REGISTER_CALLBACKS` says "OPAMP". | Swap comments to match their respective macros. |
 
 ---
 
@@ -353,7 +353,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ---
 
 #### [B10] Linker Script Memory Collision Risk Between C Heap & FreeRTOS Heap
-- **Location:** [stm32h563zitx_FLASH.ld:153-169](../../startup/stm32h563zitx_FLASH.ld#L153-L169), [Src/sysmem.c:53-79](../../sysmem.c#L53-L79)
+- **Location:** [stm32h563zitx_FLASH.ld:153-169](../../../../lib/startup/stm32h563zitx_FLASH.ld#L153-L169), [Src/sysmem.c:53-79](../../../../lib/runtime/sysmem.c#L53-L79)
 - **Mechanism:**
   In `stm32h563zitx_FLASH.ld`:
   ```ld
@@ -512,7 +512,7 @@ The following checklist tracks every identified item across all categories, mapp
 - [ ] **[ACT-04]** **Ref: [B4]** — Fix sequence delta calculation in [Drivers/EthDrv/mac_drv.c:473](../../../../lib/eth/mac_drv.c#L473) to `(int16_t)(txCntr - state->txCntAcked)`.
 - [ ] **[ACT-05]** **Ref: [B5]** — Add array bounds check on `paramIdx < sizeof(escParam)` in [Src/cliutils/cli.c:396](../../../../lib/cli/cli.c#L396).
 - [ ] **[ACT-06]** **Ref: [B6]** — Change loop boundary to `len < maxLen` in [Src/standard_output/standard_output.c:16](../../../../lib/io/standard_output.c#L16).
-- [ ] **[ACT-07]** **Ref: [B10], [I3]** — Reorder [stm32h563zitx_FLASH.ld:153-169](../../startup/stm32h563zitx_FLASH.ld#L153-L169) to place `.FreeRTOS_sec` before `._user_heap_stack`.
+- [ ] **[ACT-07]** **Ref: [B10], [I3]** — Reorder [stm32h563zitx_FLASH.ld:153-169](../../../../lib/startup/stm32h563zitx_FLASH.ld#L153-L169) to place `.FreeRTOS_sec` before `._user_heap_stack`.
 
 ### Priority 2: Robustness & Thread Safety (High)
 - [ ] **[ACT-08]** **Ref: [B7], [I5]** — Add mutex synchronization or critical section around `lineBuf` in [Src/standard_output/standard_output.c:33](../../../../lib/io/standard_output.c#L33).
@@ -534,8 +534,8 @@ The following checklist tracks every identified item across all categories, mapp
 - [ ] **[ACT-20]** **Ref: [B13]** — Add `\n` to `MSG("Turning PTP on!\n")` in [Src/flexptp_port/ptp_port_stm32h563.c:105](../../../../lib/ptp/ptp_port_stm32h563.c#L105).
 - [ ] **[ACT-21]** **Ref: [D6]** — Fix `"currenty"` to `"currently"` in [Src/main.c:133](../../main.c#L133).
 - [ ] **[ACT-22]** **Ref: [D7]** — Fix `"PPL_PULSETRAIN"` to `"PPS_PULSETRAIN"` in [Src/flexptp_port/ptp_port_stm32h563.c:71](../../../../lib/ptp/ptp_port_stm32h563.c#L71).
-- [ ] **[ACT-23]** **Ref: [D8]** — Swap inverted comments in [Inc/stm32h5xx_hal_conf.h:268-269](../../stm32h5xx_hal_conf.h#L268-L269).
-- [ ] **[ACT-24]** **Ref: [I2]** — Wire `__io_putchar` to `MSGchar` in [Src/syscall.c:35](../../syscall.c#L35).
+- [ ] **[ACT-23]** **Ref: [D8]** — Swap inverted comments in [Inc/stm32h5xx_hal_conf.h:268-269](../../../../lib/runtime/stm32h5xx_hal_conf.h#L268-L269).
+- [ ] **[ACT-24]** **Ref: [I2]** — Wire `__io_putchar` to `MSGchar` in [Src/syscall.c:35](../../../../lib/runtime/syscall.c#L35).
 - [ ] **[ACT-25]** **Ref: [I1]** — Refactor `low_level_output` in [Drivers/EthDrv/eth_drv_lwip.c](../../../../Drivers/EthDrv/eth_drv_lwip.c) to copy pbuf fragments directly into DMA buffers (Zero-Copy TX).
 - [ ] **[ACT-26]** **Ref: [U4]** — Perform oscilloscope validation of 1PPS pulse on `PG8` (CN12 pin 66) and characterization against a PHC-capable grandmaster.
 - [ ] **[ACT-27]** **Ref: [I6]** — Submit upstream pull requests for `patches/flexptp/0002-servo-nan-latch-fix.patch` and `patches/embfmt/0001-formatting-fixes.patch`.

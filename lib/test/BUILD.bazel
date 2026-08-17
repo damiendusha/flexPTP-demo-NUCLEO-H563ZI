@@ -83,7 +83,7 @@ cc_library(
     deps = [
         ":host_shims",
         "//lib:mac_drv_textual",
-        "//projects/flexptp_threadx_netx_demo:hal_conf",
+        "//lib:hal_conf",
         "//third_party/CMSIS:cmsis",
         "@stm32h5_hal//:hal_headers",
     ],

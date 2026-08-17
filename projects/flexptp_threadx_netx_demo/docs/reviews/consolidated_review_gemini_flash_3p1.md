@@ -92,7 +92,7 @@ Where initial reviews differed in details, cross-reviews established a refined c
 - **Consensus Status:** **NO CONSENSUS (Maintainer Product Decision).** Flagged for project maintainer decision.
 
 #### Dispute 2: Libc `printf` Redirection vs. Dedicated Polled Panic Writer
-- **Location:** [Src/syscall.c:35](../../syscall.c#L35)
+- **Location:** [Src/syscall.c:35](../../../../lib/runtime/syscall.c#L35)
 - **Flash 3.6 Position (`ACT-51`):** Implement `__io_putchar` in `syscall.c` to route standard C library `printf`/`assert` output to `MSGchar()`.
 - **Opus 5.0 Position (`ACT-35`):** **Disagrees with `__io_putchar` redirection.** Points out that `__io_putchar` is unreferenced, `assert_param()` is compiled out, and FIFO-backed `MSGchar()` cannot function during FreeRTOS asserts, HardFaults, or stack overflows (where interrupts/scheduler are dead). Proposes instead implementing a **polled-UART panic writer (`panic_puts`)** directly writing `USART3->TDR`.
 - **Consensus Status:** **CONSENSUS REACHED ON REVISED PROPOSAL.** Dropped `__io_putchar` redirection in favor of the polled-UART panic handler (`ACT-35`).

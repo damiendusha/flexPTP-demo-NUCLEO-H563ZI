@@ -234,7 +234,7 @@ outer default. Both reads then behave.
 ### N5 — Every lwIP assertion is a silent no-op
 
 **Where:** [`cc.h:83`](../../../../Modules/lwip_port/arch/cc.h#L83),
-[`syscall.c:35`](../../syscall.c#L35), [`syscall.c:80-90`](../../syscall.c#L80),
+[`syscall.c:35`](../../../../lib/runtime/syscall.c#L35), [`syscall.c:80-90`](../../../../lib/runtime/syscall.c#L80),
 [`lwipopts.h:48-62`](../../../../Inc/lwipopts.h#L48)
 
 The stock macro `printf("Assertion \"%s\" failed …")` fails twice over, both verified in the

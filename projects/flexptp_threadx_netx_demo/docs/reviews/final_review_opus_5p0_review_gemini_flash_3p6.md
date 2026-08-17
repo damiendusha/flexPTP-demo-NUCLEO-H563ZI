@@ -173,7 +173,7 @@ While Claude Opus 5.0 performed an extraordinarily comprehensive review, the fol
 ---
 
 ### [Missed Finding 3] Linker Script Memory Collision Risk Between Newlib Heap & FreeRTOS Heap
-- **Location:** [stm32h563zitx_FLASH.ld:153-169](../../startup/stm32h563zitx_FLASH.ld#L153-L169), [Src/sysmem.c:53-79](../../sysmem.c#L53-L79)
+- **Location:** [stm32h563zitx_FLASH.ld:153-169](../../../../lib/startup/stm32h563zitx_FLASH.ld#L153-L169), [Src/sysmem.c:53-79](../../../../lib/runtime/sysmem.c#L53-L79)
 - **Mechanism:**
   In `stm32h563zitx_FLASH.ld`:
   ```ld

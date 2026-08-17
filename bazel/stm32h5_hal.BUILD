@@ -12,9 +12,12 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+# Points at //lib since phase 9 tier 4: both firmwares want byte-identical HAL configuration --
+# same part, same modules -- so it stopped being per-project. It remains a label_flag rather than
+# a plain dep so that a project which ever needs to differ can say so without forking this file.
 label_flag(
     name = "hal_conf",
-    build_setting_default = "@flexptp_demo//projects/flexptp_threadx_netx_demo:hal_conf",
+    build_setting_default = "@flexptp_demo//lib:hal_conf",
 )
 
 # Headers only, for the host test suite: mac_drv.c is compiled for x86 there and needs ST's real

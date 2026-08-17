@@ -245,28 +245,49 @@ optional, and without it only the register view is lost.
 
 ### Software structure
 
-The project relies on the following large software building blocks:
-- the [Eclipse ThreadX](https://github.com/eclipse-threadx/threadx) embedded operating system,
-- ST's [CMSIS-RTOS2 wrapper for ThreadX](https://github.com/STMicroelectronics/stm32-mw-cmsis-rtos-tx), which is what lets the application and flexPTP stay RTOS-agnostic,
-- [STM32H5xx Hardware Abstraction Layer library](https://github.com/STMicroelectronics/stm32h5xx-hal-driver) (HAL) providing MCU specific functionality,
-- the [Eclipse NetX Duo](https://github.com/eclipse-threadx/netxduo) Ethernet stack, whose link layer carries PTP hardware timestamps natively,
-- the [EtherLib](https://gitea.epagris.com/epagris/EtherLib), our in-house developed Ethernet stack,
-- the [embfmt](https://gitea.epagris.com/epagris/embfmt) a printf()-like formatted printer implementation for embedded systems.
+This is a monorepo with **two firmwares** over one set of shared code. They are not build
+variants of each other: each is its own Bazel target with its own RTOS and its own network
+stack, and both are built and flashed the same way.
 
-> [!TIP]
-> The project can either use NetX Duo or EtherLib Ethernet stacks. This can be easily changed by setting the `ETH_STACK` CMake variable in the top `CMakeLists.txt`:
-> ```
->set(ETH_STACK "NETXDUO") # select "NETXDUO" or "ETHERLIB"
->```
-> **What "either" means, precisely.** `NETXDUO` is the configuration this port runs, tests and
-> verifies on hardware. `ETHERLIB`, and `NONE` (no stack at all — the S3–S5 staging state, and
-> the fallback if NetX Duo ever has to be bisected out), are **compiled in CI and nothing
-> more**. EtherLib has never been *run* on this port; see
-> [`docs/design_doc.md`](projects/flexptp_threadx_netx_demo/docs/design_doc.md#remaining-work-to-enable-etherlib) for what remains.
-> Until recently neither alternative even configured — `main.c` and `cmds.c` included NetX Duo
-> headers unconditionally — which is why the compile gate now exists.
->
-> `ETH_STACK="LWIP"` is a hard build error: lwIP was removed in S3 of the ThreadX port. The submodule is still pinned, so a pre-S3 commit builds it.
+| | `projects/flexptp_threadx_netx_demo` | `projects/flexptp_freertos_lwip_demo` |
+|---|---|---|
+| RTOS | [Eclipse ThreadX](https://github.com/eclipse-threadx/threadx) | [FreeRTOS](https://github.com/FreeRTOS/FreeRTOS-Kernel) V11.3.0 |
+| Network stack | [Eclipse NetX Duo](https://github.com/eclipse-threadx/netxduo), whose link layer carries PTP hardware timestamps natively | [lwIP](https://github.com/lwip-tcpip/lwip) |
+| CMSIS-RTOS2 wrapper | [ST's, over ThreadX](https://github.com/STMicroelectronics/stm32-mw-cmsis-rtos-tx) | ST's, over FreeRTOS |
+| Bazel target | `//projects/flexptp_threadx_netx_demo:flexptp-demo` | `//projects/flexptp_freertos_lwip_demo:flexptp-demo-freertos` |
+
+Shared by both, in `//lib`:
+
+- **The PTP and Ethernet logic units** — timestamp codec, endpoint addressing, the TX registry,
+  NSD lifecycle, frame framing, link state. These depend on nothing but `stdint`, which is why
+  they were the first thing extracted, and the host tests in `//lib/test` pin their behaviour.
+- **The hardware layer** — `mac_drv.c` and the PHY drivers, and flexPTP's STM32H563 port.
+  `mac_drv.h` was written stack-agnostic so the driver could outlive a change of network stack;
+  that is exactly what happened.
+- **The CMSIS-RTOS2 layer** — the CLI, `serial_io.c`, the console and the blocking FIFO.
+  `cmsis_os2.h` is ARM's and names no RTOS, so **neither of these libraries names an RTOS
+  either**; `osThreadNew()` resolves at link against whichever wrapper the firmware pulls in.
+  That is the property that makes two RTOSes over one application layer possible at all.
+- **The runtime and startup** — syscalls, the heap, C++ support, `SystemInit()`, the reset
+  vector, the linker script, and the HAL configuration.
+
+Common to both, from outside the tree: ST's
+[STM32H5xx HAL](https://github.com/STMicroelectronics/stm32h5xx-hal-driver), and
+[embfmt](https://gitea.epagris.com/epagris/embfmt), a `printf()`-like formatted printer for
+embedded systems.
+
+What is deliberately *not* shared is `main.c`, the configuration headers, the stack glue
+(`ethernet_*.c`, `eth_drv_*.c`, `nsd_*.c`) and the RTOS/stack `BUILD` wiring. Those are the
+difference between the two firmwares. See
+[`docs/bazel_migration.md` §13.8](docs/bazel_migration.md#138-unification-afterwards) for how the
+split was arrived at, and the rule that governs it: a file is unified only once a test pins its
+behaviour.
+
+> [!NOTE]
+> Two stacks that used to be selectable here are gone. **EtherLib** was removed — it was only
+> ever compiled, never run on this port. **lwIP** was removed from the ThreadX firmware in S3 of
+> that port and is now the network stack of the FreeRTOS firmware instead, which is a much better
+> home for it. There is no `ETH_STACK` switch any more; choosing a stack means choosing a project.
 
 The project is organized the following way:
 

@@ -13,20 +13,6 @@ package(default_visibility = ["//visibility:public"])
 # so a second project can supply its own without forking the vendored file. With one project the
 # indirection looks like ceremony around a constant; it is the seam phase 8 writes through.
 
-cc_library(
-    name = "hal_conf",
-    hdrs = ["stm32h5xx_hal_conf.h"],
-    # compile_DEFS in CMakeLists.txt, which applies them globally with
-    # add_compile_definitions(). Here they ride on the config target instead, so anything that
-    # depends on the HAL configuration gets the device selection with it -- without them
-    # stm32h5xx.h #errors with "Please select first the target STM32H5xx device".
-    defines = [
-        "STM32H563xx",
-        "USE_HAL_DRIVER",
-    ],
-    includes = ["."],
-    deps = ["//third_party/CMSIS:cmsis"],
-)
 
 cc_library(
     name = "tx_user",
@@ -68,7 +54,7 @@ cc_library(
     name = "includes",
     includes = ["."],
     deps = [
-        ":hal_conf",
+        "//lib:hal_conf",
         ":project_defines",
     ],
 )
@@ -130,10 +116,7 @@ cc_library(
 # the file doing its job.
 cc_library(
     name = "startup",
-    srcs = [
-        "startup/startup_stm32h563zitx.s",
-        "startup/tx_initialize_low_level.S",
-    ],
+    srcs = ["startup/tx_initialize_low_level.S"],
     target_compatible_with = TARGET_ONLY,
     deps = [
         ":includes",
@@ -142,7 +125,6 @@ cc_library(
     alwayslink = True,
 )
 
-exports_files(["startup/stm32h563zitx_FLASH.ld"])
 
 # ---------------------------------------------------------------------------
 # flexPTP: the pure units, the hardware port, and the assembled library
@@ -243,17 +225,12 @@ cc_library(
     name = "app",
     srcs = [
         "cmds.c",
-        "cpp_support.cpp",
         "main.c",
-        "syscall.c",
-        "sysmem.c",
-        "system_stm32h5xx.c",
     ],
     hdrs = ["cmds.h"],
     features = FIRST_PARTY,
     target_compatible_with = TARGET_ONLY,
     deps = [
-        "//lib:sysmem_bounds",
         "//lib:cli",
         ":eth",
         ":flexptp",
@@ -271,8 +248,10 @@ cc_library(
 # Visible to //tools/ci so the C++ rules can be asserted against the linked image.
 stm32_firmware(
     name = "flexptp-demo",
-    linker_script = "startup/stm32h563zitx_FLASH.ld",
+    linker_script = "//lib:startup/stm32h563zitx_FLASH.ld",
     deps = [
+        "//lib:runtime",
+        "//lib:startup",
         ":app",
         ":startup",
     ],
