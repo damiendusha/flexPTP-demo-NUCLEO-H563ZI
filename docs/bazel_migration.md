@@ -12,7 +12,7 @@ Status: **phases 0–4 landed and verified on hardware; phases 5–7 outstanding
 | 4 — the firmware binary | landed; **S8 13/13 on hardware** from a Bazel-built image. One piece of residual work — see [§5.3](#53-the-firmware-binary) |
 | 5 — flashing | **landed**, both OpenOCD modes |
 | 6 — host tests | **landed** — 13/13, and both mutation checks still bite |
-| 7 — delete CMake | outstanding |
+| 7 — delete CMake | **landed** |
 | 8 — the FreeRTOS + lwIP project | outstanding |
 | 9 — unification | outstanding |
 
@@ -1247,10 +1247,21 @@ Independent of phases 4–5 and can be done in parallel by a second pair of hand
 
 ### Phase 7 — Delete CMake
 
-Once the HIL suite has passed on Bazel-built images across a few sessions: delete
-`CMakeLists.txt`, the seven nested `CMakeLists.txt` files, `cmake/`, `Middlewares/*.cmake`,
-`test/CMakeLists.txt`, `build.sh` (D7), `patches/` and `.gitmodules`, and rewrite the README's
-build section. [§8.3](#83-the-hil-suite-must-stop-hardcoding-the-openocd-path) must have landed
+**Landed.** Removed: `CMakeLists.txt` and the seven nested ones, `CMakePresets.json`, `cmake/`,
+`Middlewares/*.cmake`, `build.sh` (D7), `.gitmodules`, and the submodule trees themselves.
+
+**`patches/` is NOT deleted, and this plan was wrong to list it.** Deleting it broke the build
+immediately: the patches are an input to `//bazel/repositories.bzl`'s `new_git_repository`
+declarations, so they are applied *by the fetch* and are needed on every clean build. The list
+above was written when patches were a manual pre-build step; making them part of the fetch is
+what retired `--check-patches`, and the same change is what makes the files permanent rather
+than disposable. Their READMEs are rewritten to say so.
+
+Documents that reference the removed build files keep their references, on the
+`REMOVED_BY_THREADX_PORT` precedent — the reasoning recorded in those files is why several
+decisions in [`bazel_decisions.md`](bazel_decisions.md) are defensible, and repointing the links
+at `BUILD.bazel` would attribute them to the wrong file. Paths under `Modules/` are allow-listed
+wholesale, since those trees are now fetched rather than checked out. [§8.3](#83-the-hil-suite-must-stop-hardcoding-the-openocd-path) must have landed
 in phase 5, or this takes the hardware suite with it.
 
 Also here, not before: `bazel run //:format`, coverage and complexity — the remaining reusable

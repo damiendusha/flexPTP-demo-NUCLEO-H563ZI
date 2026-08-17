@@ -55,6 +55,33 @@ REMOVED_WITH_ETHERLIB = {
     "Modules/etherlib",
 }
 
+# The CMake build, and the submodule trees, removed in phase 7 of the Bazel migration.
+#
+# Two groups, and the second is the interesting one:
+#
+#   - the build files themselves. Documents that describe how the firmware was built were
+#     correct when written, and the reasoning in them -- the -Og measurements, finding H-3's
+#     --gc-sections, the LINK_DEPENDS trap -- is why several decisions in
+#     docs/bazel_decisions.md are defensible. Rewriting those references to point at BUILD.bazel
+#     would attribute the wrong file.
+#   - paths under Modules/. Those trees were git submodules and are now git repositories
+#     fetched by Bazel, so they no longer exist in a checkout at all. A reader can still reach
+#     them: `bazel fetch @flexptp` puts the patched tree in the repository cache.
+REMOVED_WITH_CMAKE = {
+    "build.sh",
+    "cmake/gcc-arm-none-eabi.cmake",
+    "CMakeLists.txt",
+    "CMakePresets.json",
+    ".gitmodules",
+    "Drivers/CMakeLists.txt",
+    "Middlewares/CMakeLists.txt",
+    "Middlewares/netxduo.cmake",
+    "Middlewares/threadx.cmake",
+    "Modules/CMakeLists.txt",
+    "projects/flexptp_threadx_netx_demo/CMakeLists.txt",
+    "projects/flexptp_threadx_netx_demo/test/CMakeLists.txt",
+}
+
 
 def anchors(path):
     """GitHub-style slugs for every ATX heading in a Markdown file."""
@@ -96,7 +123,12 @@ def main():
                     rel_dest = dest.relative_to(ROOT).as_posix()
                 except ValueError:
                     rel_dest = None
-                if rel_dest in REMOVED_BY_THREADX_PORT or rel_dest in REMOVED_WITH_ETHERLIB:
+                if (rel_dest in REMOVED_BY_THREADX_PORT
+                        or rel_dest in REMOVED_WITH_ETHERLIB
+                        or rel_dest in REMOVED_WITH_CMAKE
+                        # Vendored trees are fetched by Bazel now, so nothing under Modules/
+                        # exists in a checkout. `bazel fetch @<name>` reaches them.
+                        or rel_dest.startswith("Modules/")):
                     continue
                 bad.append(f"{rel}: missing file -> {target}")
                 continue

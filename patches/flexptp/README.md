@@ -1,18 +1,24 @@
 # flexPTP patches
 
-Patches against the pinned flexPTP submodule (`76aaf67`, `RC1.0-11`).
+Patches against the pinned flexptp revision (`76aaf67`, `RC1.0-11`), applied **by the Bazel fetch**.
 
-The submodule is **not** modified in git — the parent repository records only its commit
-pointer, so any working-tree change inside `Modules/flexptp` is invisible to a clone and
-is destroyed by `git submodule update`. Anything that must survive lives here.
+`//bazel/repositories.bzl` lists them in the `patches` attribute of the `new_git_repository`
+for `@flexptp`, so they are part of fetching the dependency: the patched tree is what lands in
+the repository cache, keyed by content.
+
+That is why these files cannot be deleted even though the submodules and `build.sh` are gone --
+they are an input to the build, not a manual step.
 
 ## Applying
 
-**`./build.sh` does this for you** and refuses to build if it cannot — see
-`apply_submodule_patches()`. Applying by hand is only needed when building without it:
+Nothing to do: `bazel build` applies them. There is no longer a working tree that can be
+pristine, patched, or -- the state `build.sh` had to detect and refuse -- neither, which is what
+retired the old `--check-patches` gate.
+
+To inspect the patched sources:
 
 ```bash
-git -C Modules/flexptp apply "$PWD/patches/flexptp/<name>.patch"
+bazel fetch @flexptp
 ```
 
 The patches are **independent and order-free**: each is generated against the pinned commit

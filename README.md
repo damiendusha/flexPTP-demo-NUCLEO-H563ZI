@@ -18,63 +18,32 @@ how it is verified.
 
 ### Get the sources
 
-> [!NOTE]
-> To acquire the full source tree after cloning the repo, please fetch the linked *submodules* as well:
-
 ```bash
 git clone <this-repository> flexPTP-demo-NUCLEO-H563ZI
 cd flexPTP-demo-NUCLEO-H563ZI
-git submodule update --init --recursive
-git -C Modules/embfmt  apply "$PWD/patches/embfmt/0001-formatting-fixes.patch"
-git -C Modules/flexptp apply "$PWD/patches/flexptp/0002-servo-nan-latch-fix.patch"
-git -C Modules/flexptp apply "$PWD/patches/flexptp/0003-generic-netstack-igmp-addresses.patch"
-git -C Modules/flexptp apply "$PWD/patches/flexptp/0004-cmsis-os2-event-enqueue-from-timer-thread.patch"
 ```
 
-`./build.sh` does **both** steps for you, and refuses to build if the patches can be
-neither applied nor confirmed already applied. Use it, or run the six commands above.
+That is the whole of it. There are no submodules to initialise and no patches to apply by hand.
 
-To check an existing tree without building or changing anything — this is what CI runs, because
-a build that applies a patch cannot also be the evidence that it was applied:
+Both used to be required, and getting them wrong was dangerous rather than merely inconvenient:
+the vendored trees were git submodules, two of them carried local bug fixes that a submodule
+cannot record — the parent repository stores only a commit pointer, so a working-tree change was
+invisible to a clone and destroyed by `git submodule update` — and **skipping a patch did not
+break the build, it produced a firmware that was silently wrong.** Patch 0004 is the sharp case:
+without it the firmware builds, links, gets an address and never synchronises, because every
+heartbeat is rejected and the BMCA never leaves INITIALIZING.
 
-```bash
-./build.sh --check-patches
-```
-
-> [!IMPORTANT]
-> The patch commands are not optional. Two submodules carry local bug fixes that git
-> cannot record for us — the parent repository stores only a submodule's *commit pointer*,
-> so a working-tree change inside `Modules/` is invisible to a clone and is discarded by
-> `git submodule update`. They therefore live in [`patches/`](patches/) and must be applied.
->
-> Skipping them does not break the build. It produces a firmware that is **silently wrong**:
->
-> | Missing patch | Consequence |
-> |---|---|
-> | `flexptp/0002-servo-nan-latch-fix` | One duplicated `Sync` makes the measured Sync period zero; the Kalman servo computes `0.0/0.0` and NaN latches into its state **permanently**. The clock free-runs at ~18.7 ppm while every visible indicator stays green ([F59](docs/port_review.md)) |
-> | `embfmt/0001-formatting-fixes` | `%ll` conversions dropped, `NaN` printed as a plausible `0.0000`, small `%e` values and any rounding carry misreported ([F60](docs/port_review.md), [F66](docs/port_review.md)) — this is what disguised F59 as a working servo |
-> | `flexptp/0004-cmsis-os2-event-enqueue-from-timer-thread` | The heartbeat is enqueued with `osWaitForever` from ThreadX's timer thread, which that thread may not block in. Every heartbeat is rejected, the BMCA never leaves `INITIALIZING`, and **no master is ever selected** — the clock simply never syncs ([F80](docs/port_review.md)) |
-> | `flexptp/0003-generic-netstack-igmp-addresses` | Not a defect: an extension point so a port supplying its own network stack can provide the two IGMP group addresses. Without it flexPTP `#error`s unless it recognises lwIP, EtherLib or Linux |
->
-> All are permanent fixes rather than instrumentation, and all are worth reporting
-> upstream. See [`patches/flexptp/README.md`](patches/flexptp/README.md) and
-> [`patches/embfmt/README.md`](patches/embfmt/README.md).
+The trees are now git repositories declared in
+[`bazel/repositories.bzl`](bazel/repositories.bzl), pinned by commit, and the patches in
+[`patches/`](patches/) are attached to the fetch. The patched tree is what lands in Bazel's
+repository cache, keyed by content, so there is no longer a working tree that can be pristine,
+patched, or neither — which is why the old `--check-patches` gate no longer exists.
 
 ## Building
 
-> [!NOTE]
-> **This project is migrating from CMake to Bazel.** Both build systems work today and produce
-> the same firmware; CMake is removed once the migration finishes. The plan, the phase-by-phase
-> state and the reasoning are in [`docs/bazel_migration.md`](docs/bazel_migration.md) and
-> [`docs/bazel_decisions.md`](docs/bazel_decisions.md).
->
-> First-party sources live under `projects/flexptp_threadx_netx_demo/`, which is where a second
-> firmware — the FreeRTOS + lwIP one — will sit beside this one.
-
-### With Bazel
-
-Nothing to install but Bazel: the compiler is fetched and pinned by `MODULE.bazel`, and the
-vendored trees come from git rather than submodules.
+The build is Bazel. Nothing to install but Bazel itself: the compiler is fetched and pinned by
+`MODULE.bazel`, and the vendored trees come from git rather than submodules, so there is no
+`git submodule update` step and no patch-application step.
 
 ```bash
 bazel build //projects/flexptp_threadx_netx_demo:flexptp-demo
@@ -82,8 +51,8 @@ bazel build //projects/flexptp_threadx_netx_demo:flexptp-demo
 
 That produces the `.elf`, `.map`, `.hex` and `.bin`. No `--platforms` flag is needed — the
 target carries a transition onto the board's platform, so it cannot silently produce a host
-build. `-c opt` gives `-O2` (note: the CMake build ships `-Og`; see D8 in the decisions
-document).
+build. `--config=opt` gives `-O2` and `--config=dbg` gives `-O0 -g3` (the CMake build this
+replaced shipped `-Og`; see D8 in the decisions document for why that changed).
 
 To flash. ST's OpenOCD fork is built from source the first time (a few minutes); upstream
 OpenOCD cannot program an STM32H5 — see [Flashing](#flashing):
@@ -106,50 +75,6 @@ capability check, all in one invocation:
 bazel test //...
 ```
 
-### With CMake
-
-### Prerequisites
-
-| Tool | Needed for | Note |
-|---|---|---|
-| `arm-none-eabi-gcc` (v12+) | compiling | `build.sh` downloads ARM GNU Toolchain 15.3.rel1 into `toolchains/` if absent |
-| `cmake` (v3.22+) | build management | |
-| **`ninja`** | the CMake **presets** only | `CMakePresets.json` pins the Ninja generator. `build.sh` bypasses presets and uses CMake's default generator, so the two paths have different requirements — a preset build fails without Ninja while `./build.sh` succeeds |
-| `openocd` (ST's fork) | flashing and debugging | Built by `./build.sh --with-openocd`. **Upstream OpenOCD 0.12.0 cannot program an STM32H5** — see [Flashing](#flashing) |
-
-> [!NOTE]
-> On Windows, [STM32CubeCLT](https://www.st.com/en/development-tools/stm32cubeclt.html) bundles `arm-none-eabi-{gcc,gdb}`, `openocd` and ST's STLink tools. [CMake](https://cmake.org/) and Ninja must be installed separately.
-
-### Compiling
-
-The build script downloads the toolchain if needed, initialises submodules and builds:
-
-```bash
-./build.sh
-```
-
-Add `--with-openocd` the first time if you intend to flash or debug:
-
-```bash
-./build.sh --with-openocd
-```
-
-Or configure and build manually. Via presets (needs Ninja):
-
-```bash
-cmake --preset debug && cmake --build build/debug
-```
-
-or without them:
-
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build --target flexptp-demo
-```
-
-Outputs land in the chosen build directory: `flexptp-demo.elf`, `.bin`, `.hex` and `.map`.
-Both the `debug` and `release` presets are tested on hardware.
-
 ## Testing
 
 Two suites. The host suite needs nothing but a compiler; the hardware suite needs the board.
@@ -163,25 +88,19 @@ network-stack driver's logic units, and the ThreadX context rules against a real
 whole suite runs in about a quarter of a second and gates every push in CI.
 
 ```bash
-./build.sh --run-tests
+bazel test //...
 ```
 
-That builds the firmware first, then the tests. To run only the tests — which skips the
-200 MB ARM toolchain download entirely, since the host suite is compiled with the system
-`gcc`/`g++`:
+That covers the host suite, the C++ rules asserted against the linked image, and the OpenOCD
+capability check. Host and target are two platforms in one graph, so there is no separate test
+root to configure and no need to choose between them.
+
+To run one binary, or the target-image checks alone:
 
 ```bash
-./build.sh --tests-only
+bazel test //projects/flexptp_threadx_netx_demo/test:test_tx_ring
+bazel test //tools/ci:cxx_rules_test
 ```
-
-Or drive CMake directly. `test/` is a **separate CMake root**, not a target of the firmware
-build, because the top-level `CMakeLists.txt` is unconditionally cross-compiling:
-
-```bash
-cmake -S test -B build/test && cmake --build build/test -j && ctest --test-dir build/test --output-on-failure
-```
-
-The first run downloads GoogleTest via `FetchContent`, so it needs network once.
 
 > [!IMPORTANT]
 > A green host suite says **nothing** about codegen defects, memory ordering, or anything
@@ -221,7 +140,8 @@ Details, including the network setup for a direct cable, are in
 **With OpenOCD** — ST's fork is required. `target/stm32h5x.cfg` declares a `stm32h5x` flash
 bank, which names a *compiled-in* driver; upstream OpenOCD 0.12.0 has no such driver and
 rejects the declaration outright, so copying ST's `.cfg` files onto a distro build does not
-help. `./build.sh --with-openocd` builds the fork into `toolchains/openocd`:
+help. `bazel run //projects/flexptp_threadx_netx_demo:flash` builds the fork from source and
+flashes in one step; the raw invocation, against a fork you already have, is:
 
 ```bash
 toolchains/openocd/bin/openocd -f board/st_nucleo_h5.cfg \
@@ -307,8 +227,8 @@ extensions. [clangd](https://marketplace.visualstudio.com/items?itemName=llvm-vs
 and clang-format are highly recommended.
 
 The project has predefined *Launch* and *Attach* tasks. The OpenOCD ones point at
-`toolchains/openocd/bin/openocd` from `./build.sh --with-openocd`, so they need no system
-OpenOCD. The ST-Link GDB-server configurations and the register (`.SVD`) views still resolve
+`toolchains/openocd/bin/openocd`; `--//tools/flash:openocd=local` makes the Bazel flash target
+use the same binary, so the two agree. The ST-Link GDB-server configurations and the register (`.SVD`) views still resolve
 through [STM32CubeCLT](https://www.st.com/en/development-tools/stm32cubeclt.html); it is
 optional, and without it only the register view is lost.
 
@@ -388,7 +308,7 @@ repository records only submodule commit pointers — **four patch files in tota
   subtracted 10 instead of 10^precision ([F66](docs/port_review.md)).
 
 All are described in [`docs/port_review.md`](docs/port_review.md) and all are worth reporting
-upstream. **`./build.sh` applies them and will not build without them** — see
+upstream. **The build applies them as part of fetching the dependency** — see
 [Get the sources](#get-the-sources) for why that matters.
 
 ### Printing and logging

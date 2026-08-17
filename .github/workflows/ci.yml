@@ -5,160 +5,82 @@ on:
   pull_request:
   workflow_dispatch:
 
+# No `submodules: recursive` anywhere below. The vendored trees are git repositories declared in
+# //bazel/repositories.bzl and fetched by Bazel, and the four patches that used to be
+# working-tree edits are attached to the fetch. That also retires the old `--check-patches` job:
+# there is no longer a working tree that can be pristine, patched, or -- the state build.sh had
+# to detect and refuse -- neither.
+
 jobs:
   build:
-    name: Build (${{ matrix.config }})
+    name: Firmware (${{ matrix.config }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        config: [Debug, Release]
+        config: [dbg, opt]
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
-      - name: Install build prerequisites
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
-
-      # build.sh fetches the pinned toolchain into toolchains/ and, importantly, applies the
-      # two submodule patches -- omitting them produces a firmware that is silently wrong
-      # rather than one that fails to build (see README, "Get the sources").
-      - name: Cache the Arm toolchain
+      # Keyed on the lockfile, which pins the module graph, and on MODULE.bazel, which pins the
+      # compiler by sha256 and the vendored trees by commit.
+      - name: Cache Bazel
         uses: actions/cache@v4
         with:
-          path: toolchains/arm-gnu-toolchain-15.3.rel1-x86_64-arm-none-eabi
-          key: arm-gnu-15.3.rel1
+          path: ~/.cache/bazel
+          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel.lock', 'MODULE.bazel') }}
+          restore-keys: bazel-${{ runner.os }}-
 
-      # pipefail is not optional here. GitHub runs `run:` steps with `bash -e`, NOT
-      # `bash -eo pipefail`, so the exit status of a pipeline is tee's -- always 0. A compile
-      # or link failure would not fail this step, and nothing downstream would catch it: the
-      # warning gate passes trivially on a truncated log, the patch check is independent of the
-      # build, and upload-artifact only *warns* when its paths are missing. A broken build could
-      # produce a green tick (finding N16).
+      # No `set -o pipefail` guard is needed any more: there is no pipeline for tee to swallow
+      # the exit status of (finding N16), because there is no log to grep. First-party warnings
+      # are -Werror inside the build itself (D13), so a warning fails the compile rather than
+      # being detected afterwards.
       - name: Build
-        shell: bash
-        run: |
-          set -o pipefail
-          ./build.sh -t ${{ matrix.config }} -b build/${{ matrix.config }} 2>&1 | tee build.log
-
-      # The gate is first-party warnings, not all warnings: lwipcore is not built with this
-      # project's flags, so a vendored warning must not fail the build. As of P6.6 there are
-      # none -- the four -Wstringop-overflow instances in dhcp.c (F63) went away when the lwIP
-      # assertion macro gained a halt -- but the distinction is kept, because the next
-      # submodule bump can reintroduce one and that is not this project's bug to fix.
-      - name: Fail on first-party warnings
-        run: |
-          total=$(grep -c 'warning:' build.log || true)
-          first=$(grep 'warning:' build.log | grep -cE '/projects/' || true)
-          echo "warnings: $total total, $first first-party"
-          grep 'warning:' build.log | grep -E '/projects/' || true
-          test "$first" -eq 0
-
-      # Independent of the build, and driven from build.sh's own SUBMODULE_PATCHES array so the
-      # two lists cannot drift.
-      #
-      # This step used to name two of the four patches by hand, and the two it left out were
-      # the two that matter most for this: without 0003 flexPTP #errors, so the build itself
-      # covers it -- but 0004 is SILENT. Omit it and the firmware builds, boots, links, gets an
-      # address and never syncs, because every heartbeat is rejected and the BMCA never leaves
-      # INITIALIZING (F80). Exactly the class of failure this check exists to catch, and
-      # exactly the one it was not checking.
-      - name: Check the patches really were applied
-        run: ./build.sh --check-patches
-
-      # The C++ rules in the project's cpp_support.cpp -- no dynamic allocation, no exceptions, no RTTI
-      # -- checked against the linked image rather than against the sources, for the same
-      # reason `cpp_ctor` in tools/hil/ asks the running board about static constructors: a
-      # rule about what the firmware contains is a question for the firmware (CX-07).
-      #
-      # Verified not to be vacuous: adding a std::vector to one of the NSD units makes it fail
-      # on _ZdlPv.
-      - name: Check the C++ rules hold in the image
-        run: ./tools/ci/check_cxx_rules.sh build/${{ matrix.config }}/flexptp-demo.elf
+        run: bazel build --config=${{ matrix.config }} //projects/flexptp_threadx_netx_demo:flexptp-demo
 
       - uses: actions/upload-artifact@v4
         with:
           name: flexptp-demo-${{ matrix.config }}
           path: |
-            build/${{ matrix.config }}/flexptp-demo.elf
-            build/${{ matrix.config }}/flexptp-demo.map
+            bazel-bin/projects/flexptp_threadx_netx_demo/flexptp-demo.elf
+            bazel-bin/projects/flexptp_threadx_netx_demo/flexptp-demo.elf.map
+            bazel-bin/projects/flexptp_threadx_netx_demo/flexptp-demo.hex
 
-  # The ETH_STACK alternatives, compile-only.
-  #
-  # `NONE` is the no-stack configuration S3-S5 used, and the fallback if NetX Duo ever has to
-  # be bisected out. It had rotted -- it failed to configure, because main.c and cmds.c
-  # included NetX Duo headers unconditionally, and nothing noticed because nothing built it
-  # (finding TS-08).
-  #
-  # Compile-only is the honest scope: it proves the switch still means something, not that the
-  # configuration works. ETHERLIB was the other half of this matrix until EtherLib was removed
-  # in the Bazel migration (D9); it had never been RUN.
-  eth-stack-alternatives:
-    name: Build (ETH_STACK=${{ matrix.stack }})
+  test:
+    name: Tests
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        stack: [NONE]
-
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
-      - name: Install build prerequisites
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
-
-      - name: Cache the Arm toolchain
+      - name: Cache Bazel
         uses: actions/cache@v4
         with:
-          path: toolchains/arm-gnu-toolchain-15.3.rel1-x86_64-arm-none-eabi
-          key: arm-gnu-15.3.rel1
+          path: ~/.cache/bazel
+          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel.lock', 'MODULE.bazel') }}
+          restore-keys: bazel-${{ runner.os }}-
 
-      - name: Select the stack
-        run: sed -i 's|^set(ETH_STACK "NETXDUO")|set(ETH_STACK "${{ matrix.stack }}")|' CMakeLists.txt
+      # One invocation covers the host unit tests, the C++ rules asserted against the linked
+      # image, and the resolver tests -- host and target are two platforms in one graph, so
+      # there is no separate test root to configure.
+      #
+      # --//tools/flash:openocd=local keeps CI off the OpenOCD source build, which takes minutes
+      # and needs libusb headers, and nothing here flashes a board.
+      - name: Test
+        run: bazel test //... --//tools/flash:openocd=local
 
-      - name: Build
-        shell: bash
-        run: |
-          set -o pipefail
-          ./build.sh -b build/${{ matrix.stack }} 2>&1 | tee build.log
-
-  # Static analysis over the first-party code only.
-  #
-  # Two analysers, because they reach different code:
-  #
-  #   GCC -fanalyzer   enabled in test/CMakeLists.txt on the first-party host targets, so it
-  #                    runs in the host-tests job below. Verified locally: clean, and NOT
-  #                    vacuous -- introducing a null dereference in ptp_tx_registry.cpp is
-  #                    reported as -Wanalyzer-null-dereference. It only sees the code that
-  #                    compiles for the host.
-  #   cppcheck         this job, for the code that ONLY exists cross-compiled --
-  #                    eth_drv_netxduo.c, nsd_netxduo.c, main.c, cmds.c, serial_io.c.
-  #
-  # Scoped deliberately: projects/ is this project's, and everything else
-  # in the tree is vendored at a pinned commit. A finding in NetX Duo or the HAL is not this
-  # project's to fix and would turn the gate into noise -- the same reasoning as the
-  # first-party-warnings gate in the build job.
-  #
-  # HONEST NOTE: this cppcheck invocation could not be run in the environment it was written
-  # in -- the Debian package hard-codes FILESDIR to a path outside a non-root prefix, so the
-  # binary refuses to start without an install. Its first CI run is therefore its first run.
-  # --error-exitcode=1 is deliberate anyway: if it finds something, a red job is the correct
-  # outcome and the finding is the point.
   static-analysis:
     name: Static analysis
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Install cppcheck
         run: sudo apt-get update && sudo apt-get install -y cppcheck
 
+      # Scoped to the project's own sources. Everything else in the tree is vendored at a pinned
+      # commit, and a finding in NetX Duo or the HAL is not this project's to fix -- the same
+      # reasoning as scoping -Werror to first-party targets.
       - name: Analyse the first-party sources
         run: |
           cppcheck --version
@@ -169,49 +91,16 @@ jobs:
             --std=c11 \
             --platform=unix32 \
             -DSTM32H563xx -DUSE_HAL_DRIVER -DETH_NETXDUO -DCMSIS_OS2 -DPPS_SIMPLE \
-            -I Inc -I Src -I Drivers -I Modules \
+            -I projects/flexptp_threadx_netx_demo -I third_party \
             --suppress=missingInclude \
             --suppress=missingIncludeSystem \
             --suppress=unusedFunction \
             --suppress=unmatchedSuppression \
             projects/flexptp_threadx_netx_demo/
 
-  host-tests:
-    name: Host unit tests
-    runs-on: ubuntu-latest
-    steps:
-      # submodules: recursive is required. The host tests compile mac_drv.c against ST's REAL
-      # CMSIS device header and REAL HAL headers -- Drivers/stm32h5xx-hal-driver is a
-      # submodule -- so that register layouts and bit positions come from the same
-      # definitions the firmware uses rather than from a hand-copied fake that can drift.
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install build prerequisites
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
-
-      # No board and no network needed: these are pure logic tests and run in well under a
-      # second, which is why they gate every push while the hardware suite cannot.
-      - name: Configure
-        run: cmake -S projects/flexptp_threadx_netx_demo/test -B build/test -DCMAKE_BUILD_TYPE=Debug
-
-      - name: Build
-        run: cmake --build build/test -j
-
-      - name: Test
-        run: ctest --test-dir build/test --output-on-failure
-
   docs:
     name: Docs cross-references
     runs-on: ubuntu-latest
     steps:
-      # submodules: recursive is not cosmetic. check_docs_links.py verifies that every relative
-      # link target exists, and the submodule trees do not exist in a plain checkout -- so the
-      # first document that links into Modules/ or Drivers/stm32h5xx-hal-driver/ would fail this
-      # job while being perfectly valid locally. The reviews reference submodule files in prose
-      # rather than as links to avoid exactly that; this makes the trap impossible instead.
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - run: python3 tools/ci/check_docs_links.py

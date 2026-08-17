@@ -1,18 +1,24 @@
 # embfmt patches
 
-Patches against the pinned embfmt submodule (`670a349`).
+Patches against the pinned embfmt revision (`670a349`), applied **by the Bazel fetch**.
 
-As with flexPTP, the submodule is **not** modified in git — the parent repository records
-only its commit pointer, so a working-tree change inside `Modules/embfmt` is invisible to a
-clone and is destroyed by `git submodule update`. Anything that must survive lives here.
+`//bazel/repositories.bzl` lists them in the `patches` attribute of the `new_git_repository`
+for `@embfmt`, so they are part of fetching the dependency: the patched tree is what lands in
+the repository cache, keyed by content.
+
+That is why these files cannot be deleted even though the submodules and `build.sh` are gone --
+they are an input to the build, not a manual step.
 
 ## Applying
 
-**`./build.sh` does this for you** and refuses to build if it cannot — see
-`apply_submodule_patches()`. Applying by hand is only needed when building without it:
+Nothing to do: `bazel build` applies them. There is no longer a working tree that can be
+pristine, patched, or -- the state `build.sh` had to detect and refuse -- neither, which is what
+retired the old `--check-patches` gate.
+
+To inspect the patched sources:
 
 ```bash
-git -C Modules/embfmt apply "$PWD/patches/embfmt/0001-formatting-fixes.patch"
+bazel fetch @embfmt
 ```
 
 ## Reverting
