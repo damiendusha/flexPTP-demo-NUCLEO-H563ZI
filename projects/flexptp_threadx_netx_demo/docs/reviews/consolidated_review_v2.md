@@ -113,8 +113,8 @@ at every access site; all five functions change together.
 
 ### N2 — The TX ownership wait is compiled away above `-Og`
 
-**Where:** [`mac_drv.c:596-607`](../../eth/mac_drv.c#L596),
-[`mac_drv.h:29-31`](../../eth/mac_drv.h#L29)
+**Where:** [`mac_drv.c:596-607`](../../../../lib/eth/mac_drv.c#L596),
+[`mac_drv.h:29-31`](../../../../lib/eth/mac_drv.h#L29)
 
 `ETHHW_Desc` declares the four DMA-written words as plain `uint32_t`, and the P2.3 retry loop
 has no barrier, call or side effect — so the load is loop-invariant and gets hoisted. Measured
@@ -146,9 +146,9 @@ Re-check the three disassemblies afterwards and extend the F62 note in `CMakeLis
 
 ### N3 — RX DMA suspension on RBU is never cleared
 
-**Where:** [`mac_drv.c:176`](../../eth/mac_drv.c#L176),
-[`mac_drv.c:253-265`](../../eth/mac_drv.c#L253),
-[`mac_drv.c:547-579`](../../eth/mac_drv.c#L547)
+**Where:** [`mac_drv.c:176`](../../../../lib/eth/mac_drv.c#L176),
+[`mac_drv.c:253-265`](../../../../lib/eth/mac_drv.c#L253),
+[`mac_drv.c:547-579`](../../../../lib/eth/mac_drv.c#L547)
 
 The RX tail pointer is written once at init (`DMACRDTPR = 0`, "tail pointer WON'T STOP"), which
 prevents suspension on *tail* but not on *ownership*. When every RX descriptor is outstanding
@@ -208,8 +208,8 @@ void ETHHW_RestoreRXDesc(ETHHW_DescFull *bd) {
 
 ### N4 — Known vendor + unknown model dereferences NULL at boot
 
-**Where:** [`phy_common.c:21`](../../eth/phy_drv/phy_common.c#L21),
-[`phy_common.c:382-451`](../../eth/phy_drv/phy_common.c#L382)
+**Where:** [`phy_common.c:21`](../../../../lib/eth/phy_drv/phy_common.c#L21),
+[`phy_common.c:382-451`](../../../../lib/eth/phy_drv/phy_common.c#L382)
 
 `static const char *phyName = NULL;` is assigned only on a full match or on an unknown **OUI**.
 A PHY whose vendor is in the table but whose model is not falls through both inner
@@ -221,7 +221,7 @@ This is the sibling of the first review's **B1**, which guarded the *unknown-PHY
 in `phy_get_link_status()` and did not revisit this site. It is the more likely of the two:
 vendors change models far more often than they change OUIs.
 
-The affected vendor IDs, from [`phy_common.h:72-76`](../../eth/phy_drv/phy_common.h#L72),
+The affected vendor IDs, from [`phy_common.h:72-76`](../../../../lib/eth/phy_drv/phy_common.h#L72),
 are TI `0x080017` / `0x080028` / `0x080000`, SMSC `0x0001F0` and Realtek `0x000732`. (The Gemini
 review lists SMSC as `0x00800F`; that value does not appear in this project — see
 [§4](#4-claims-rejected-or-downgraded).)
@@ -288,7 +288,7 @@ below to become moot.
 
 **Where:** [`standard_output.c:33-46`](../../standard_output/standard_output.c#L33),
 [`serial_io.c:120-131`](../../standard_output/serial_io.c#L120),
-[`mac_drv.c:9-17`](../../eth/mac_drv.c#L9)
+[`mac_drv.c:9-17`](../../../../lib/eth/mac_drv.c#L9)
 
 Three comments written in the same review cycle disagree: `mac_drv.c` says its timeout reports
 "must be callable from an ISR"; `standard_output.c` skips the mutex in interrupt context on that
@@ -382,8 +382,8 @@ this buffer.
 
 ### N9 — No memory barriers at descriptor handoff
 
-**Where:** [`mac_drv.c:258-264`](../../eth/mac_drv.c#L258),
-[`mac_drv.c:632-640`](../../eth/mac_drv.c#L632)
+**Where:** [`mac_drv.c:258-264`](../../../../lib/eth/mac_drv.c#L258),
+[`mac_drv.c:632-640`](../../../../lib/eth/mac_drv.c#L632)
 
 Both handoffs write the descriptor body and then the `OWN` bit with nothing in between, then
 poke a tail register. The Cortex-M33 has a store buffer and the fabric gives no ordering
@@ -405,7 +405,7 @@ tail write, in both paths (see the N3 snippet).
 | **N10** | [`eth_drv_etherlib.c:139-142`](../../../../Drivers/EthDrv/eth_drv_etherlib.c#L139) | On `dynmem_alloc()` failure the callback returns 0, which means "the receive thread owns it now" — but nobody took it, and `inFlight` stays set. Each failure retires one descriptor permanently; 24 of them is N3 by another route. The lwIP path gets this right ([`eth_drv_lwip.c:393-397`](../../../../Drivers/EthDrv/eth_drv_lwip.c#L393)). **Fix:** return `ETHHW_RET_RX_PROCESSED`, and drop the `MSG()` — this runs in the ETH ISR (N6). Not compiled today; P5.21/P5.22 prepared this path precisely so its first build is not a debugging session. |
 | **N11** | [`ethernet_etherlib.c:7-13`](../../../../Src/ethernet/ethernet_etherlib.c#L7) | `char str[packet->payloadSize + 1]` — a VLA sized off the wire, memcpy'd into, no bound and no zero-length guard. 1.5 KB of stack at MTU, attacker-chosen in any case. **Fix:** fixed buffer + `MIN()`. |
 | **N12** | [`cli.c:94`](../../cli/cli.c#L94), [`:102`](../../cli/cli.c#L102), [`:506`](../../cli/cli.c#L506) | `strncpy` leaves tokens ≥ `MAX_TOK_LEN` (32) and help lines ≥ `MAX_HELP_LEN` (192) unterminated; later `strcmp`s run into the next array element. Longest help today is ~75 chars, so latent — but nothing enforces that. **Fix:** copy `n-1`, terminate explicitly. |
-| **N13** | [`mac_drv.c:143`](../../eth/mac_drv.c#L143) | `WRITE_REG(eth->MACCR, mode \| ETH_MACCR_IPC)` clears `ACS` and `CST`, so the reported packet length — and every RX pbuf — includes the 4-byte FCS. ST's HAL enables both by default (`stm32h5xx_hal_eth.c:3042,3048`). Harmless in the paths exercised (lwIP trims IPv4 by header length, flexPTP parses by field), but a max frame occupies 1518 of 1528 bytes and any future code trusting `size` is wrong by 4. **Fix (optional):** add `ETH_MACCR_CST \| ETH_MACCR_ACS`, or say at the register write that it is deliberate. |
+| **N13** | [`mac_drv.c:143`](../../../../lib/eth/mac_drv.c#L143) | `WRITE_REG(eth->MACCR, mode \| ETH_MACCR_IPC)` clears `ACS` and `CST`, so the reported packet length — and every RX pbuf — includes the 4-byte FCS. ST's HAL enables both by default (`stm32h5xx_hal_eth.c:3042,3048`). Harmless in the paths exercised (lwIP trims IPv4 by header length, flexPTP parses by field), but a max frame occupies 1518 of 1528 bytes and any future code trusting `size` is wrong by 4. **Fix (optional):** add `ETH_MACCR_CST \| ETH_MACCR_ACS`, or say at the register write that it is deliberate. |
 | **N14** | [`eth_drv_lwip.c:290-308`](../../../../Drivers/EthDrv/eth_drv_lwip.c#L290) | `ETHHW_Transmit()` can drop the frame (and with N2, does so on the first try at `-O2`) but returns `void`; `low_level_output()` unconditionally does `LINK_STATS_INC(link.xmit); return ERR_OK;`. **Fix:** return `bool`, map onto `ERR_IF` + `link.drop`, following the reasoning already written for the over-length case (not `ERR_MEM`). |
 | **N15** | [`lwipopts.h:238-239`](../../../../Inc/lwipopts.h#L238), [`cc.h:42`](../../../../Modules/lwip_port/arch/cc.h#L42) | `lwip/opt.h` includes `lwipopts.h` first and `arch/cc.h` later, so the bare `#define LWIP_PROVIDE_ERRNO` in `cc.h` undoes the `#undef`. Benign here, but the comment claims a configuration the build does not have. **Fix:** delete the define from `cc.h` — that is the port file this project owns. |
 | **N16** | [`.github/workflows/ci.yml:35`](../../../../.github/workflows/ci.yml#L35) | GitHub runs `run:` with `bash -e`, not `-eo pipefail`, so the pipeline exits with `tee`'s status and a compile or link failure does not fail the step. Nothing downstream catches it: the warning gate passes on a truncated log, the patch check is build-independent, and `upload-artifact` only *warns* on missing paths. **Fix:** `set -o pipefail`. One line, and it protects every other fix in this document. |
@@ -581,7 +581,7 @@ If masking is chosen anyway, land the size check and the caller checks in the sa
 **Accepted as far as it goes, but it answers the easier of the two questions.**
 
 The call-context claim is correct and verified: `ETHHW_RestoreRXDesc()` runs in the ETH ISR via
-`ETHHW_ProcessRx()` ([`mac_drv.c:434-435`](../../eth/mac_drv.c#L434)) *and* in thread
+`ETHHW_ProcessRx()` ([`mac_drv.c:434-435`](../../../../lib/eth/mac_drv.c#L434)) *and* in thread
 context via `rx_thread` ([`eth_drv_lwip.c:382-383`](../../../../Drivers/EthDrv/eth_drv_lwip.c#L382)). A
 single aligned 32-bit store to a peripheral register is atomic on this core, needs no critical
 section, and both contexts write the identical value, so no interleaving is possible — the
@@ -594,7 +594,7 @@ What that does **not** settle is whether the write achieves anything, which is t
   this MAC — the rule the rejected Gemini quotation asserted without a checkable source?
 - Does writing the tail pointer *the same value it already holds* (0) constitute a poll demand,
   or does this DMA trigger on a change? The driver deliberately parks the tail outside the ring
-  ([`mac_drv.c:176`](../../eth/mac_drv.c#L176), "tail pointer WON'T STOP"), so the fix
+  ([`mac_drv.c:176`](../../../../lib/eth/mac_drv.c#L176), "tail pointer WON'T STOP"), so the fix
   necessarily rewrites 0 over 0. If the trigger is edge-on-write this is fine; if it is
   value-sensitive, the fix is inert and the finding needs a different remedy.
 

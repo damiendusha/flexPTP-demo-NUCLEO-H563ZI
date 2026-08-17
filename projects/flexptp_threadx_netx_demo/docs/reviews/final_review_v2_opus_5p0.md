@@ -125,8 +125,8 @@ functions. Whichever is chosen, `bfifo_push()` must never be able to make `write
 
 #### N2 — The TX ownership wait is compiled away at `-O2` and above *(NEW)*
 
-[`mac_drv.c:596-607`](../../eth/mac_drv.c#L596) ·
-[`mac_drv.h:29-52`](../../eth/mac_drv.h#L29)
+[`mac_drv.c:596-607`](../../../../lib/eth/mac_drv.c#L596) ·
+[`mac_drv.h:29-52`](../../../../lib/eth/mac_drv.h#L29)
 
 P2.3 bounded the descriptor-ownership wait in `ETHHW_Transmit()` with the driver's spin-count
 idiom:
@@ -169,9 +169,9 @@ three disassemblies afterwards is a five-minute job and should be added next to 
 
 #### N3 — A receive-buffer-unavailable stall is permanent, and the flag that reports it is discarded *(NEW)*
 
-[`mac_drv.c:547-579`](../../eth/mac_drv.c#L547) ·
-[`mac_drv.c:253-265`](../../eth/mac_drv.c#L253) ·
-[`mac_drv.c:172-176`](../../eth/mac_drv.c#L172)
+[`mac_drv.c:547-579`](../../../../lib/eth/mac_drv.c#L547) ·
+[`mac_drv.c:253-265`](../../../../lib/eth/mac_drv.c#L253) ·
+[`mac_drv.c:172-176`](../../../../lib/eth/mac_drv.c#L172)
 
 The RX tail pointer is written exactly once, at init, with the comment `// tail pointer WON'T
 STOP`:
@@ -223,8 +223,8 @@ constraint applies as for every other `MSG()` in this file; see [N6](#n6--msg-is
 
 #### N4 — A recognised vendor with an unrecognised model dereferences NULL at boot *(NEW)*
 
-[`phy_common.c:21`](../../eth/phy_drv/phy_common.c#L21) ·
-[`phy_common.c:382-451`](../../eth/phy_drv/phy_common.c#L382)
+[`phy_common.c:21`](../../../../lib/eth/phy_drv/phy_common.c#L21) ·
+[`phy_common.c:382-451`](../../../../lib/eth/phy_drv/phy_common.c#L382)
 
 ```c
 static const char *phyName = NULL;
@@ -320,7 +320,7 @@ flash back as `printf` drops out of the link.
 
 [`standard_output.c:33-46`](../../standard_output/standard_output.c#L33) ·
 [`serial_io.c:120-131`](../../standard_output/serial_io.c#L120) ·
-[`mac_drv.c:9-17`](../../eth/mac_drv.c#L9)
+[`mac_drv.c:9-17`](../../../../lib/eth/mac_drv.c#L9)
 
 Three comments, written during the same review cycle, disagree:
 
@@ -415,8 +415,8 @@ hazard for free.
 
 #### N9 — No memory barriers at descriptor handoff *(NEW)*
 
-[`mac_drv.c:258-264`](../../eth/mac_drv.c#L258) ·
-[`mac_drv.c:632-640`](../../eth/mac_drv.c#L632)
+[`mac_drv.c:258-264`](../../../../lib/eth/mac_drv.c#L258) ·
+[`mac_drv.c:632-640`](../../../../lib/eth/mac_drv.c#L632)
 
 Both handoffs to the DMA write the payload/buffer fields and then the `OWN` bit, with nothing
 in between:
@@ -500,7 +500,7 @@ places.
 
 #### N13 — The FCS is never stripped, so every frame is four bytes longer than it was on the wire *(NEW)*
 
-[`mac_drv.c:143`](../../eth/mac_drv.c#L143)
+[`mac_drv.c:143`](../../../../lib/eth/mac_drv.c#L143)
 
 ```c
 WRITE_REG(eth->MACCR, mode | ETH_MACCR_IPC);

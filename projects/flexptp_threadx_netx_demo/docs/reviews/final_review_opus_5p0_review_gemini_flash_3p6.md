@@ -134,7 +134,7 @@ While Claude Opus 5.0 performed an extraordinarily comprehensive review, the fol
 ---
 
 ### [Missed Finding 1] Write-1-to-Clear (w1c) Interrupt Register Corruption in `ETHHW_ISR`
-- **Location:** [Drivers/EthDrv/mac_drv.c:520-540](../../eth/mac_drv.c#L520-L540)
+- **Location:** [Drivers/EthDrv/mac_drv.c:520-540](../../../../lib/eth/mac_drv.c#L520-L540)
 - **Mechanism:**
   ```c
   if (csr & ETH_DMACSR_NIS) {
@@ -159,7 +159,7 @@ While Claude Opus 5.0 performed an extraordinarily comprehensive review, the fol
 ---
 
 ### [Missed Finding 2] 16-Bit Sequence Counter Wrap-Around Arithmetic Underflow in `ETHHW_ProcessTx`
-- **Location:** [Drivers/EthDrv/mac_drv.c:473](../../eth/mac_drv.c#L473)
+- **Location:** [Drivers/EthDrv/mac_drv.c:473](../../../../lib/eth/mac_drv.c#L473)
 - **Mechanism:**
   `txCntr` and `txCntAcked` are `uint16_t`. In `ETHHW_ProcessTx`:
   ```c

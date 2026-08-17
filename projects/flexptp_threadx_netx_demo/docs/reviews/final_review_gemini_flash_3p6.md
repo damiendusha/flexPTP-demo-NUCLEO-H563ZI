@@ -106,7 +106,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 | **[D4]** | **Unused Float Printf & C++ Standard Libraries in Linker Flags** | [CMakeLists.txt:166, 171-172](../../../../CMakeLists.txt#L166) | [README.md:215](../../../../README.md#L215) | `CMakeLists.txt` passes `-u _printf_float` and links `-lstdc++ -lsupc++`. The project uses `embfmt` / `MSG()` and pure C, so linking Newlib float formatting and C++ runtimes adds dead code. | Remove `-u _printf_float`, `-lstdc++`, and `-lsupc++` from `CMakeLists.txt`. |
 | **[D5]** | **Duplicate Source Listings in CMake** | [CMakeLists.txt:35-40](../../../../CMakeLists.txt#L35-L40), [Src/CMakeLists.txt:1-13](../../CMakeLists.txt#L1-L13) | [docs/design_doc.md:632-663](../design_doc.md#L632-L663) | `main.c`, `syscall.c`, `sysmem.c` are added to target sources in the root `CMakeLists.txt` AND in `Src/CMakeLists.txt`. | Consolidate source lists by removing duplicates in `Src/CMakeLists.txt` or root `CMakeLists.txt`. |
 | **[D6]** | **Spelling Typo in Boot Banner** | [Src/main.c:133](../../main.c#L133) | [README.md:116](../../../../README.md#L116) | `print_welcome_message()` contains `"flexPTP is currenty compiled against..."` (`currenty` instead of `currently`). | Fix spelling in `Src/main.c:133`. |
-| **[D7]** | **Preprocessor Macro Typo in Hardware Port** | [Src/flexptp_port/ptp_port_stm32h563.c:71](../../ptp/ptp_port_stm32h563.c#L71) | [Src/flexptp_port/ptp_port_stm32h563.c:43](../../ptp/ptp_port_stm32h563.c#L43) | `#error "No decision was made on how the PPS signal is generated! Please define either PPS_SIMPLE or PPL_PULSETRAIN!"` (contains `PPL_PULSETRAIN` instead of `PPS_PULSETRAIN`). | Fix typo in error directive. |
+| **[D7]** | **Preprocessor Macro Typo in Hardware Port** | [Src/flexptp_port/ptp_port_stm32h563.c:71](../../../../lib/ptp/ptp_port_stm32h563.c#L71) | [Src/flexptp_port/ptp_port_stm32h563.c:43](../../../../lib/ptp/ptp_port_stm32h563.c#L43) | `#error "No decision was made on how the PPS signal is generated! Please define either PPS_SIMPLE or PPL_PULSETRAIN!"` (contains `PPL_PULSETRAIN` instead of `PPS_PULSETRAIN`). | Fix typo in error directive. |
 | **[D8]** | **HAL Conf Comment Inversion** | [Inc/stm32h5xx_hal_conf.h:268-269](../../stm32h5xx_hal_conf.h#L268-L269) | — | Comment for `USE_HAL_OPAMP_REGISTER_CALLBACKS` says "OTFDEC", while `USE_HAL_OTFDEC_REGISTER_CALLBACKS` says "OPAMP". | Swap comments to match their respective macros. |
 
 ---
@@ -135,7 +135,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ---
 
 #### [B2] Unbounded Busy-Wait Loop in `ETHHW_Transmit` on Descriptor Starvation
-- **Location:** [Drivers/EthDrv/mac_drv.c:552-553](../../eth/mac_drv.c#L552-L553)
+- **Location:** [Drivers/EthDrv/mac_drv.c:552-553](../../../../lib/eth/mac_drv.c#L552-L553)
 - **Mechanism:**
   ```c
   while (!ETHHW_DESC_OWNED_BY_APPLICATION(bd)) {
@@ -158,7 +158,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ---
 
 #### [B3] Write-1-to-Clear (w1c) Interrupt Register Corruption via Read-Modify-Write in `ETHHW_ISR`
-- **Location:** [Drivers/EthDrv/mac_drv.c:522-540](../../eth/mac_drv.c#L522-L540)
+- **Location:** [Drivers/EthDrv/mac_drv.c:522-540](../../../../lib/eth/mac_drv.c#L522-L540)
 - **Mechanism:**
   ```c
   if (csr & ETH_DMACSR_NIS) {
@@ -197,7 +197,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ---
 
 #### [B4] 16-Bit Transmit Counter Wrap-Around Arithmetic Failure in `ETHHW_ProcessTx`
-- **Location:** [Drivers/EthDrv/mac_drv.c:473](../../eth/mac_drv.c#L473)
+- **Location:** [Drivers/EthDrv/mac_drv.c:473](../../../../lib/eth/mac_drv.c#L473)
 - **Mechanism:**
   In `mac_drv.h`, `txCntr` in `ETHHW_DescExt` and `txCntAcked` in `ETHHW_State` are defined as `uint16_t`.
   In `ETHHW_ProcessTx`:
@@ -296,7 +296,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ---
 
 #### [B8] Unbounded Loop in PHY Reset Handshake
-- **Location:** [Drivers/EthDrv/phy_drv/phy_common.c:441-448](../../eth/phy_drv/phy_common.c#L441-L448)
+- **Location:** [Drivers/EthDrv/phy_drv/phy_common.c:441-448](../../../../lib/eth/phy_drv/phy_common.c#L441-L448)
 - **Mechanism:**
   ```c
   static void phy_soft_reset() {
@@ -325,7 +325,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ---
 
 #### [B9] Null Pointer Dereference if PHY is Unrecognized
-- **Location:** [Drivers/EthDrv/phy_drv/phy_common.c:475-477, 514-517](../../eth/phy_drv/phy_common.c#L475-L477)
+- **Location:** [Drivers/EthDrv/phy_drv/phy_common.c:475-477, 514-517](../../../../lib/eth/phy_drv/phy_common.c#L475-L477)
 - **Mechanism:**
   In `ETHHW_setupPHY()`:
   ```c
@@ -433,7 +433,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ### 4.3 Minor Defects & Code Polish (B13)
 
 #### [B13] Missing Newline in PTP Hardware Initialization Banner
-- **Location:** [Src/flexptp_port/ptp_port_stm32h563.c:105](../../ptp/ptp_port_stm32h563.c#L105)
+- **Location:** [Src/flexptp_port/ptp_port_stm32h563.c:105](../../../../lib/ptp/ptp_port_stm32h563.c#L105)
 - **Description:** `MSG("Turning PTP on!");` lacks a trailing `\n`. The next log output concatenates directly onto the same line without carriage return.
 - **Remediation:** Change to `MSG("Turning PTP on!\n");`.
 
@@ -507,17 +507,17 @@ The following checklist tracks every identified item across all categories, mapp
 
 ### Priority 1: Critical Stability & Concurrency Fixes (Immediate)
 - [ ] **[ACT-01]** **Ref: [B1]** — Fix recursive mutex deadlock in [Src/cliutils/cli.c:56](../../cli/cli.c#L56): Initialize `modifyMtx` with `osMutexRecursive`.
-- [ ] **[ACT-02]** **Ref: [B3]** — Fix Write-1-to-Clear status corruption in [Drivers/EthDrv/mac_drv.c:522-540](../../eth/mac_drv.c#L522-L540): Replace `SET_BIT` with direct assignment `WRITE_REG(ETH->DMACSR, ...)`.
-- [ ] **[ACT-03]** **Ref: [B2]** — Add bounded timeout / yield in [Drivers/EthDrv/mac_drv.c:552](../../eth/mac_drv.c#L552) to prevent infinite CPU spin on descriptor exhaustion.
-- [ ] **[ACT-04]** **Ref: [B4]** — Fix sequence delta calculation in [Drivers/EthDrv/mac_drv.c:473](../../eth/mac_drv.c#L473) to `(int16_t)(txCntr - state->txCntAcked)`.
+- [ ] **[ACT-02]** **Ref: [B3]** — Fix Write-1-to-Clear status corruption in [Drivers/EthDrv/mac_drv.c:522-540](../../../../lib/eth/mac_drv.c#L522-L540): Replace `SET_BIT` with direct assignment `WRITE_REG(ETH->DMACSR, ...)`.
+- [ ] **[ACT-03]** **Ref: [B2]** — Add bounded timeout / yield in [Drivers/EthDrv/mac_drv.c:552](../../../../lib/eth/mac_drv.c#L552) to prevent infinite CPU spin on descriptor exhaustion.
+- [ ] **[ACT-04]** **Ref: [B4]** — Fix sequence delta calculation in [Drivers/EthDrv/mac_drv.c:473](../../../../lib/eth/mac_drv.c#L473) to `(int16_t)(txCntr - state->txCntAcked)`.
 - [ ] **[ACT-05]** **Ref: [B5]** — Add array bounds check on `paramIdx < sizeof(escParam)` in [Src/cliutils/cli.c:396](../../cli/cli.c#L396).
 - [ ] **[ACT-06]** **Ref: [B6]** — Change loop boundary to `len < maxLen` in [Src/standard_output/standard_output.c:16](../../standard_output/standard_output.c#L16).
 - [ ] **[ACT-07]** **Ref: [B10], [I3]** — Reorder [stm32h563zitx_FLASH.ld:153-169](../../startup/stm32h563zitx_FLASH.ld#L153-L169) to place `.FreeRTOS_sec` before `._user_heap_stack`.
 
 ### Priority 2: Robustness & Thread Safety (High)
 - [ ] **[ACT-08]** **Ref: [B7], [I5]** — Add mutex synchronization or critical section around `lineBuf` in [Src/standard_output/standard_output.c:33](../../standard_output/standard_output.c#L33).
-- [ ] **[ACT-09]** **Ref: [B8]** — Add timeout counter to `phy_soft_reset()` loop in [Drivers/EthDrv/phy_drv/phy_common.c:441](../../eth/phy_drv/phy_common.c#L441).
-- [ ] **[ACT-10]** **Ref: [B9]** — Add null-check for `phyFetchLinkStatusCb` in [Drivers/EthDrv/phy_drv/phy_common.c:515](../../eth/phy_drv/phy_common.c#L515).
+- [ ] **[ACT-09]** **Ref: [B8]** — Add timeout counter to `phy_soft_reset()` loop in [Drivers/EthDrv/phy_drv/phy_common.c:441](../../../../lib/eth/phy_drv/phy_common.c#L441).
+- [ ] **[ACT-10]** **Ref: [B9]** — Add null-check for `phyFetchLinkStatusCb` in [Drivers/EthDrv/phy_drv/phy_common.c:515](../../../../lib/eth/phy_drv/phy_common.c#L515).
 - [ ] **[ACT-11]** **Ref: [B11]** — Add check for `p->tot_len <= ETH_TX_BUF_SIZE` in [Drivers/EthDrv/eth_drv_lwip.c:218](../../../../Drivers/EthDrv/eth_drv_lwip.c#L218).
 - [ ] **[ACT-12]** **Ref: [B12]** — Fix left-trim pointer bug in `get_line()` in [Src/cliutils/cli.c:411-413](../../cli/cli.c#L411-L413).
 
@@ -531,9 +531,9 @@ The following checklist tracks every identified item across all categories, mapp
 - [ ] **[ACT-19]** **Ref: [U2]** — Add an explicit `NOLOAD` placement for `.ETHLibPool` in `SRAM3` within `stm32h563zitx_FLASH.ld` if EtherLib support is activated.
 
 ### Priority 4: Housekeeping, Optimization & Upstream Polish (Low)
-- [ ] **[ACT-20]** **Ref: [B13]** — Add `\n` to `MSG("Turning PTP on!\n")` in [Src/flexptp_port/ptp_port_stm32h563.c:105](../../ptp/ptp_port_stm32h563.c#L105).
+- [ ] **[ACT-20]** **Ref: [B13]** — Add `\n` to `MSG("Turning PTP on!\n")` in [Src/flexptp_port/ptp_port_stm32h563.c:105](../../../../lib/ptp/ptp_port_stm32h563.c#L105).
 - [ ] **[ACT-21]** **Ref: [D6]** — Fix `"currenty"` to `"currently"` in [Src/main.c:133](../../main.c#L133).
-- [ ] **[ACT-22]** **Ref: [D7]** — Fix `"PPL_PULSETRAIN"` to `"PPS_PULSETRAIN"` in [Src/flexptp_port/ptp_port_stm32h563.c:71](../../ptp/ptp_port_stm32h563.c#L71).
+- [ ] **[ACT-22]** **Ref: [D7]** — Fix `"PPL_PULSETRAIN"` to `"PPS_PULSETRAIN"` in [Src/flexptp_port/ptp_port_stm32h563.c:71](../../../../lib/ptp/ptp_port_stm32h563.c#L71).
 - [ ] **[ACT-23]** **Ref: [D8]** — Swap inverted comments in [Inc/stm32h5xx_hal_conf.h:268-269](../../stm32h5xx_hal_conf.h#L268-L269).
 - [ ] **[ACT-24]** **Ref: [I2]** — Wire `__io_putchar` to `MSGchar` in [Src/syscall.c:35](../../syscall.c#L35).
 - [ ] **[ACT-25]** **Ref: [I1]** — Refactor `low_level_output` in [Drivers/EthDrv/eth_drv_lwip.c](../../../../Drivers/EthDrv/eth_drv_lwip.c) to copy pbuf fragments directly into DMA buffers (Zero-Copy TX).

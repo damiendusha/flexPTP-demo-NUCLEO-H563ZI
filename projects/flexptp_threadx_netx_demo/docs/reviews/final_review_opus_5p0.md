@@ -146,14 +146,14 @@ descriptor has already been committed. Nothing is broken, but the sizing is not 
 considered set.
 
 **A5 — `ETHHW_GetState()` is enforced by a comment.**
-`((ETHHW_State *)eth->DMACRDLAR) - 1` ([mac_drv.c:198-200](../../eth/mac_drv.c#L198))
+`((ETHHW_State *)eth->DMACRDLAR) - 1` ([mac_drv.c:198-200](../../../../lib/eth/mac_drv.c#L198))
 requires `ETHHW_State` to immediately precede the RX ring in memory. That is guaranteed
 today only by struct field order in `eth_drv_lwip.c:46-50` and a comment in `mac_drv.h:26`.
 A `_Static_assert` on `offsetof` would make it structural.
 
 **A6 — One unbounded wait survived the F54 sweep.** `ETHHW_Transmit()` spins on
 `while (!ETHHW_DESC_OWNED_BY_APPLICATION(bd)) {}`
-([mac_drv.c:552](../../eth/mac_drv.c#L552)). F54 enumerated six waits and bounded
+([mac_drv.c:552](../../../../lib/eth/mac_drv.c#L552)). F54 enumerated six waits and bounded
 all six; this is a seventh, of the same shape, in the same file, directly under a header
 comment asserting that none may spin forever.
 
@@ -223,7 +223,7 @@ never returns."* F54 bounded it; it now returns `bool` and reports.
 
 [`ptp_clock.md:252-255`](../ptp_clock.md): *"`mac_drv.c` currently contains a shift bug in
 this register write … that must be fixed as part of the MAC driver port."* Fixed at Stage
-12 (F8); the code at [mac_drv.c:113-117](../../eth/mac_drv.c#L113) carries the
+12 (F8); the code at [mac_drv.c:113-117](../../../../lib/eth/mac_drv.c#L113) carries the
 explanation.
 
 ### D6 — "A 4 ns increment is unreachable" survives in three places after being retracted
@@ -274,8 +274,8 @@ since. This is stage-log history, but "Open" is a status claim.
 
 | Where | Says | Actually |
 |---|---|---|
-| [`mac_drv.h:127`](../../eth/mac_drv.h#L127) | *"currently every frame received gets timestamped"* | `TSENALL` is **not** set; only PTP messages selected by `SNAPTYPSEL = 0b01` are |
-| [`mac_drv.h:135`](../../eth/mac_drv.h#L135) | *"Time quantum is 0.467 ns"* | `TSCTRLSSR` is set (digital rollover), so `SSINC` is in whole nanoseconds. 0.467 ns is the binary-rollover figure |
+| [`mac_drv.h:127`](../../../../lib/eth/mac_drv.h#L127) | *"currently every frame received gets timestamped"* | `TSENALL` is **not** set; only PTP messages selected by `SNAPTYPSEL = 0b01` are |
+| [`mac_drv.h:135`](../../../../lib/eth/mac_drv.h#L135) | *"Time quantum is 0.467 ns"* | `TSCTRLSSR` is set (digital rollover), so `SSINC` is in whole nanoseconds. 0.467 ns is the binary-rollover figure |
 | [`architecture.md:220`](../architecture.md) | thread named `tcpip_thread` | `TCPIP_THREAD_NAME` is `"TCP/IP"` ([lwipopts.h:277](../../../../Inc/lwipopts.h#L277)) |
 | [`architecture.md:390`](../architecture.md) | FLASH 221 552 B | Stage 15 figure; current build is 223 032 B (correctly labelled, but two numbers circulate) |
 | [`FreeRTOSConfig.h:2`](../../../../Inc/FreeRTOSConfig.h#L2) | *"FreeRTOS V202212.00"* | kernel pinned at `V11.3.0` |
@@ -290,7 +290,7 @@ Ordered by severity. Line references are to the current tree.
 ### High
 
 **B1 — Unrecognised or absent PHY is a guaranteed HardFault.**
-[`phy_common.c:514-517`](../../eth/phy_drv/phy_common.c#L514)
+[`phy_common.c:514-517`](../../../../lib/eth/phy_drv/phy_common.c#L514)
 
 ```c
 const PHY_LinkStatus *phy_get_link_status() {
@@ -305,7 +305,7 @@ does not. `fetch_link_properties()` calls it from the `phy` thread every 500 ms,
 unknown PHY faults within half a second of boot.
 
 It is reachable through a second defect: `phy_sweep_addresses()`
-([phy_common.c:63-74](../../eth/phy_drv/phy_common.c#L63)) treats *any* value other
+([phy_common.c:63-74](../../../../lib/eth/phy_drv/phy_common.c#L63)) treats *any* value other
 than `0xFFFF` as a PHY. `ETHHW_ReadPHYRegister()` returns non-zero without writing
 `*pRegValue` when MDIO is busy or times out, and `regVal` is pre-initialised to 0 — so a
 completely dead MDIO bus "finds" a PHY at address 0, reads an ID of 0, fails to populate
@@ -375,8 +375,8 @@ Separately, `paramIdx = escPos - 2` is unbounded — the loop only leaves escape
 array. Reachable from anything sending escape sequences down the serial line.
 
 **B6 — RETRACTED: the PPS frequency codes are correct.** ~~The PPS frequency codes look off
-by one.~~ [`mac_drv.h:108-125`](../../eth/mac_drv.h#L108),
-[`ptp_port_stm32h563.c:18-73`](../../ptp/ptp_port_stm32h563.c#L18)
+by one.~~ [`mac_drv.h:108-125`](../../../../lib/eth/mac_drv.h#L108),
+[`ptp_port_stm32h563.c:18-73`](../../../../lib/ptp/ptp_port_stm32h563.c#L18)
 
 The original finding argued that because the driver writes `PPSCTRL` directly from an enum
 whose first entry is `ETHHW_PTP_PPS_OFF = 0`, and because `PPSCTRL = 0000` selects 1 Hz on
@@ -427,7 +427,7 @@ latent — but the clamp names the wrong limit.
 ### Low
 
 **B10 — RX event timestamps are uninitialised when no timestamp was captured.**
-[`mac_drv.c:397-424`](../../eth/mac_drv.c#L397) declares `ETHHW_EventDesc evt;` on
+[`mac_drv.c:397-424`](../../../../lib/eth/mac_drv.c#L397) declares `ETHHW_EventDesc evt;` on
 the stack and only assigns `data.rx.ts_s` / `ts_ns` inside `if (tsFound)`.
 [`eth_drv_lwip.c:300-301`](../../../../Drivers/EthDrv/eth_drv_lwip.c#L300) copies them into
 `p->time_s` / `p->time_ns` unconditionally. Harmless today — only PTP frames reach
@@ -436,7 +436,7 @@ turn "hardware failed to timestamp this frame" into a plausible-looking wrong va
 than an obvious zero. Same class of trap as F59's NaN-printing-as-`0.0000`.
 
 **B11 — `phy_setup_int_DP83848()` reads where it means to write.**
-[`phy_common.c:88-89`](../../eth/phy_drv/phy_common.c#L88)
+[`phy_common.c:88-89`](../../../../lib/eth/phy_drv/phy_common.c#L88)
 
 ```c
 regVal = EPHY_DP83848_MICR_INT_OE | EPHY_DP83848_MICR_INTEN;
@@ -465,7 +465,7 @@ only the success path sets. This is precisely the console-death signature descri
 exists for exactly this.
 
 **B15 — `ETHHW_AuxTimestampCh()` assigns instead of OR-ing.**
-[`mac_drv.c:797-806`](../../eth/mac_drv.c#L797) — `tmpreg = (en) << (ch + 4);`
+[`mac_drv.c:797-806`](../../../../lib/eth/mac_drv.c#L797) — `tmpreg = (en) << (ch + 4);`
 clears every other auxiliary channel. Unused in this project.
 
 **B16 — `rx_thread` references an out-of-scope `netif`.**
@@ -475,11 +475,11 @@ because MIB2 statistics are disabled and the macros expand to nothing; enabling 
 the build.
 
 **B17 — `phy_read_reg()` / `phy_write_reg()` invert their result.**
-[`phy_common.c:537-539`](../../eth/phy_drv/phy_common.c#L537) return `bool` from
+[`phy_common.c:537-539`](../../../../lib/eth/phy_drv/phy_common.c#L537) return `bool` from
 `READ`/`WRITE`, which return `uint32_t` with **0 meaning success**. Currently unused.
 
 **B18 — `phy_read_range()` steps by 2 through MDIO register addresses**
-([phy_common.c:525-533](../../eth/phy_drv/phy_common.c#L525)), skipping every odd
+([phy_common.c:525-533](../../../../lib/eth/phy_drv/phy_common.c#L525)), skipping every odd
 register, and `phy_read_all_regs()` passes `EPHY_MDIO_MAX_ADDR` (a PHY *address* limit) as
 a register count. Diagnostic only.
 
