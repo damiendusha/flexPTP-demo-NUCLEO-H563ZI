@@ -1138,6 +1138,25 @@ osStatus_t osDelayUntil (uint32_t ticks) {
 
 #if (configUSE_OS2_TIMER == 1)
 
+/* LOCAL MODIFICATION: the pointer tagging below, and at every other site in this file that
+   masks or sets the low bit of a pointer, went through `uint32_t` upstream. It is now
+   `uintptr_t`.
+
+   This file stores a TimerCallback_t* as FreeRTOS's timer ID and tags its low bit to record
+   "this was allocated from the dynamic pool". Recovering the pointer means masking that bit
+   off, and masking through a uint32_t DISCARDS THE UPPER 32 BITS OF THE POINTER.
+
+   On this firmware's Cortex-M33 that is lossless -- a pointer is 32 bits -- so the target is
+   unaffected and the change generates identical code there. On the 64-bit host used by
+   //projects/flexptp_freertos_lwip_demo/test it truncates a heap address, and callb->func()
+   then calls through a garbage pointer: a SIGSEGV inside TimerCallback, reached from
+   prvProcessExpiredTimer on the "Tmr Svc" task.
+
+   This is worth knowing about because of what it cost. Three RTOS-context tests -- the ones
+   that check whether the FreeRTOS timer task may block, which is the question ThreadX finding
+   F80 turns on -- were disabled as "segfaults on the FreeRTOS POSIX port, cause unknown". The
+   cause was never in the tests or in the kernel; it was here, in the wrapper both of them go
+   through, and it made an entire claim untestable. */
 static void TimerCallback (TimerHandle_t hTimer) {
   TimerCallback_t *callb;
 
@@ -1145,7 +1164,7 @@ static void TimerCallback (TimerHandle_t hTimer) {
   callb = (TimerCallback_t *)pvTimerGetTimerID (hTimer);
 
   /* Remove dynamic allocation flag */
-  callb = (TimerCallback_t *)((uint32_t)callb & ~1U);
+  callb = (TimerCallback_t *)((uintptr_t)callb & ~(uintptr_t)1U);
 
   if (callb != NULL) {
     callb->func (callb->arg);
@@ -1174,7 +1193,7 @@ osTimerId_t osTimerNew (osTimerFunc_t func, osTimerType_t type, void *argument, 
       /* is provided and if it also contains space for callback and its argument  */
       if ((attr != NULL) && (attr->cb_mem != NULL)) {
         if (attr->cb_size >= (sizeof(StaticTimer_t) + sizeof(TimerCallback_t))) {
-          callb = (TimerCallback_t *)((uint32_t)attr->cb_mem + sizeof(StaticTimer_t));
+          callb = (TimerCallback_t *)((uintptr_t)attr->cb_mem + sizeof(StaticTimer_t));
         }
       }
     #endif
@@ -1225,7 +1244,7 @@ osTimerId_t osTimerNew (osTimerFunc_t func, osTimerType_t type, void *argument, 
         mem = 0;
       }
       /* Store callback memory dynamic allocation flag */
-      callb = (TimerCallback_t *)((uint32_t)callb | callb_dyn);
+      callb = (TimerCallback_t *)((uintptr_t)callb | (uintptr_t)callb_dyn);
       /*
         TimerCallback function is always provided as a callback and is used to call application
         specified function with its argument both stored in structure callb.
@@ -1246,7 +1265,7 @@ osTimerId_t osTimerNew (osTimerFunc_t func, osTimerType_t type, void *argument, 
       #if (configSUPPORT_DYNAMIC_ALLOCATION == 1)
       if ((hTimer == NULL) && (callb != NULL) && (callb_dyn == 1U)) {
         /* Failed to create a timer, release allocated resources */
-        callb = (TimerCallback_t *)((uint32_t)callb & ~1U);
+        callb = (TimerCallback_t *)((uintptr_t)callb & ~(uintptr_t)1U);
 
         vPortFree (callb);
       }
@@ -1371,9 +1390,9 @@ osStatus_t osTimerDelete (osTimerId_t timer_id) {
 
     if (xTimerDelete (hTimer, 0) == pdPASS) {
       #if (configSUPPORT_DYNAMIC_ALLOCATION == 1)
-        if ((uint32_t)callb & 1U) {
+        if ((uintptr_t)callb & (uintptr_t)1U) {
           /* Callback memory was allocated from dynamic pool, clear flag */
-          callb = (TimerCallback_t *)((uint32_t)callb & ~1U);
+          callb = (TimerCallback_t *)((uintptr_t)callb & ~(uintptr_t)1U);
 
           /* Return allocated memory to dynamic pool */
           vPortFree (callb);
@@ -2426,7 +2445,7 @@ osMemoryPoolId_t osMemoryPoolNew (uint32_t block_count, uint32_t block_size, con
       else {
         if (attr->mp_mem != NULL) {
           /* Check if array is 4-byte aligned */
-          if (((uint32_t)attr->mp_mem & 3U) == 0U) {
+          if (((uintptr_t)attr->mp_mem & 3U) == 0U) {
             /* Check if array big enough */
             if (attr->mp_size >= sz) {
               /* Static memory pool array is provided */

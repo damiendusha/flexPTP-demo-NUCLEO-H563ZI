@@ -25,25 +25,27 @@
  * class of defect this project kept getting wrong.
  *
  * ---------------------------------------------------------------------------------------------
- * THE THREE TIMER TESTS BELOW ARE DISABLED, AND THE REASON IS NOT "they fail".
+ * THE THREE TIMER TESTS BELOW WERE DISABLED FOR A WHILE, AND WHY IS WORTH KEEPING.
  *
- * Every test that drives a CMSIS-RTOS2 timer callback SEGFAULTS on the FreeRTOS POSIX port --
+ * Every test that drove a CMSIS-RTOS2 timer callback segfaulted on the FreeRTOS POSIX port --
  * including ATimerCallbackIsNotInterruptContext, which only reads __get_IPSR() and blocks
- * nothing. So the crash is in the timer path itself, not in the blocking call the ThreadX
- * counterpart is about.
+ * nothing. They were disabled with that stated plainly, and with the conclusion drawn honestly:
+ * the claim they exist to pin -- "FreeRTOS's timer service task is an ordinary task and may
+ * block, so F80 has no counterpart here" -- was NOT verified, and was to be treated as an
+ * assumption rather than a checked fact.
  *
- * That means the claim these were written to pin -- "FreeRTOS's timer service task is an
- * ordinary task and may block, so F80 has no counterpart here" -- is NOT verified by this file.
- * It is a reasonable reading of FreeRTOS's design and it is what ST's wrapper implies, but on
- * the evidence available here it is unproven, and a test that asserted it while crashing would
- * be worse than no test.
+ * It was neither the POSIX port nor this harness. It was ST's CMSIS-RTOS2 wrapper: it tags the
+ * low bit of a TimerCallback_t* to record dynamic allocation and masked that bit off through a
+ * `uint32_t`, which on a 64-bit host discards the upper half of the pointer. See the note on
+ * TimerCallback() in third_party/CMSIS/CMSIS_RTOS_V2/cmsis_os2_freertos.c. The fix is
+ * `uintptr_t`, it is a no-op on the 32-bit target -- .text is byte-identical -- and with it all
+ * three pass.
  *
- * What has NOT been established is whether the fault is in the POSIX port's timer handling, in
- * ST's wrapper on a host, or in this harness. Until it is, treat "F80 does not apply to the
- * FreeRTOS firmware" as an assumption rather than a checked fact.
- *
- * The ISR half below is unaffected and passes, and it is the half that matters most: it is the
- * rule that guards why ptp_tx_timestamp.c exists.
+ * So the claim is now checked. Two things are worth carrying away. The first is that a
+ * diagnosis of "the timer path is broken on the host" was accurate and still pointed at the
+ * wrong component; what settled it was a backtrace, not more reasoning. The second is that a
+ * DISABLED test with an honest note is not a dead end -- this one described its own symptom
+ * precisely enough that the fix was fifteen minutes' work once someone ran it under a debugger.
  * ---------------------------------------------------------------------------------------------
  */
 
@@ -161,7 +163,7 @@ TEST_F(RtosContext, TheKernelIsActuallyRunning) {
     EXPECT_NE(osThreadGetId(), nullptr);
 }
 
-TEST_F(RtosContext, DISABLED_BlockingEnqueueFromATimerCallbackSUCCEEDS) {
+TEST_F(RtosContext, BlockingEnqueueFromATimerCallbackSUCCEEDS) {
     /* The opposite of the ThreadX project's test of nearly this name, and the reason this file
      * is re-derived rather than translated.
      *
@@ -180,14 +182,14 @@ TEST_F(RtosContext, DISABLED_BlockingEnqueueFromATimerCallbackSUCCEEDS) {
            "to this firmware too -- see the ThreadX project's test_rtos_context.cpp.";
 }
 
-TEST_F(RtosContext, DISABLED_NonBlockingEnqueueFromATimerCallbackAlsoSucceeds) {
+TEST_F(RtosContext, NonBlockingEnqueueFromATimerCallbackAlsoSucceeds) {
     /* The form patch 0004 changed flexPTP to use. It is correct on both kernels, which is why
      * the patch is safe to carry here even though the defect it fixes is ThreadX-only. */
     ASSERT_TRUE(run_probe()) << "the timer callback never ran";
     EXPECT_EQ(g_probe.nonblocking_put, osOK);
 }
 
-TEST_F(RtosContext, DISABLED_ATimerCallbackIsNotInterruptContext) {
+TEST_F(RtosContext, ATimerCallbackIsNotInterruptContext) {
     /* The inference that cost the S6 session. The callback is NOT in an ISR, which is why
      * reasoning "not an ISR, therefore safe to block" felt sound and was wrong: ThreadX
      * restricts the timer thread separately, and for a different reason.

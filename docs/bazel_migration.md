@@ -13,7 +13,7 @@ Status: **phases 0–4 landed and verified on hardware; phases 5–7 outstanding
 | 5 — flashing | **landed**, both OpenOCD modes |
 | 6 — host tests | **landed** — 13/13, and both mutation checks still bite |
 | 7 — delete CMake | **landed** |
-| 8 — the FreeRTOS + lwIP project | **landed** — both firmwares build and pass on hardware; D15 partially met |
+| 8 — the FreeRTOS + lwIP project | **landed** — both firmwares build and pass on hardware; D15 fully met |
 | 9 — unification | **all five tiers landed** — units, drivers, CMSIS-RTOS2 layer, runtime and startup, and the HAL config are all in `//lib` |
 
 CMake still builds and still passes S8 at every point, so there is a working fallback until
@@ -1338,23 +1338,36 @@ on platform ([decisions §5](bazel_decisions.md#5-why-not-imus-embedded_cc_binar
    them, so a sibling link had to stay unchanged while a link to `tools/` gained two levels.
    Resolving each link against its old location and re-expressing it from the new one handles
    both; the ~480 edits landed in three passes, and the checker found each remaining case.
-7. **D15's FreeRTOS context tests exist and are re-derived, not translated.** **Partially met,
-   and the shortfall is recorded rather than papered over.**
+7. **D15's FreeRTOS context tests exist and are re-derived, not translated. Fully met** — after
+   a detour worth recording, because the detour is the useful part.
 
-   The **ISR half ports verbatim and passes**: ST's FreeRTOS-backed `cmsis_os2.c` has the same
-   `IS_IRQ_MODE() && timeout != 0 → osErrorParameter` guard as its ThreadX sibling, so the rule
-   that guards why `ptp_tx_timestamp.c` exists is checked on both firmwares.
+   The **ISR half ported verbatim and passed** immediately: ST's FreeRTOS-backed `cmsis_os2.c`
+   has the same `IS_IRQ_MODE() && timeout != 0 → osErrorParameter` guard as its ThreadX sibling,
+   so the rule that guards why `ptp_tx_timestamp.c` exists is checked on both firmwares.
 
-   The **timer-thread half is DISABLED**. Every test that drives a CMSIS-RTOS2 timer callback
-   segfaults on the FreeRTOS POSIX port — including one that only reads `__get_IPSR()` and
-   blocks nothing, so the fault is in the timer path itself rather than in the blocking call.
-   That leaves "FreeRTOS's timer service task may block, so F80 has no counterpart here"
-   **unproven**: a reasonable reading of FreeRTOS's design, and what ST's wrapper implies, but
-   not something this suite demonstrates. Whether the fault is in the POSIX port, in ST's
-   wrapper on a host, or in the harness is not established.
+   The **timer-thread half was DISABLED** through phases 8 and 9. Every test that drove a
+   CMSIS-RTOS2 timer callback segfaulted on the FreeRTOS POSIX port — including one that only
+   reads `__get_IPSR()` and blocks nothing, so the fault was in the timer path rather than in
+   the blocking call. That left "FreeRTOS's timer service task may block, so F80 has no
+   counterpart here" **unproven**, and the file said so: a reasonable reading of FreeRTOS's
+   design, and what ST's wrapper implies, but not something the suite demonstrated. A passing
+   test asserting an unverified claim would have been worse than a disabled one saying so.
 
-   A passing test asserting an unverified claim would be worse than a disabled one saying so,
-   which is what the file now does.
+   **It was ST's CMSIS-RTOS2 wrapper.** It stores a `TimerCallback_t*` as FreeRTOS's timer ID
+   and tags the low bit to record dynamic allocation — then masks that bit off through a
+   `uint32_t`, discarding the upper half of a 64-bit host pointer. `callb->func()` then calls
+   through garbage. Seven sites in `cmsis_os2_freertos.c` do this; all are now `uintptr_t`. The
+   change is a **no-op on the target** — `.text` is byte-identical, which is the check that
+   makes touching vendored code on behalf of a host test safe — and with it all three tests pass.
+   F80 having no FreeRTOS counterpart is now a checked fact.
+
+   Two things are worth carrying away. The first is that the recorded diagnosis — "the fault is
+   in the timer path, not the blocking call" — was **correct and still pointed at the wrong
+   component**; three candidates were named (the POSIX port, ST's wrapper, the harness) and the
+   right one was among them, but what settled it was thirty seconds under a debugger, not more
+   reasoning. The second is that the disabled tests were not wasted: the note described its own
+   symptom precisely enough that the fix followed immediately once someone got a backtrace. A
+   disabled test with an honest note is a lead; a deleted one is nothing.
 
 **Prerequisite:** finish the platform transition first ([§5.3](#53-the-firmware-binary)).
 Criterion 5 depends on it, and a second project is the point at which building the wrong
