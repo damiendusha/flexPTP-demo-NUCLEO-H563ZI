@@ -3,6 +3,10 @@
 #include <FreeRTOS.h>
 #include <task.h>
 
+/* For ethstat's ptp.* fields: flexPTP's core state and tick. */
+#include "flexptp/ptp_core.h"
+#include "flexptp/ptp_types.h"
+
 #include "cli/cli.h"
 #include "standard_output/serial_io.h"
 #include "standard_output/standard_output.h"
@@ -76,6 +80,54 @@ CMD_FUNCTION(os_info) {
     return 0;
 }
 
+
+/* Machine-readable diagnostics, backported from the ThreadX firmware (GI-02).
+ *
+ * That firmware grew `ethstat` because a human-readable dump is a thing tooling has to parse by
+ * eye, and tools/hil/ needed a contract. This project had NO counter visibility at all until
+ * now: a dropped frame or an exhausted heap was invisible from the console.
+ *
+ * A SUBSET, deliberately, and the boundary is which network-stack driver each firmware uses.
+ * The ThreadX one supplies its own NSD from ptp/, instrumented throughout -- nsd.*, ptpts.* and
+ * drv.* all come from code this project does not have, because it uses flexPTP's bundled
+ * nsd_lwip.c instead. What IS here is everything that comes from code the two share:
+ *
+ *   rx.ts_*    the MAC driver's receive-timestamp context counters (mac_drv.c, common)
+ *   heap.*     the newlib heap high-water mark (sysmem.c, common)
+ *   ptp.*      flexPTP's own state
+ *
+ * The `counters` check in tools/hil/ therefore does not apply to this firmware as written --
+ * it asserts nsd.* and drv.* keys that only exist on the other one. Extending the lwIP NSD to
+ * match is a real piece of work and is not pretended to be done here.
+ */
+CMD_FUNCTION(eth_stats) {
+    MSG("BEGIN ethstat\n");
+
+    {
+        uint32_t deferred = 0, stray = 0;
+        ETHHW_GetRxCtxCounters(&deferred, &stray);
+        MSG("rx.ts_deferred=%u\n", (unsigned)deferred);
+        MSG("rx.ts_stray=%u\n", (unsigned)stray);
+    }
+
+    {
+        uint32_t peak = 0, size = 0;
+        extern void sysmem_heap_usage(uint32_t *, uint32_t *);
+        sysmem_heap_usage(&peak, &size);
+        MSG("heap.peak=%u\n", (unsigned)peak);
+        MSG("heap.size=%u\n", (unsigned)size);
+    }
+
+    MSG("ptp.running=%u\n", (unsigned)(is_flexPTP_operating() ? 1U : 0U));
+    if (is_flexPTP_operating()) {
+        MSG("ptp.bmca=%u\n", (unsigned)gPtpCoreState.bmca.state);
+        MSG("ptp.ticks=%u\n", (unsigned)ptp_get_tick());
+    }
+
+    MSG("END ethstat\n");
+    return 0;
+}
+
 CMD_FUNCTION(start_flexptp) {
     // flexPTP renamed task_ptp_is_operating() -> is_flexPTP_operating() at a60190f
     if (!is_flexPTP_operating()) {
@@ -92,6 +144,7 @@ CMD_FUNCTION(start_flexptp) {
 // ---------------------------------
 
 void cmd_init() {
+    cli_register_command("ethstat \t\t\tPrint driver, heap and PTP counters as key=value, for tooling", 1, 0, eth_stats);
     cli_register_command("osinfo \t\t\tPrint OS-related information", 1, 0, os_info);
     cli_register_command("flexptp \t\t\tStart flexPTP daemon", 1, 0, start_flexptp);
 }
