@@ -9,15 +9,16 @@ Status: **phases 0–4 landed and verified on hardware; phases 5–7 outstanding
 | 1 — the toolchain | landed |
 | 2 — vendored trees as git repositories | landed, with one caveat in [§1.3](#13-the-four-patches) |
 | 3 — first-party libraries | landed |
-| 4 — the firmware binary | landed; **S8 13/13 on hardware** from a Bazel-built image. One piece of residual work — see [§5.3](#53-the-firmware-binary) |
+| 4 — the firmware binary | **landed** — **S8 13/13 on hardware** from a Bazel-built image, and the platform transition is wired, so `bazel build //...` needs no `--config` |
 | 5 — flashing | **landed**, both OpenOCD modes |
 | 6 — host tests | **landed** — 13/13, and both mutation checks still bite |
 | 7 — delete CMake | **landed** |
 | 8 — the FreeRTOS + lwIP project | **landed** — both firmwares build and pass on hardware; D15 fully met |
 | 9 — unification | **all five tiers landed** — units, drivers, CMSIS-RTOS2 layer, runtime and startup, and the HAL config are all in `//lib` |
 
-CMake still builds and still passes S8 at every point, so there is a working fallback until
-phase 7 removes it.
+Every phase is landed. CMake was the fallback throughout — it built and passed S8 at every
+point up to phase 7, which deleted it; a clean clone now builds with Bazel alone, in 34 s, to an
+identical build ID.
 
 This document sets out how to move this project from CMake
 ([`CMakeLists.txt`](../CMakeLists.txt) + [`build.sh`](../build.sh)) to Bazel, without Pigweed,
@@ -1115,8 +1116,11 @@ differ out of ~1260, every one an `.isra.0` or `.part.0` inlining clone. The ala
 ones were `_nx_dhcp_*` absent from the Bazel image — `_nx_dhcp_create` and `_nx_dhcp_start` are
 in both, and the board gets an address, which settles it.
 
-**Residual work:** the platform transition is written but not wired in, so the firmware needs
-`--config=target` — see [§5.3](#53-the-firmware-binary).
+**Since resolved:** the platform transition is wired (`cfg = _target_platform_transition` in
+[`tools/build_rules/firmware.bzl`](../tools/build_rules/firmware.bzl)), so the firmware no
+longer needs `--config=target` — a bare `bazel build //...` produces both firmwares and the
+host tests from one graph. `--config=target` still exists in `.bazelrc` for building a library
+target on its own, outside a `stm32_firmware` rule that would transition it.
 
 #### Final comparison against CMake, at a matched `-O2`
 
