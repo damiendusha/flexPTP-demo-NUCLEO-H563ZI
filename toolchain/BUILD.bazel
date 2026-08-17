@@ -271,3 +271,28 @@ toolchain(
     toolchain = ":arm_none_eabi_cortex_m33",
     toolchain_type = "@rules_cc//cc:toolchain_type",
 )
+
+# ---------------------------------------------------------------------------
+# pkg-config, for the OpenOCD build
+# ---------------------------------------------------------------------------
+#
+# rules_foreign_cc otherwise tries to BUILD pkg-config from source, which fails here at
+# BootstrapPkgConfig. It ships preinstalled_* toolchains for cmake, ninja, make and meson but
+# not for pkg-config, so this declares one over the host's.
+#
+# imu solves the same problem by taking pkg-config from BCR; using the host's avoids a
+# dependency for a tool that is present on any machine able to build OpenOCD at all -- and
+# OpenOCD's configure needs the host's libusb .pc files regardless, so this is not where
+# hermeticity is won or lost. See docs/bazel_decisions.md §6, "The costs, stated honestly".
+load("@rules_foreign_cc//toolchains/native_tools:native_tools_toolchain.bzl", "native_tool_toolchain")
+
+native_tool_toolchain(
+    name = "host_pkgconfig",
+    path = "pkg-config",
+)
+
+toolchain(
+    name = "host_pkgconfig_toolchain",
+    toolchain = ":host_pkgconfig",
+    toolchain_type = "@rules_foreign_cc//toolchains:pkgconfig_toolchain",
+)

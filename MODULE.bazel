@@ -13,6 +13,14 @@ module(
 bazel_dep(name = "rules_cc", version = "0.2.22")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "rules_shell", version = "0.6.1")
+bazel_dep(name = "bazel_skylib", version = "1.8.2")
+
+# The one deliberate BCR exception D2 carves out, and it buys exactly one thing: building ST's
+# OpenOCD fork from source. Upstream OpenOCD cannot program an STM32H5 -- it has no compiled-in
+# stm32h5x flash driver -- and ST publishes no standalone binary of the fork, so there is nothing
+# to http_archive and autotools software will not be expressed in native Bazel rules at sane
+# cost. See docs/bazel_decisions.md §6.
+bazel_dep(name = "rules_foreign_cc", version = "0.14.0")
 
 # The host test framework.
 #
@@ -40,7 +48,11 @@ http_archive(
     urls = ["https://gitlab.arm.com/api/v4/projects/tooling%2Fgnu-toolchains-for-arm/packages/generic/gnu-toolchain/15.3.rel1/arm-gnu-toolchain-15.3.rel1-x86_64-arm-none-eabi.tar.xz"],
 )
 
-register_toolchains("//toolchain:arm_none_eabi_cortex_m33_toolchain")
+register_toolchains(
+    "//toolchain:arm_none_eabi_cortex_m33_toolchain",
+    # Ahead of rules_foreign_cc's own, which would build pkg-config from source.
+    "//toolchain:host_pkgconfig_toolchain",
+)
 
 # ---------------------------------------------------------------------------
 # The vendored trees, from git (D2)
@@ -52,7 +64,7 @@ register_toolchains("//toolchain:arm_none_eabi_cortex_m33_toolchain")
 # ST's OpenOCD fork, located on the machine rather than fetched: upstream cannot program an
 # STM32H5 and ST publishes no standalone binary of the fork. See //bazel/openocd.bzl.
 openocd = use_extension("//bazel:openocd.bzl", "openocd")
-use_repo(openocd, "openocd")
+use_repo(openocd, "openocd", "openocd_src")
 
 vendored = use_extension("//bazel:repositories.bzl", "vendored")
 use_repo(

@@ -85,10 +85,18 @@ target carries a transition onto the board's platform, so it cannot silently pro
 build. `-c opt` gives `-O2` (note: the CMake build ships `-Og`; see D8 in the decisions
 document).
 
-To flash — this needs ST's OpenOCD, see [Flashing](#flashing):
+To flash. ST's OpenOCD fork is built from source the first time (a few minutes); upstream
+OpenOCD cannot program an STM32H5 — see [Flashing](#flashing):
 
 ```bash
 bazel run //projects/flexptp_threadx_netx_demo:flash
+```
+
+If you already have ST's fork on the machine — in `toolchains/openocd`, on `PATH`, or named by
+`$OPENOCD` — use it instead of building one:
+
+```bash
+bazel run //projects/flexptp_threadx_netx_demo:flash --//tools/flash:openocd=local
 ```
 
 Tests — the host suite, the C++ rules asserted against the linked image, and the OpenOCD

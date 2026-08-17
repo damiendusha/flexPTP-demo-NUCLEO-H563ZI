@@ -1,10 +1,57 @@
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+package(default_visibility = ["//visibility:public"])
 
 exports_files(["flash.bzl"])
 
+# Where OpenOCD comes from.
+#
+#   source  build ST's fork with rules_foreign_cc. Self-contained: a clean clone can flash
+#           without build.sh. Costs a few minutes on the first build.
+#   local   use one already on the machine -- $OPENOCD, toolchains/openocd, or PATH -- verified
+#           to be ST's fork. For developers who have one, hosts where the source build fails,
+#           and as the bisection tool when flashing misbehaves.
+#
+# Selected with --//tools/flash:openocd=local. See docs/bazel_decisions.md §6.
+string_flag(
+    name = "openocd",
+    build_setting_default = "source",
+    values = [
+        "local",
+        "source",
+    ],
+)
+
+config_setting(
+    name = "openocd_local",
+    flag_values = {":openocd": "local"},
+)
+
+alias(
+    name = "openocd_binary",
+    actual = select({
+        ":openocd_local": "@openocd//:openocd",
+        "//conditions:default": "@openocd_src//:openocd",
+    }),
+)
+
+# The .cfg tree, from the SAME mode as the binary. Mixing them -- a source-built OpenOCD reading
+# a locally installed scripts directory -- would be a quiet way to test one thing and ship
+# another.
+alias(
+    name = "openocd_scripts",
+    actual = select({
+        ":openocd_local": "@openocd//:scripts",
+        "//conditions:default": "@openocd_src//:scripts",
+    }),
+)
+
+# Asserts the SELECTED OpenOCD can program this board, whichever mode produced it. A build that
+# "succeeded" does not imply a usable flasher.
 sh_test(
     name = "openocd_capability_test",
     srcs = ["openocd_capability_test.sh"],
-    args = ["$(location @openocd//:openocd)"],
-    data = ["@openocd//:openocd"],
+    args = ["$(location :openocd_binary)"],
+    data = [":openocd_binary"],
 )

@@ -25,6 +25,8 @@ The search order is deliberately the same one tools/hil/hil.py uses, so the two 
 about which binary is in play.
 """
 
+load("@bazel_tools//tools/build_defs/repo:git.bzl", "new_git_repository")
+
 _NOT_FOUND = """No OpenOCD found that can program an STM32H5.
 
 Looked at, in order:
@@ -106,7 +108,76 @@ _openocd_repository = repository_rule(
     local = True,
 )
 
+# ST's fork, built from source. The pin is the commit tag openocd-cubeide-v2.1.0 resolves to,
+# which is also what build.sh builds -- and a COMMIT rather than imu's `branch =
+# "openocd-cubeide-r7"`, because a branch moves and a pin should not.
+#
+# init_submodules + "nosubmodule" is the important pair: ./bootstrap normally git-clones jimtcl
+# and libjaylink, which would be a network fetch inside a build action. Fetching them
+# declaratively during the repository fetch keeps that cached and content-addressed.
+_OPENOCD_BUILD = """
+load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
+
+filegroup(
+    name = "all_srcs",
+    srcs = glob(["**"], allow_empty = True),
+    visibility = ["//visibility:public"],
+)
+
+configure_make(
+    name = "openocd_build",
+    autogen = True,
+    autogen_command = "./bootstrap",
+    autogen_options = ["nosubmodule"],
+    configure_in_place = True,
+    configure_options = [
+        "--enable-stlink",
+        "--disable-werror",
+        # Everything this board needs is ST-Link over libusb. The adapters below want libftdi
+        # and hidapi, which are frequently absent, and letting configure decide silently
+        # produces a differently-capable binary depending on the host -- which is exactly what
+        # //tools/flash:openocd_capability_test exists to catch. Disabling them explicitly makes
+        # the result the same everywhere instead.
+        "--disable-ftdi",
+        "--disable-cmsis-dap",
+        "--disable-jlink",
+    ],
+    lib_source = ":all_srcs",
+    out_binaries = ["openocd"],
+    out_data_dirs = ["share"],
+    targets = [
+        "",
+        "install",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# configure_make produces bin/, include/ and share/; this picks out the binary alone, which is
+# what a $(location) in a test or a flash rule needs.
+filegroup(
+    name = "openocd",
+    srcs = [":openocd_build"],
+    output_group = "openocd",
+    visibility = ["//visibility:public"],
+)
+
+# The scripts tree (board/*.cfg and friends), installed under share/openocd/scripts.
+filegroup(
+    name = "scripts",
+    srcs = [":openocd_build"],
+    output_group = "gen_dir",
+    visibility = ["//visibility:public"],
+)
+"""
+
 def _openocd_ext_impl(_mctx):
     _openocd_repository(name = "openocd")
+    new_git_repository(
+        name = "openocd_src",
+        build_file_content = _OPENOCD_BUILD,
+        commit = "49ef1d0107909045e31a728406fcfaeb6f1d5946",  # tag openocd-cubeide-v2.1.0
+        init_submodules = True,
+        remote = "https://github.com/STMicroelectronics/OpenOCD.git",
+    )
 
 openocd = module_extension(implementation = _openocd_ext_impl)

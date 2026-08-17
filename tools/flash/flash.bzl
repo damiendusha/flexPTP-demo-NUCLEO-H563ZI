@@ -79,10 +79,11 @@ stm32_flash_binary = rule(
         "openocd": attr.label(
             allow_single_file = True,
             cfg = "exec",
-            default = "@openocd//:openocd",
+            # Follows --//tools/flash:openocd; see that package for the two modes.
+            default = "//tools/flash:openocd_binary",
         ),
         "platform": attr.string(default = "//toolchain:cortex_m33"),
-        "scripts": attr.label(cfg = "exec", default = "@openocd//:scripts"),
+        "scripts": attr.label(cfg = "exec", default = "//tools/flash:openocd_scripts"),
         "_allowlist_function_transition": attr.label(
             default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
         ),

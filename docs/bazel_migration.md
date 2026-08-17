@@ -10,7 +10,7 @@ Status: **phases 0–4 landed and verified on hardware; phases 5–7 outstanding
 | 2 — vendored trees as git repositories | landed, with one caveat in [§1.3](#13-the-four-patches) |
 | 3 — first-party libraries | landed |
 | 4 — the firmware binary | landed; **S8 13/13 on hardware** from a Bazel-built image. One piece of residual work — see [§5.3](#53-the-firmware-binary) |
-| 5 — flashing | **landed**, except the `source` OpenOCD mode — `bazel run …:flash` verified on hardware |
+| 5 — flashing | **landed**, both OpenOCD modes |
 | 6 — host tests | **landed** — 13/13, and both mutation checks still bite |
 | 7 — delete CMake | outstanding |
 | 8 — the FreeRTOS + lwIP project | outstanding |
@@ -1105,11 +1105,29 @@ in both, and the board gets an address, which settles it.
 `stm32_flash_binary` with its platform transition, and the HIL changes in
 [§8.3](#83-the-hil-suite-must-stop-hardcoding-the-openocd-path).
 
-**Landed, with one part outstanding: the `source` mode.** In place are the `local` resolver,
-the capability test, the pure-Starlark flash rule and the HIL changes. Building ST's OpenOCD
-with `rules_foreign_cc` ([decisions §6](bazel_decisions.md#6-why-sts-openocd-built-from-source))
-is not wired up, so a clean clone still needs `./build.sh --with-openocd` — criterion 2 is
-half-met, and **D7's deletion of `build.sh` must wait for it**.
+**Landed in full, both modes.** `--//tools/flash:openocd=source` (the default) builds ST's fork
+with `rules_foreign_cc`; `=local` uses one already on the machine. Both pass the capability test
+and both flash the board.
+
+Four things the `source` build needed:
+
+- **A pkg-config toolchain.** `rules_foreign_cc` otherwise tries to build pkg-config from
+  source and fails at `BootstrapPkgConfig`. It ships `preinstalled_*` toolchains for cmake,
+  ninja, make and meson but **not** for pkg-config, so `//toolchain:host_pkgconfig_toolchain`
+  declares one over the host's — registered ahead of rules_foreign_cc's own.
+- **`init_submodules = True` with `autogen_options = ["nosubmodule"]`.** `./bootstrap` otherwise
+  git-clones jimtcl and libjaylink from inside a build action; this fetches them declaratively
+  instead, cached and content-addressed. Copied from imu, which gets this right.
+- **`--disable-ftdi --disable-cmsis-dap --disable-jlink`**, which imu does not do. Those
+  adapters need libftdi and hidapi, and letting `configure` decide silently produces a
+  differently-capable binary depending on what the host happens to have installed. Disabling
+  them explicitly makes the result the same everywhere. Nothing here needs them: the Nucleo's
+  onboard ST-Link speaks libusb.
+- **The `.cfg` scripts must come from the same mode as the binary.** A source-built OpenOCD
+  reading a locally installed scripts tree is a quiet way to test one thing and ship another,
+  so `:openocd_binary` and `:openocd_scripts` select together.
+
+**This unblocks D7**: a clean clone can now flash without `build.sh`.
 
 Two findings worth carrying forward:
 
