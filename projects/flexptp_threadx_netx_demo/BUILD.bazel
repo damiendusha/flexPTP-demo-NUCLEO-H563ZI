@@ -232,6 +232,7 @@ cc_library(
     target_compatible_with = TARGET_ONLY,
     deps = [
         "//lib:cli",
+        "//lib:runtime",
         ":eth",
         ":flexptp",
         ":flexptp_config",

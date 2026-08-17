@@ -1867,6 +1867,62 @@ duplication rather than by prediction. Rough order, easiest and safest first:
 **Never unified:** `main.c`, the config headers, `ethernet_*.c`, `eth_drv_*.c`, `nsd_*.c`, and
 the RTOS/stack `BUILD` wiring. Those *are* the difference between the two projects.
 
+#### 13.8.1 Backporting the ThreadX port's findings
+
+Unification moves code that is already the same. It does nothing for the other half of the
+problem, which is that **the ThreadX port found a great many defects and the FreeRTOS firmware
+inherited none of the resulting instrumentation** — the two projects were seeded from the same
+files, so the fixes travelled, but the diagnostics that found the fixes did not, because they
+lived in `cmds.c` and `main.c`, which are per-project by design.
+
+That is a worse gap than duplication. Duplication is visible; a firmware that cannot report its
+own interrupt priorities looks exactly like one whose priorities are correct.
+
+Backported, all verified on hardware:
+
+| What | Finding behind it | Note |
+|---|---|---|
+| `report_build_id()` → `//lib:runtime` | GI-01 | Was a byte-identical static function in both `cmds.c` files. Now shared, with `runtime_info.h` giving `sysmem_heap_usage`, `cpp_static_init_status` and `cpp_standard` real prototypes instead of the local `extern` lines each project had been repeating — a local `extern` is a second, unchecked copy of a prototype |
+| C heap high-water mark in `osinfo` | NX-03 | The `_sbrk` bound is shared code, so both firmwares always had it; only one reported the number that says whether it is marginal |
+| Task enumeration in `osinfo` | — | Different API (`uxTaskGetSystemState()` against ThreadX's `_tx_thread_created_ptr` walk), identical claim. Both scales printed, because FreeRTOS counts *up* for urgency and ThreadX counts *down*, and printing one guarantees a misreading against the other |
+| Interrupt priorities in `osinfo` | NX-04 | The readback is what catches it. The table itself is **per-firmware** — see below |
+| `C++ static init:` in `osinfo` | — | `cpp_ctor` in `tools/hil/` had nothing to check on this firmware before |
+| `flexptp_uev_count()` in `main.c` | — | Separates "no packets arriving" from "packets arrive and the core rejects them", which from outside look identical: a board stuck in LISTENING |
+| `ethinfo`, with `eth_drv_report()` | — | Brings both firmwares to the same 25 commands, by the other route |
+
+**The interrupt priority table had to become per-firmware, and that is the interesting part.**
+The obvious reading of NX-04 is "assert the same table on both boards". It is wrong: two of the
+nine rows *must* differ, because the kernels require different things. FreeRTOS's Cortex-M port
+requires SysTick at the **lowest** priority; ThreadX runs it at 4, above ETH, so the tick stays
+prompt under Ethernet load. Asserting ThreadX's table against the FreeRTOS image would fail a
+correct firmware — and "just relax the check until it passes" would have thrown away exactly the
+property NX-04 exists to protect. `tools/hil/run.py` grew a `--firmware` flag instead, which
+selects the table and the command count together; the values and the reasoning for each
+divergence sit next to the tables in `checks.py`.
+
+The FreeRTOS firmware also gained a check the ThreadX one has no use for: an ISR that calls a
+`FromISR` API must not be more urgent than `configMAX_SYSCALL_INTERRUPT_PRIORITY`, or it
+corrupts the kernel's critical sections silently. FreeRTOS can assert this itself, but only for
+an interrupt that actually fires with asserts compiled in; reading the registers back checks
+every one of them on the shipped `-O2` image in one command. This is a *different kind* of claim
+from the table above it — the table says "these are the values we chose", this says "these
+values are safe" — which is why it is checked separately rather than folded in.
+
+**Named and not done**, so the gap is on the record rather than in someone's memory:
+
+- **Driver drop counters on the lwIP path.** The NetX Duo driver counts frames dropped for no
+  packet, bad size, full queue, link down and a busy MAC. The lwIP driver counts none of them.
+  Adding them means editing the receive and transmit paths of a driver that currently works,
+  which is a change with its own hardware verification, not a reporting one.
+- **lwIP's own counters.** `LWIP_STATS` is 0, so there is no counterpart to the
+  `nx_ip_info_get`/`nx_udp_info_get`/`nx_arp_info_get` half of `ethinfo`. Turning it on costs
+  RAM and changes the image.
+- **The `counters` HIL check on the FreeRTOS firmware.** It asserts `nsd.*` and `drv.*` keys
+  that only the ThreadX firmware's project-supplied NSD produces.
+
+`eth_drv_report()` on the lwIP side prints a line saying both of the first two out loud, so the
+absence reads as a known gap rather than as a clean bill of health.
+
 **The rule that keeps this honest:** unify a file only when a test pins its behaviour first. The
 host suite covers tier 1 and much of tier 2; HIL covers the rest. A file with no test over it is
 one where "the two copies were identical" is an assertion nobody checked — and the divergence

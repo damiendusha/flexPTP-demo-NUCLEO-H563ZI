@@ -127,7 +127,15 @@ Drives the board's serial CLI from the host, with OpenOCD for flash and reset. T
 from PHY identification through DHCP and ping to a bounded PTP offset in `SLAVE`.
 
 ```bash
-tools/hil/run.py --flash build/flexptp-demo.elf --stage S8
+tools/hil/run.py --flash bazel-bin/projects/flexptp_threadx_netx_demo/flexptp-demo.elf --stage S8
+```
+
+For the other firmware, pass `--firmware freertos`. It selects the per-firmware expectations —
+the CLI command count and the interrupt priority table — which genuinely differ, because the two
+kernels require different things of SysTick and SVCall. It defaults to `threadx`.
+
+```bash
+tools/hil/run.py --firmware freertos --flash bazel-bin/projects/flexptp_freertos_lwip_demo/flexptp-demo-freertos.elf --stage S0
 ```
 
 > [!NOTE]
@@ -387,6 +395,15 @@ on the first line is the CLI's own registered/available slot count.
 `ethinfo` is this project's own, added by the NetX Duo port. It prints the driver's state and
 its receive/transmit counters, and it is how four of the five defects in that port were
 actually diagnosed — counters, not code-reading.
+
+Both firmwares register the same 25 commands, but `ethinfo` and `osinfo` report **less** on the
+FreeRTOS + lwIP one, and the output says where the gaps are rather than leaving them to be
+inferred. `ethinfo` there has no driver drop counters — the NetX Duo driver grew those while the
+ThreadX port was chasing where frames were going, and adding them to the lwIP driver means
+touching a working receive path — and lwIP is built with `LWIP_STATS 0`, so the stack keeps no
+counters of its own to print. What both firmwares report identically is what comes from `//lib`:
+the MAC's receive-timestamp context counters, the newlib heap high-water mark, and flexPTP's own
+core state.
 
 `ethstat` prints the same figures as `key=value` lines between `BEGIN ethstat`/`END ethstat`.
 It exists for `tools/hil/`, which used to regex-parse the prose form — and had already silently

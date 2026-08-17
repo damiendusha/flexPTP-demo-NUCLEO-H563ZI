@@ -507,6 +507,45 @@ err_t ethernetif_init(struct netif *netif) {
 
 // -----
 
+/* The driver's view of itself, for `ethinfo`.
+ *
+ * Backported from the ThreadX firmware's eth_drv_report(), and deliberately smaller than it,
+ * because two of that function's three sections have nothing to report against here:
+ *
+ *   - The NetX Duo driver counts its own drops -- no packet, bad size, queue full, link down,
+ *     MAC busy -- because the ThreadX port added those counters when chasing where frames were
+ *     going. This driver has none of them. That is a real gap and it is stated rather than
+ *     papered over: adding them means touching the RX and TX paths of a driver that currently
+ *     works, which is its own change with its own hardware verification, not a reporting one.
+ *   - lwIP is built with LWIP_STATS 0, so the stack keeps no counters at all. The ThreadX
+ *     firmware's "what the stack made of it" half -- nx_ip_info_get and friends -- has no
+ *     counterpart until that is turned on, which costs RAM and changes the image.
+ *
+ * What IS here is the part that transfers unchanged: the link state, and the RX timestamp
+ * context counters, which come from //lib's shared MAC driver and therefore mean exactly the
+ * same thing on both firmwares.
+ */
+void eth_drv_report(void) {
+    MSG("ETH driver:\n");
+    MSG("  init=%u link=%s %u Mbps %s\n", (unsigned)linkState.init,
+        linkState.up ? "UP" : "DOWN", (unsigned)linkState.speed,
+        linkState.duplex ? "full" : "half");
+    MSG("  netif=%s\n", (if0 != NULL) ? "attached" : "absent");
+
+    /* Both expected to stay at zero. `deferred` counts frames whose context descriptor the DMA
+       had not written yet -- retried rather than stamped with whatever the slot held (NX-01);
+       `stray` counts context descriptors that turned up without a frame in front of them. A
+       rising `deferred` under load is not a fault, but a rising `stray` is. */
+    {
+        uint32_t ctx_deferred = 0, ctx_stray = 0;
+        ETHHW_GetRxCtxCounters(&ctx_deferred, &ctx_stray);
+        MSG("  rx ts: %u deferred (context descriptor late), %u stray context descriptors\n",
+            (unsigned)ctx_deferred, (unsigned)ctx_stray);
+    }
+
+    MSG("  (no driver drop counters, and LWIP_STATS is 0 -- see eth_drv_report())\n");
+}
+
 void ETH_IRQHandler() {
     ETHHW_ISR(ETH);
 }

@@ -220,6 +220,7 @@ cc_library(
     target_compatible_with = TARGET_ONLY,
     deps = [
         "//lib:cli",
+        "//lib:runtime",
         ":cmsis_rtos",
         ":eth",
         ":flexptp",

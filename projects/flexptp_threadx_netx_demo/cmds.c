@@ -12,6 +12,7 @@
 #include <cmsis_os2.h>
 
 #include "cli/cli.h"
+#include "runtime/runtime_info.h"
 #include "standard_output/serial_io.h"
 #include "standard_output/standard_output.h"
 
@@ -31,11 +32,6 @@
 /* Defined in main.c alongside flexptp_user_event_cb(). */
 extern uint32_t flexptp_uev_count(unsigned uev);
 
-/* Defined in cpp_support.cpp. Reported here because the C++ runtime's initialisation cannot
-   be verified by the build alone -- only by asking the running board. */
-extern const char *cpp_static_init_status(void);
-extern unsigned long cpp_standard(void);
-
 // ---------------------------------
 
 /* The CMSIS-RTOS2 wrapper's two byte pools. It declares them extern in cmsis_os2.c and does
@@ -52,52 +48,6 @@ static void report_byte_pool(const char *label, TX_BYTE_POOL *pool) {
     } else {
         MSG("  %s: unavailable\n", label);
     }
-}
-
-/* The linker's build ID, as an ELF note.
- *
- * A SHA-1 over the linked output, emitted by -Wl,--build-id=sha1 and placed in FLASH by the
- * linker script. Printing it is what lets tools/hil/ prove it is testing the image it was
- * handed rather than whatever happened to be on the board (finding GI-01).
- *
- * The note layout is the ELF standard: three 32-bit words (namesz, descsz, type), then the
- * name padded to 4, then the descriptor. Parsed rather than assumed, because the name is
- * "GNU\0" today and the padding rules are what would bite if it were not.
- */
-static void report_build_id(void) {
-    extern const uint8_t __build_id_note_start[];
-    extern const uint8_t __build_id_note_end[];
-
-    const uint8_t *p = __build_id_note_start;
-    const uint32_t bytes = (uint32_t)(__build_id_note_end - __build_id_note_start);
-
-    if (bytes < 16U) {
-        MSG("Build ID: <absent>\n");
-        return;
-    }
-
-    uint32_t namesz, descsz;
-    memcpy(&namesz, p + 0, sizeof(namesz));
-    memcpy(&descsz, p + 4, sizeof(descsz));
-
-    const uint32_t name_padded = (namesz + 3U) & ~3U;
-    const uint32_t offset = 12U + name_padded;
-
-    if ((descsz == 0U) || ((offset + descsz) > bytes)) {
-        MSG("Build ID: <malformed>\n");
-        return;
-    }
-
-    MSG("Build ID: ");
-    for (uint32_t i = 0; i < descsz; i++) {
-        /* %02x would be the obvious thing; embfmt has no width or zero-pad, so the nibbles
-           are emitted by hand. A build ID printed with the leading zeros missing is not the
-           build ID -- see the note on embfmt at the thread enumeration below. */
-        static const char hex[] = "0123456789abcdef";
-        MSGchar(hex[(p[offset + i] >> 4) & 0xFU]);
-        MSGchar(hex[p[offset + i] & 0xFU]);
-    }
-    MSG("\n");
 }
 
 CMD_FUNCTION(os_info) {
@@ -117,7 +67,6 @@ CMD_FUNCTION(os_info) {
        CLI commands is what puts anything in it -- so the peak is the number that says whether
        the bound is comfortable or marginal. */
     {
-        extern void sysmem_heap_usage(uint32_t *, uint32_t *);
         uint32_t peak = 0, size = 0;
         sysmem_heap_usage(&peak, &size);
         MSG("  C heap: %u of %u bytes used (peak)\n", (unsigned)peak, (unsigned)size);
@@ -317,7 +266,6 @@ CMD_FUNCTION(eth_stats) {
 
     {
         uint32_t peak = 0, size = 0;
-        extern void sysmem_heap_usage(uint32_t *, uint32_t *);
         sysmem_heap_usage(&peak, &size);
         MSG("heap.peak=%u\n", (unsigned)peak);
         MSG("heap.size=%u\n", (unsigned)size);

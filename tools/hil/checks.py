@@ -66,6 +66,17 @@ class Context:
     # for both firmwares' numbers.
     cli_commands: int = 25
 
+    # The interrupt priority table this firmware must hold, and the FreeRTOS syscall ceiling to
+    # check ISRs against. Both per-firmware and both defaulted to the ThreadX firmware's values;
+    # run.py overrides them for the FreeRTOS one. See EXPECTED_IRQ_PRIORITIES_THREADX and
+    # EXPECTED_IRQ_PRIORITIES_FREERTOS below for why the two tables differ where they do.
+    #
+    # max_syscall_prio is None on ThreadX, which has no equivalent rule -- it is the FreeRTOS
+    # port that forbids calling a FromISR API from an interrupt more urgent than the ceiling.
+    irq_priorities: dict = field(default_factory=lambda: dict(EXPECTED_IRQ_PRIORITIES_THREADX))
+    max_syscall_prio: "int | None" = None
+    syscall_isrs: tuple = ()
+
 
 # The addend's NOMINAL value: 2^32 / 1.25 for a 250 MHz clk_ptp_ref_i at a 5 ns increment.
 # See docs/ptp_clock.md.
@@ -89,9 +100,11 @@ ADDEND_TOLERANCE = 0.01
 # counters as machine-readable key=value, making 25. Asserted exactly rather than as a minimum,
 # because a command silently failing to register is a real failure mode -- that is what the
 # check is for -- so a deliberate addition is expected to move this number.
-# check. It is also per-FIRMWARE, which the monorepo makes concrete: the FreeRTOS + lwIP project is
-# the pre-port lineage and registers 23, the ThreadX + NetX Duo one registers 25. Overridable
-# with run.py --cli-commands so neither firmware has to be tested against the other's number.
+# check. It is also per-FIRMWARE, which the monorepo makes concrete -- and both now register 25,
+# for the same reason rather than by coincidence. The FreeRTOS + lwIP project is the pre-port
+# lineage: it started at 23, phase 8 brought it `ethstat` (24), and phase 9's backport brought
+# it `ethinfo` (25), which is the same set the ThreadX firmware arrived at by the other route.
+# Selected by run.py --firmware, which sets this along with the interrupt priority table.
 EXPECTED_CMD_COUNT = 25
 
 
@@ -231,7 +244,7 @@ def check_cpp_ctor(board: Board, ctx: Context) -> CheckResult:
 #                          tx_initialize_low_level.S then overrides it, which is why the table
 #                          said 15 for two years while the board ran at 4 (NX-04)
 #   ETH 7 above console 12 heavy CLI output must not delay Ethernet servicing
-EXPECTED_IRQ_PRIORITIES = {
+EXPECTED_IRQ_PRIORITIES_THREADX = {
     "MemManage": 0,
     "BusFault": 0,
     "UsageFault": 0,
@@ -242,6 +255,41 @@ EXPECTED_IRQ_PRIORITIES = {
     "USART3": 12,
     "GPDMA1_Ch0": 12,
 }
+
+# The same table for the FreeRTOS firmware. The peripherals and the fault handlers agree with
+# ThreadX -- same silicon, same drivers, same reasoning -- and the two rows that differ differ
+# because the KERNELS REQUIRE DIFFERENT THINGS, which is exactly why this table is per-firmware
+# rather than shared:
+#
+#   SysTick 15, not 4   FreeRTOS's Cortex-M port requires the tick at the LOWEST priority
+#                       (configKERNEL_INTERRUPT_PRIORITY, from configLIBRARY_LOWEST_INTERRUPT_
+#                       PRIORITY=0xf). ThreadX's 4 -- above ETH, so the tick stays prompt under
+#                       Ethernet load -- would be a port violation here, not an improvement.
+#   SVCall 0, not 15    FreeRTOS's port uses SVC exactly once, in prvPortStartFirstTask, to
+#                       launch the first task before any other interrupt is live. It is left at
+#                       the reset default because nothing preempts anything at that moment.
+EXPECTED_IRQ_PRIORITIES_FREERTOS = {
+    "MemManage": 0,
+    "BusFault": 0,
+    "UsageFault": 0,
+    "SVCall": 0,
+    "PendSV": 15,
+    "SysTick": 15,
+    "ETH": 7,
+    "USART3": 12,
+    "GPDMA1_Ch0": 12,
+}
+
+# configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY from FreeRTOSConfig.h, and the interrupts whose
+# handlers reach a FromISR API. An ISR MORE URGENT than the ceiling (a NUMERICALLY SMALLER
+# priority) that calls one corrupts the kernel's critical sections silently -- the failure is a
+# scheduler that occasionally loses a wakeup, which looks like a hang somewhere else entirely.
+#
+# FreeRTOS can catch this itself via configASSERT in vPortValidateInterruptPriority, but only
+# for an interrupt that actually fires while asserts are compiled in. Reading the registers back
+# checks every one of them, on the shipped -O2 image, in one command.
+FREERTOS_MAX_SYSCALL_PRIO = 5
+FREERTOS_SYSCALL_ISRS = ("ETH", "USART3", "GPDMA1_Ch0")
 
 
 def check_irq_prio(board: Board, ctx: Context) -> CheckResult:
@@ -258,21 +306,43 @@ def check_irq_prio(board: Board, ctx: Context) -> CheckResult:
             "irq_prio", Status.SKIP, "osinfo does not report priorities (added after S8)"
         )
 
+    # Anchored to the "Interrupt priorities:" heading. osinfo also prints "pri=" for every
+    # thread, and on the FreeRTOS firmware those lines have the same leading-whitespace shape --
+    # so an unanchored scan collects task priorities as though they were interrupts and then
+    # reports whichever one happened to be named last. The thread block comes first in both
+    # firmwares' output, so slicing from the heading is enough.
+    section = out[out.index("Interrupt priorities:"):]
     found = {m.group(1): int(m.group(2))
-             for m in re.finditer(r"^\s+(\S+)\s+pri=(\d+)\s*$", out, re.M)}
+             for m in re.finditer(r"^\s+(\S+)\s+pri=(\d+)\s*$", section, re.M)}
     data = {"priorities": found}
 
-    missing = [n for n in EXPECTED_IRQ_PRIORITIES if n not in found]
+    expected = ctx.irq_priorities
+    missing = [n for n in expected if n not in found]
     if missing:
         return CheckResult("irq_prio", Status.FAIL, "not reported: " + ", ".join(missing), data)
 
     wrong = [f"{n} is {found[n]}, expected {want}"
-             for n, want in EXPECTED_IRQ_PRIORITIES.items() if found[n] != want]
+             for n, want in expected.items() if found[n] != want]
+
+    # The FreeRTOS-only invariant: an ISR that calls a FromISR API must not be more urgent than
+    # configMAX_SYSCALL_INTERRUPT_PRIORITY. Checked separately from the table above because it
+    # is a DIFFERENT KIND of claim -- the table says "these are the values we chose", this says
+    # "these values are safe" -- and because a future retune of ETH or USART3 could keep the
+    # table honest by updating it while silently breaking the kernel.
+    if ctx.max_syscall_prio is not None:
+        wrong += [f"{n} at {found[n]} is more urgent than the syscall ceiling "
+                  f"{ctx.max_syscall_prio}, so its FromISR calls are unsafe"
+                  for n in ctx.syscall_isrs
+                  if n in found and found[n] < ctx.max_syscall_prio]
+        data["max_syscall_prio"] = ctx.max_syscall_prio
+
     if wrong:
         return CheckResult("irq_prio", Status.FAIL, "; ".join(wrong), data)
 
-    return CheckResult("irq_prio", Status.PASS,
-                       f"{len(EXPECTED_IRQ_PRIORITIES)} priorities as documented", data)
+    detail = f"{len(expected)} priorities as documented"
+    if ctx.max_syscall_prio is not None:
+        detail += f", {len(ctx.syscall_isrs)} below the syscall ceiling"
+    return CheckResult("irq_prio", Status.PASS, detail, data)
 
 
 def read_stats(board: Board) -> dict:

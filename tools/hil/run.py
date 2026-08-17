@@ -19,8 +19,10 @@ import json
 import sys
 from pathlib import Path
 
-from checks import (ALL_CHECKS, STAGES, STAGES_WITHOUT_IP_THREAD, STAGES_WITHOUT_PHY,
-                    CheckResult, Context, Status)
+from checks import (ALL_CHECKS, EXPECTED_IRQ_PRIORITIES_FREERTOS,
+                    EXPECTED_IRQ_PRIORITIES_THREADX, FREERTOS_MAX_SYSCALL_PRIO,
+                    FREERTOS_SYSCALL_ISRS, STAGES, STAGES_WITHOUT_IP_THREAD,
+                    STAGES_WITHOUT_PHY, CheckResult, Context, Status)
 from hil import DEFAULT_OPENOCD, Board, BoardError, OpenOcd
 
 GREEN, RED, YELLOW, DIM, RESET = (
@@ -31,6 +33,28 @@ GREEN, RED, YELLOW, DIM, RESET = (
     "\033[0m",
 )
 COLOUR = {Status.PASS: GREEN, Status.FAIL: RED, Status.SKIP: YELLOW}
+
+# Everything that differs between the two firmwares, in one place.
+#
+# Kept as a table rather than as separate flags because the fields are not independent: a run
+# against the FreeRTOS image with the ThreadX priority table is not a partial check, it is a
+# FAILING one, and before this existed the only per-firmware knob was --cli-commands. Getting
+# that wrong was survivable; getting a priority table wrong is a red suite that says nothing.
+#
+# The values themselves, and why the two differ where they do, are documented next to the
+# tables in checks.py.
+FIRMWARES = {
+    "threadx": {
+        "cli_commands": 25,
+        "irq_priorities": EXPECTED_IRQ_PRIORITIES_THREADX,
+    },
+    "freertos": {
+        "cli_commands": 25,
+        "irq_priorities": EXPECTED_IRQ_PRIORITIES_FREERTOS,
+        "max_syscall_prio": FREERTOS_MAX_SYSCALL_PRIO,
+        "syscall_isrs": FREERTOS_SYSCALL_ISRS,
+    },
+}
 
 # Tolerances for --compare. Absolute figures move with the network and the host's load; the
 # point of comparison is to catch a regression, not to pin noise.
@@ -47,9 +71,14 @@ def parse_args() -> argparse.Namespace:
     sel.add_argument("--checks", help="comma-separated check names")
     p.add_argument("--list", action="store_true", help="list checks and stages, then exit")
     p.add_argument("--port", default="/dev/ttyACM0")
+    p.add_argument("--firmware", choices=sorted(FIRMWARES), default="threadx",
+                   help="which firmware is on the board. Selects every per-firmware expectation "
+                        "at once -- the CLI command count and the interrupt priority table, "
+                        "which differ because the two kernels require different things. "
+                        "Default: threadx.")
     p.add_argument("--cli-commands", type=int, default=None,
-                   help="registered CLI commands to expect. Per-firmware: 25 for the ThreadX + "
-                        "NetX Duo project, 23 for the FreeRTOS + lwIP one.")
+                   help="override --firmware's registered CLI command count. Rarely needed; "
+                        "prefer --firmware, which sets this along with everything else.")
     p.add_argument("--openocd", type=Path,
                    help="OpenOCD to use. Defaults to the search in hil.find_openocd(): "
                         "$OPENOCD, then toolchains/openocd/bin/openocd, then PATH.")
@@ -122,6 +151,7 @@ def main() -> int:
         expect_phy=(args.stage not in STAGES_WITHOUT_PHY),
         expect_ip_thread=(args.stage not in STAGES_WITHOUT_IP_THREAD),
         elf=(args.elf or args.flash),
+        **FIRMWARES[args.firmware],
         **({"cli_commands": args.cli_commands} if args.cli_commands else {}),
     )
 

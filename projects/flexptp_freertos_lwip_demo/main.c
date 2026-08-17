@@ -308,7 +308,27 @@ int main(void) {
     }
 }
 
+/* Count every flexPTP user event, backported from the ThreadX firmware.
+ *
+ * A counter rather than a print statement, for the reason the rest of this port uses counters:
+ * the events fire faster than the console can carry them, and PTP_UEV_ANNOUNCE_RECVED in
+ * particular is the only non-invasive probe for "ptp_process_packet() was reached AND the
+ * domain/transportSpecific gate let the message through" -- it is dispatched on the last line
+ * of that branch. Reading it separates "no packets are arriving" from "packets arrive and the
+ * core rejects them", which otherwise look identical from outside: a board that never leaves
+ * LISTENING. */
+#define UEV_COUNT_MAX (32)
+static uint32_t sUevCount[UEV_COUNT_MAX];
+
+uint32_t flexptp_uev_count(unsigned uev) {
+    return (uev < UEV_COUNT_MAX) ? sUevCount[uev] : 0U;
+}
+
 void flexptp_user_event_cb(PtpUserEventCode uev) {
+    if ((unsigned)uev < UEV_COUNT_MAX) {
+        sUevCount[(unsigned)uev]++;
+    }
+
     switch (uev) {
     case PTP_UEV_INIT_DONE:
         ptp_load_profile(ptp_profile_preset_get(FLEXPTP_INITIAL_PROFILE));

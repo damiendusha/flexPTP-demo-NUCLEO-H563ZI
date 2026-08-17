@@ -26,11 +26,24 @@ baseline.json        golden values captured from the pre-port firmware
 tools/hil/run.py --list
 tools/hil/run.py --stage S0
 tools/hil/run.py --checks boot,cli,osinfo
-tools/hil/run.py --flash build/Debug/flexptp-demo.elf --stage S0
+tools/hil/run.py --flash bazel-bin/projects/flexptp_threadx_netx_demo/flexptp-demo.elf --stage S0
 
 # ...or check a board you did not just flash, without reflashing it:
-tools/hil/run.py --elf build/Debug/flexptp-demo.elf --stage S0
+tools/hil/run.py --elf bazel-bin/projects/flexptp_threadx_netx_demo/flexptp-demo.elf --stage S0
 ```
+
+**Say which firmware is on the board.** The monorepo has two, and several expectations differ
+between them — the CLI command count, and the interrupt priority table, whose SysTick and SVCall
+rows differ because the two kernels *require* different things (see `EXPECTED_IRQ_PRIORITIES_*`
+in `checks.py`). `--firmware` selects all of them together:
+
+```bash
+tools/hil/run.py --firmware freertos --stage S0
+```
+
+It defaults to `threadx`. Running the FreeRTOS image without it does not produce a partial
+result — it produces a **failing** one, which is the intended behaviour: a suite that quietly
+passes against the wrong table is worth less than no suite.
 
 Exit status: `0` all passed · `1` something failed or regressed · `2` could not reach the
 board · `3` passed but incomplete (something skipped).

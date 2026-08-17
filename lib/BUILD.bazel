@@ -259,11 +259,13 @@ cc_library(
 cc_library(
     name = "runtime",
     srcs = [
+        "runtime/build_id.c",
         "runtime/cpp_support.cpp",
         "runtime/syscall.c",
         "runtime/sysmem.c",
         "runtime/system_stm32h5xx.c",
     ],
+    hdrs = ["runtime/runtime_info.h"],
     features = FIRST_PARTY,
     target_compatible_with = ["//toolchain:stm32h563"],
     deps = [
