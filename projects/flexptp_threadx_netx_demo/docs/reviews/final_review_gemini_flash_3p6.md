@@ -100,14 +100,14 @@ This document numbers every finding, evaluates the architecture, resolves docume
 
 | Finding ID | Item | Location in Code | Location in Docs | Discrepancy Description | Resolution / Recommendation |
 |---|---|---|---|---|---|
-| **[D1]** | **PTP Clock Source Comment** | [Src/main.c:83-85](../../projects/flexptp_threadx_netx_demo/main.c#L83-L85) | [docs/ptp_clock.md:28-44](../ptp_clock.md#L28-L44), [docs/port_review.md:198-214](../port_review.md#L198-L214) | `main.c` line 83 states: *"HCLK is also the Ethernet PTP timestamp clock on the STM32H563 -- there is no ETHPTPCLKSEL mux on this device. It must run at the full 250 MHz; dividing here would silently detune the PTP clock."* This is stale. The PTP clock is hardwired to `pll1_q_ck`, not HCLK (as correctly described in lines 61-64 of `main.c`!). | Update comment at `main.c:83-85` to state that HCLK is the AHB bus clock and MDIO CSR reference, while `pll1_q_ck` is the PTP clock. |
-| **[D2]** | **Unconditional `DEBUG` Definition** | [CMakeLists.txt:93](../../CMakeLists.txt#L93) | [docs/port_review.md:69](../port_review.md#L69) | `set(compile_DEFS ... DEBUG ...)` adds `DEBUG` to `add_compile_definitions` unconditionally, so `DEBUG` is defined even in Release builds. Line 132 redundantly adds `$<$<CONFIG:Debug>:DEBUG>`. | Remove `DEBUG` from `compile_DEFS` in `CMakeLists.txt:93` and rely solely on `target_compile_definitions` generator expression. |
-| **[D3]** | **Release Compiler Optimization Level** | [CMakeLists.txt:157](../../CMakeLists.txt#L157) | [README.md:69](../../README.md#L69), [docs/port_review.md:1268-1313](../port_review.md#L1268-L1313) | `CMakeLists.txt` sets `$<$<CONFIG:Release>:-Og -g0>`. `-Og` is "optimize for debugging", not production release optimization (`-O2` or `-Os`). | Change Release flags to `-O2` (or `-Os`) with appropriate `-g` options. |
-| **[D4]** | **Unused Float Printf & C++ Standard Libraries in Linker Flags** | [CMakeLists.txt:166, 171-172](../../CMakeLists.txt#L166) | [README.md:215](../../README.md#L215) | `CMakeLists.txt` passes `-u _printf_float` and links `-lstdc++ -lsupc++`. The project uses `embfmt` / `MSG()` and pure C, so linking Newlib float formatting and C++ runtimes adds dead code. | Remove `-u _printf_float`, `-lstdc++`, and `-lsupc++` from `CMakeLists.txt`. |
-| **[D5]** | **Duplicate Source Listings in CMake** | [CMakeLists.txt:35-40](../../CMakeLists.txt#L35-L40), [Src/CMakeLists.txt:1-13](../../projects/flexptp_threadx_netx_demo/CMakeLists.txt#L1-L13) | [docs/design_doc.md:632-663](../design_doc.md#L632-L663) | `main.c`, `syscall.c`, `sysmem.c` are added to target sources in the root `CMakeLists.txt` AND in `Src/CMakeLists.txt`. | Consolidate source lists by removing duplicates in `Src/CMakeLists.txt` or root `CMakeLists.txt`. |
-| **[D6]** | **Spelling Typo in Boot Banner** | [Src/main.c:133](../../projects/flexptp_threadx_netx_demo/main.c#L133) | [README.md:116](../../README.md#L116) | `print_welcome_message()` contains `"flexPTP is currenty compiled against..."` (`currenty` instead of `currently`). | Fix spelling in `Src/main.c:133`. |
-| **[D7]** | **Preprocessor Macro Typo in Hardware Port** | [Src/flexptp_port/ptp_port_stm32h563.c:71](../../projects/flexptp_threadx_netx_demo/ptp/ptp_port_stm32h563.c#L71) | [Src/flexptp_port/ptp_port_stm32h563.c:43](../../projects/flexptp_threadx_netx_demo/ptp/ptp_port_stm32h563.c#L43) | `#error "No decision was made on how the PPS signal is generated! Please define either PPS_SIMPLE or PPL_PULSETRAIN!"` (contains `PPL_PULSETRAIN` instead of `PPS_PULSETRAIN`). | Fix typo in error directive. |
-| **[D8]** | **HAL Conf Comment Inversion** | [Inc/stm32h5xx_hal_conf.h:268-269](../../projects/flexptp_threadx_netx_demo/stm32h5xx_hal_conf.h#L268-L269) | — | Comment for `USE_HAL_OPAMP_REGISTER_CALLBACKS` says "OTFDEC", while `USE_HAL_OTFDEC_REGISTER_CALLBACKS` says "OPAMP". | Swap comments to match their respective macros. |
+| **[D1]** | **PTP Clock Source Comment** | [Src/main.c:83-85](../../main.c#L83-L85) | [docs/ptp_clock.md:28-44](../ptp_clock.md#L28-L44), [docs/port_review.md:198-214](../port_review.md#L198-L214) | `main.c` line 83 states: *"HCLK is also the Ethernet PTP timestamp clock on the STM32H563 -- there is no ETHPTPCLKSEL mux on this device. It must run at the full 250 MHz; dividing here would silently detune the PTP clock."* This is stale. The PTP clock is hardwired to `pll1_q_ck`, not HCLK (as correctly described in lines 61-64 of `main.c`!). | Update comment at `main.c:83-85` to state that HCLK is the AHB bus clock and MDIO CSR reference, while `pll1_q_ck` is the PTP clock. |
+| **[D2]** | **Unconditional `DEBUG` Definition** | [CMakeLists.txt:93](../../../../CMakeLists.txt#L93) | [docs/port_review.md:69](../port_review.md#L69) | `set(compile_DEFS ... DEBUG ...)` adds `DEBUG` to `add_compile_definitions` unconditionally, so `DEBUG` is defined even in Release builds. Line 132 redundantly adds `$<$<CONFIG:Debug>:DEBUG>`. | Remove `DEBUG` from `compile_DEFS` in `CMakeLists.txt:93` and rely solely on `target_compile_definitions` generator expression. |
+| **[D3]** | **Release Compiler Optimization Level** | [CMakeLists.txt:157](../../../../CMakeLists.txt#L157) | [README.md:69](../../../../README.md#L69), [docs/port_review.md:1268-1313](../port_review.md#L1268-L1313) | `CMakeLists.txt` sets `$<$<CONFIG:Release>:-Og -g0>`. `-Og` is "optimize for debugging", not production release optimization (`-O2` or `-Os`). | Change Release flags to `-O2` (or `-Os`) with appropriate `-g` options. |
+| **[D4]** | **Unused Float Printf & C++ Standard Libraries in Linker Flags** | [CMakeLists.txt:166, 171-172](../../../../CMakeLists.txt#L166) | [README.md:215](../../../../README.md#L215) | `CMakeLists.txt` passes `-u _printf_float` and links `-lstdc++ -lsupc++`. The project uses `embfmt` / `MSG()` and pure C, so linking Newlib float formatting and C++ runtimes adds dead code. | Remove `-u _printf_float`, `-lstdc++`, and `-lsupc++` from `CMakeLists.txt`. |
+| **[D5]** | **Duplicate Source Listings in CMake** | [CMakeLists.txt:35-40](../../../../CMakeLists.txt#L35-L40), [Src/CMakeLists.txt:1-13](../../CMakeLists.txt#L1-L13) | [docs/design_doc.md:632-663](../design_doc.md#L632-L663) | `main.c`, `syscall.c`, `sysmem.c` are added to target sources in the root `CMakeLists.txt` AND in `Src/CMakeLists.txt`. | Consolidate source lists by removing duplicates in `Src/CMakeLists.txt` or root `CMakeLists.txt`. |
+| **[D6]** | **Spelling Typo in Boot Banner** | [Src/main.c:133](../../main.c#L133) | [README.md:116](../../../../README.md#L116) | `print_welcome_message()` contains `"flexPTP is currenty compiled against..."` (`currenty` instead of `currently`). | Fix spelling in `Src/main.c:133`. |
+| **[D7]** | **Preprocessor Macro Typo in Hardware Port** | [Src/flexptp_port/ptp_port_stm32h563.c:71](../../ptp/ptp_port_stm32h563.c#L71) | [Src/flexptp_port/ptp_port_stm32h563.c:43](../../ptp/ptp_port_stm32h563.c#L43) | `#error "No decision was made on how the PPS signal is generated! Please define either PPS_SIMPLE or PPL_PULSETRAIN!"` (contains `PPL_PULSETRAIN` instead of `PPS_PULSETRAIN`). | Fix typo in error directive. |
+| **[D8]** | **HAL Conf Comment Inversion** | [Inc/stm32h5xx_hal_conf.h:268-269](../../stm32h5xx_hal_conf.h#L268-L269) | — | Comment for `USE_HAL_OPAMP_REGISTER_CALLBACKS` says "OTFDEC", while `USE_HAL_OTFDEC_REGISTER_CALLBACKS` says "OPAMP". | Swap comments to match their respective macros. |
 
 ---
 
@@ -116,7 +116,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ### 4.1 Critical & High-Severity Defects (B1 – B10)
 
 #### [B1] Recursive Mutex Deadlock on Duplicate CLI Command Registration
-- **Location:** [Src/cliutils/cli.c:461, 506, 519](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L461)
+- **Location:** [Src/cliutils/cli.c:461, 506, 519](../../cli/cli.c#L461)
 - **Mechanism:**
   `cli_register_command()` acquires `modifyMtx` via `osMutexAcquire(modifyMtx, osWaitForever)`. If an identical command has been previously registered (`duplicate_idx > -1`), it calls `cli_remove_command(duplicate_idx)`.
   In `cli_remove_command()`, the very first operation is:
@@ -135,7 +135,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ---
 
 #### [B2] Unbounded Busy-Wait Loop in `ETHHW_Transmit` on Descriptor Starvation
-- **Location:** [Drivers/EthDrv/mac_drv.c:552-553](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L552-L553)
+- **Location:** [Drivers/EthDrv/mac_drv.c:552-553](../../eth/mac_drv.c#L552-L553)
 - **Mechanism:**
   ```c
   while (!ETHHW_DESC_OWNED_BY_APPLICATION(bd)) {
@@ -158,7 +158,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ---
 
 #### [B3] Write-1-to-Clear (w1c) Interrupt Register Corruption via Read-Modify-Write in `ETHHW_ISR`
-- **Location:** [Drivers/EthDrv/mac_drv.c:522-540](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L522-L540)
+- **Location:** [Drivers/EthDrv/mac_drv.c:522-540](../../eth/mac_drv.c#L522-L540)
 - **Mechanism:**
   ```c
   if (csr & ETH_DMACSR_NIS) {
@@ -197,7 +197,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ---
 
 #### [B4] 16-Bit Transmit Counter Wrap-Around Arithmetic Failure in `ETHHW_ProcessTx`
-- **Location:** [Drivers/EthDrv/mac_drv.c:473](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L473)
+- **Location:** [Drivers/EthDrv/mac_drv.c:473](../../eth/mac_drv.c#L473)
 - **Mechanism:**
   In `mac_drv.h`, `txCntr` in `ETHHW_DescExt` and `txCntAcked` in `ETHHW_State` are defined as `uint16_t`.
   In `ETHHW_ProcessTx`:
@@ -216,7 +216,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ---
 
 #### [B5] Stack Buffer Overflow in ANSI Escape Sequence Parser
-- **Location:** [Src/cliutils/cli.c:314, 358, 396](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L314)
+- **Location:** [Src/cliutils/cli.c:314, 358, 396](../../cli/cli.c#L314)
 - **Mechanism:**
   In `get_line()`:
   ```c
@@ -242,7 +242,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ---
 
 #### [B6] Out-of-Bounds 1-Byte Write in `insert_carriage_return`
-- **Location:** [Src/standard_output/standard_output.c:16-28](../../projects/flexptp_threadx_netx_demo/standard_output/standard_output.c#L16-L28)
+- **Location:** [Src/standard_output/standard_output.c:16-28](../../standard_output/standard_output.c#L16-L28)
 - **Mechanism:**
   ```c
   #define STDIO_OUTPUT_LINEBUF_LEN (2048)
@@ -277,7 +277,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ---
 
 #### [B7] Race Condition and Thread Safety Violation in `MSG()`
-- **Location:** [Src/standard_output/standard_output.c:12, 33-43](../../projects/flexptp_threadx_netx_demo/standard_output/standard_output.c#L12)
+- **Location:** [Src/standard_output/standard_output.c:12, 33-43](../../standard_output/standard_output.c#L12)
 - **Mechanism:**
   `MSG(...)` formats messages using a single shared static buffer:
   ```c
@@ -296,7 +296,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ---
 
 #### [B8] Unbounded Loop in PHY Reset Handshake
-- **Location:** [Drivers/EthDrv/phy_drv/phy_common.c:441-448](../../projects/flexptp_threadx_netx_demo/eth/phy_drv/phy_common.c#L441-L448)
+- **Location:** [Drivers/EthDrv/phy_drv/phy_common.c:441-448](../../eth/phy_drv/phy_common.c#L441-L448)
 - **Mechanism:**
   ```c
   static void phy_soft_reset() {
@@ -325,7 +325,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ---
 
 #### [B9] Null Pointer Dereference if PHY is Unrecognized
-- **Location:** [Drivers/EthDrv/phy_drv/phy_common.c:475-477, 514-517](../../projects/flexptp_threadx_netx_demo/eth/phy_drv/phy_common.c#L475-L477)
+- **Location:** [Drivers/EthDrv/phy_drv/phy_common.c:475-477, 514-517](../../eth/phy_drv/phy_common.c#L475-L477)
 - **Mechanism:**
   In `ETHHW_setupPHY()`:
   ```c
@@ -353,7 +353,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ---
 
 #### [B10] Linker Script Memory Collision Risk Between C Heap & FreeRTOS Heap
-- **Location:** [stm32h563zitx_FLASH.ld:153-169](../../projects/flexptp_threadx_netx_demo/startup/stm32h563zitx_FLASH.ld#L153-L169), [Src/sysmem.c:53-79](../../projects/flexptp_threadx_netx_demo/sysmem.c#L53-L79)
+- **Location:** [stm32h563zitx_FLASH.ld:153-169](../../startup/stm32h563zitx_FLASH.ld#L153-L169), [Src/sysmem.c:53-79](../../sysmem.c#L53-L79)
 - **Mechanism:**
   In `stm32h563zitx_FLASH.ld`:
   ```ld
@@ -400,7 +400,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ### 4.2 Medium-Severity Defects & Edge Cases (B11 – B12)
 
 #### [B11] Missing Buffer Overflow Guard in `low_level_output`
-- **Location:** [Drivers/EthDrv/eth_drv_lwip.c:210, 222-223](../../Drivers/EthDrv/eth_drv_lwip.c#L210)
+- **Location:** [Drivers/EthDrv/eth_drv_lwip.c:210, 222-223](../../../../Drivers/EthDrv/eth_drv_lwip.c#L210)
 - **Mechanism:**
   `low_level_output()` concatenates pbuf segments into `static u8_t concat_buf[ETH_TX_BUF_SIZE]`:
   ```c
@@ -418,7 +418,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
   ```
 
 #### [B12] Ineffective Left-Trim in `get_line()`
-- **Location:** [Src/cliutils/cli.c:411-413](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L411-L413)
+- **Location:** [Src/cliutils/cli.c:411-413](../../cli/cli.c#L411-L413)
 - **Mechanism:**
   ```c
   while ((*pStr) <= ' ' && (*pStr != '\0')) {
@@ -433,7 +433,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 ### 4.3 Minor Defects & Code Polish (B13)
 
 #### [B13] Missing Newline in PTP Hardware Initialization Banner
-- **Location:** [Src/flexptp_port/ptp_port_stm32h563.c:105](../../projects/flexptp_threadx_netx_demo/ptp/ptp_port_stm32h563.c#L105)
+- **Location:** [Src/flexptp_port/ptp_port_stm32h563.c:105](../../ptp/ptp_port_stm32h563.c#L105)
 - **Description:** `MSG("Turning PTP on!");` lacks a trailing `\n`. The next log output concatenates directly onto the same line without carriage return.
 - **Remediation:** Change to `MSG("Turning PTP on!\n");`.
 
@@ -447,7 +447,7 @@ This document numbers every finding, evaluates the architecture, resolves docume
 - **Recommendation:** Change `FLEXPTP_INITIAL_PROFILE` in `main.c` to `"default"` (UDP/IPv4 E2E) or make profile selection persistent in flash option bytes.
 
 ### [U2] Status of EtherLib Stack & Missing Linker Placement
-- **Current State:** The codebase contains partial support for Epagris' in-house `EtherLib` stack ([Inc/etherlib_options.h](../../Inc/etherlib_options.h), [Src/etherlib_options.c](../../Src/etherlib_options.c), [Drivers/EthDrv/eth_drv_etherlib.c](../../Drivers/EthDrv/eth_drv_etherlib.c)). However, EtherLib is uncompiled by default, has never been built on Cortex-M33, lacks a linker placement for `.ETHLibPool`, and uses a 1536-byte buffer size instead of 1528.
+- **Current State:** The codebase contains partial support for Epagris' in-house `EtherLib` stack ([Inc/etherlib_options.h](../../../../Inc/etherlib_options.h), [Src/etherlib_options.c](../../../../Src/etherlib_options.c), [Drivers/EthDrv/eth_drv_etherlib.c](../../../../Drivers/EthDrv/eth_drv_etherlib.c)). However, EtherLib is uncompiled by default, has never been built on Cortex-M33, lacks a linker placement for `.ETHLibPool`, and uses a 1536-byte buffer size instead of 1528.
 - **Risk:** Attempting to switch `ETH_STACK="ETHERLIB"` will result in linker orphan placement and untested driver behavior.
 
 ### [U3] First-Time Target: flexPTP on ARMv8-M / Cortex-M33
@@ -506,36 +506,36 @@ This document numbers every finding, evaluates the architecture, resolves docume
 The following checklist tracks every identified item across all categories, mapped directly to its unique Finding ID:
 
 ### Priority 1: Critical Stability & Concurrency Fixes (Immediate)
-- [ ] **[ACT-01]** **Ref: [B1]** — Fix recursive mutex deadlock in [Src/cliutils/cli.c:56](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L56): Initialize `modifyMtx` with `osMutexRecursive`.
-- [ ] **[ACT-02]** **Ref: [B3]** — Fix Write-1-to-Clear status corruption in [Drivers/EthDrv/mac_drv.c:522-540](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L522-L540): Replace `SET_BIT` with direct assignment `WRITE_REG(ETH->DMACSR, ...)`.
-- [ ] **[ACT-03]** **Ref: [B2]** — Add bounded timeout / yield in [Drivers/EthDrv/mac_drv.c:552](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L552) to prevent infinite CPU spin on descriptor exhaustion.
-- [ ] **[ACT-04]** **Ref: [B4]** — Fix sequence delta calculation in [Drivers/EthDrv/mac_drv.c:473](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L473) to `(int16_t)(txCntr - state->txCntAcked)`.
-- [ ] **[ACT-05]** **Ref: [B5]** — Add array bounds check on `paramIdx < sizeof(escParam)` in [Src/cliutils/cli.c:396](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L396).
-- [ ] **[ACT-06]** **Ref: [B6]** — Change loop boundary to `len < maxLen` in [Src/standard_output/standard_output.c:16](../../projects/flexptp_threadx_netx_demo/standard_output/standard_output.c#L16).
-- [ ] **[ACT-07]** **Ref: [B10], [I3]** — Reorder [stm32h563zitx_FLASH.ld:153-169](../../projects/flexptp_threadx_netx_demo/startup/stm32h563zitx_FLASH.ld#L153-L169) to place `.FreeRTOS_sec` before `._user_heap_stack`.
+- [ ] **[ACT-01]** **Ref: [B1]** — Fix recursive mutex deadlock in [Src/cliutils/cli.c:56](../../cli/cli.c#L56): Initialize `modifyMtx` with `osMutexRecursive`.
+- [ ] **[ACT-02]** **Ref: [B3]** — Fix Write-1-to-Clear status corruption in [Drivers/EthDrv/mac_drv.c:522-540](../../eth/mac_drv.c#L522-L540): Replace `SET_BIT` with direct assignment `WRITE_REG(ETH->DMACSR, ...)`.
+- [ ] **[ACT-03]** **Ref: [B2]** — Add bounded timeout / yield in [Drivers/EthDrv/mac_drv.c:552](../../eth/mac_drv.c#L552) to prevent infinite CPU spin on descriptor exhaustion.
+- [ ] **[ACT-04]** **Ref: [B4]** — Fix sequence delta calculation in [Drivers/EthDrv/mac_drv.c:473](../../eth/mac_drv.c#L473) to `(int16_t)(txCntr - state->txCntAcked)`.
+- [ ] **[ACT-05]** **Ref: [B5]** — Add array bounds check on `paramIdx < sizeof(escParam)` in [Src/cliutils/cli.c:396](../../cli/cli.c#L396).
+- [ ] **[ACT-06]** **Ref: [B6]** — Change loop boundary to `len < maxLen` in [Src/standard_output/standard_output.c:16](../../standard_output/standard_output.c#L16).
+- [ ] **[ACT-07]** **Ref: [B10], [I3]** — Reorder [stm32h563zitx_FLASH.ld:153-169](../../startup/stm32h563zitx_FLASH.ld#L153-L169) to place `.FreeRTOS_sec` before `._user_heap_stack`.
 
 ### Priority 2: Robustness & Thread Safety (High)
-- [ ] **[ACT-08]** **Ref: [B7], [I5]** — Add mutex synchronization or critical section around `lineBuf` in [Src/standard_output/standard_output.c:33](../../projects/flexptp_threadx_netx_demo/standard_output/standard_output.c#L33).
-- [ ] **[ACT-09]** **Ref: [B8]** — Add timeout counter to `phy_soft_reset()` loop in [Drivers/EthDrv/phy_drv/phy_common.c:441](../../projects/flexptp_threadx_netx_demo/eth/phy_drv/phy_common.c#L441).
-- [ ] **[ACT-10]** **Ref: [B9]** — Add null-check for `phyFetchLinkStatusCb` in [Drivers/EthDrv/phy_drv/phy_common.c:515](../../projects/flexptp_threadx_netx_demo/eth/phy_drv/phy_common.c#L515).
-- [ ] **[ACT-11]** **Ref: [B11]** — Add check for `p->tot_len <= ETH_TX_BUF_SIZE` in [Drivers/EthDrv/eth_drv_lwip.c:218](../../Drivers/EthDrv/eth_drv_lwip.c#L218).
-- [ ] **[ACT-12]** **Ref: [B12]** — Fix left-trim pointer bug in `get_line()` in [Src/cliutils/cli.c:411-413](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L411-L413).
+- [ ] **[ACT-08]** **Ref: [B7], [I5]** — Add mutex synchronization or critical section around `lineBuf` in [Src/standard_output/standard_output.c:33](../../standard_output/standard_output.c#L33).
+- [ ] **[ACT-09]** **Ref: [B8]** — Add timeout counter to `phy_soft_reset()` loop in [Drivers/EthDrv/phy_drv/phy_common.c:441](../../eth/phy_drv/phy_common.c#L441).
+- [ ] **[ACT-10]** **Ref: [B9]** — Add null-check for `phyFetchLinkStatusCb` in [Drivers/EthDrv/phy_drv/phy_common.c:515](../../eth/phy_drv/phy_common.c#L515).
+- [ ] **[ACT-11]** **Ref: [B11]** — Add check for `p->tot_len <= ETH_TX_BUF_SIZE` in [Drivers/EthDrv/eth_drv_lwip.c:218](../../../../Drivers/EthDrv/eth_drv_lwip.c#L218).
+- [ ] **[ACT-12]** **Ref: [B12]** — Fix left-trim pointer bug in `get_line()` in [Src/cliutils/cli.c:411-413](../../cli/cli.c#L411-L413).
 
 ### Priority 3: Build System & Documentation Sync (Medium)
-- [ ] **[ACT-13]** **Ref: [D1]** — Correct comment in [Src/main.c:83-85](../../projects/flexptp_threadx_netx_demo/main.c#L83-L85) regarding `pll1_q_ck` vs. HCLK.
-- [ ] **[ACT-14]** **Ref: [D2], [I4]** — Remove unconditional `DEBUG` definition in [CMakeLists.txt:93](../../CMakeLists.txt#L93).
-- [ ] **[ACT-15]** **Ref: [D3], [I4]** — Update Release preset compiler flags in [CMakeLists.txt:157](../../CMakeLists.txt#L157) from `-Og` to `-O2` (or `-Os`).
-- [ ] **[ACT-16]** **Ref: [D4], [I4]** — Remove `-u _printf_float`, `-lstdc++`, and `-lsupc++` from [CMakeLists.txt:166, 171-172](../../CMakeLists.txt#L166).
-- [ ] **[ACT-17]** **Ref: [D5]** — Remove redundant `main.c`, `syscall.c`, `sysmem.c` from [Src/CMakeLists.txt:1-13](../../projects/flexptp_threadx_netx_demo/CMakeLists.txt#L1-L13).
-- [ ] **[ACT-18]** **Ref: [U1]** — Change `FLEXPTP_INITIAL_PROFILE` in [Src/main.c:27](../../projects/flexptp_threadx_netx_demo/main.c#L27) to `"default"` for out-of-the-box switch compatibility.
+- [ ] **[ACT-13]** **Ref: [D1]** — Correct comment in [Src/main.c:83-85](../../main.c#L83-L85) regarding `pll1_q_ck` vs. HCLK.
+- [ ] **[ACT-14]** **Ref: [D2], [I4]** — Remove unconditional `DEBUG` definition in [CMakeLists.txt:93](../../../../CMakeLists.txt#L93).
+- [ ] **[ACT-15]** **Ref: [D3], [I4]** — Update Release preset compiler flags in [CMakeLists.txt:157](../../../../CMakeLists.txt#L157) from `-Og` to `-O2` (or `-Os`).
+- [ ] **[ACT-16]** **Ref: [D4], [I4]** — Remove `-u _printf_float`, `-lstdc++`, and `-lsupc++` from [CMakeLists.txt:166, 171-172](../../../../CMakeLists.txt#L166).
+- [ ] **[ACT-17]** **Ref: [D5]** — Remove redundant `main.c`, `syscall.c`, `sysmem.c` from [Src/CMakeLists.txt:1-13](../../CMakeLists.txt#L1-L13).
+- [ ] **[ACT-18]** **Ref: [U1]** — Change `FLEXPTP_INITIAL_PROFILE` in [Src/main.c:27](../../main.c#L27) to `"default"` for out-of-the-box switch compatibility.
 - [ ] **[ACT-19]** **Ref: [U2]** — Add an explicit `NOLOAD` placement for `.ETHLibPool` in `SRAM3` within `stm32h563zitx_FLASH.ld` if EtherLib support is activated.
 
 ### Priority 4: Housekeeping, Optimization & Upstream Polish (Low)
-- [ ] **[ACT-20]** **Ref: [B13]** — Add `\n` to `MSG("Turning PTP on!\n")` in [Src/flexptp_port/ptp_port_stm32h563.c:105](../../projects/flexptp_threadx_netx_demo/ptp/ptp_port_stm32h563.c#L105).
-- [ ] **[ACT-21]** **Ref: [D6]** — Fix `"currenty"` to `"currently"` in [Src/main.c:133](../../projects/flexptp_threadx_netx_demo/main.c#L133).
-- [ ] **[ACT-22]** **Ref: [D7]** — Fix `"PPL_PULSETRAIN"` to `"PPS_PULSETRAIN"` in [Src/flexptp_port/ptp_port_stm32h563.c:71](../../projects/flexptp_threadx_netx_demo/ptp/ptp_port_stm32h563.c#L71).
-- [ ] **[ACT-23]** **Ref: [D8]** — Swap inverted comments in [Inc/stm32h5xx_hal_conf.h:268-269](../../projects/flexptp_threadx_netx_demo/stm32h5xx_hal_conf.h#L268-L269).
-- [ ] **[ACT-24]** **Ref: [I2]** — Wire `__io_putchar` to `MSGchar` in [Src/syscall.c:35](../../projects/flexptp_threadx_netx_demo/syscall.c#L35).
-- [ ] **[ACT-25]** **Ref: [I1]** — Refactor `low_level_output` in [Drivers/EthDrv/eth_drv_lwip.c](../../Drivers/EthDrv/eth_drv_lwip.c) to copy pbuf fragments directly into DMA buffers (Zero-Copy TX).
+- [ ] **[ACT-20]** **Ref: [B13]** — Add `\n` to `MSG("Turning PTP on!\n")` in [Src/flexptp_port/ptp_port_stm32h563.c:105](../../ptp/ptp_port_stm32h563.c#L105).
+- [ ] **[ACT-21]** **Ref: [D6]** — Fix `"currenty"` to `"currently"` in [Src/main.c:133](../../main.c#L133).
+- [ ] **[ACT-22]** **Ref: [D7]** — Fix `"PPL_PULSETRAIN"` to `"PPS_PULSETRAIN"` in [Src/flexptp_port/ptp_port_stm32h563.c:71](../../ptp/ptp_port_stm32h563.c#L71).
+- [ ] **[ACT-23]** **Ref: [D8]** — Swap inverted comments in [Inc/stm32h5xx_hal_conf.h:268-269](../../stm32h5xx_hal_conf.h#L268-L269).
+- [ ] **[ACT-24]** **Ref: [I2]** — Wire `__io_putchar` to `MSGchar` in [Src/syscall.c:35](../../syscall.c#L35).
+- [ ] **[ACT-25]** **Ref: [I1]** — Refactor `low_level_output` in [Drivers/EthDrv/eth_drv_lwip.c](../../../../Drivers/EthDrv/eth_drv_lwip.c) to copy pbuf fragments directly into DMA buffers (Zero-Copy TX).
 - [ ] **[ACT-26]** **Ref: [U4]** — Perform oscilloscope validation of 1PPS pulse on `PG8` (CN12 pin 66) and characterization against a PHC-capable grandmaster.
 - [ ] **[ACT-27]** **Ref: [I6]** — Submit upstream pull requests for `patches/flexptp/0002-servo-nan-latch-fix.patch` and `patches/embfmt/0001-formatting-fixes.patch`.

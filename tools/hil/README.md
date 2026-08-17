@@ -2,7 +2,7 @@
 
 Drives the board's serial CLI from the host so that every stage of a port can be verified on
 real hardware without re-typing commands. Built for the ThreadX/NetX Duo port
-([`docs/threadx_porting_plan.md`](../../docs/threadx_porting_plan.md)), but it is not specific
+([`docs/threadx_porting_plan.md`](../../projects/flexptp_threadx_netx_demo/docs/threadx_porting_plan.md)), but it is not specific
 to it — it is a regression suite for this firmware.
 
 ```
@@ -88,7 +88,7 @@ sudo ptp4l -i enp5s0 -S -m --serverOnly=1 --priority1=100
 clock — check with `ethtool -T <iface> | grep 'PTP Hardware Clock'`. On this bench the
 board-facing NIC is an RTL8125 with none, which puts the offset floor in the tens of
 microseconds. That is the host, not the board. See
-[`docs/host_ptp_setup.md`](../../docs/host_ptp_setup.md).
+[`docs/host_ptp_setup.md`](../../projects/flexptp_threadx_netx_demo/docs/host_ptp_setup.md).
 
 ## The baseline
 
@@ -124,6 +124,6 @@ Two conventions worth keeping:
 It exists because flexPTP's CMSIS-RTOS2 binding invokes the transmit-timestamp callback from
 an ISR with a blocking enqueue, which fails silently and drops every `t3` — and a servo
 missing `t3` can still *look* like it is converging. See
-[`docs/threadx_netxduo_feasibility.md`](../../docs/threadx_netxduo_feasibility.md).
+[`docs/threadx_netxduo_feasibility.md`](../../projects/flexptp_threadx_netx_demo/docs/threadx_netxduo_feasibility.md).
 
 Check the timestamps are flowing before you believe the offset.

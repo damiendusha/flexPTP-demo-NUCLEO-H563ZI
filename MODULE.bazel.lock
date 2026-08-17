@@ -247,7 +247,7 @@
     },
     "//bazel:repositories.bzl%vendored": {
       "general": {
-        "bzlTransitiveDigest": "68SO2faVho61C/6n5PhGsWjr1tLF4azu5BBrJyY9wM8=",
+        "bzlTransitiveDigest": "lFcx4eXpjHweYYvYMNJuoYwmV7zI3H/vzLy0TDuAgSI=",
         "usagesDigest": "TXFRr/ekOJ4WkENAUY1PQ7JCVxHUmRqoFm+HcCVY/SY=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"

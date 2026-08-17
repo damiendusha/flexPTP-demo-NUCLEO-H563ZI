@@ -647,7 +647,7 @@ def check_ptp_ts(board: Board, ctx: Context) -> CheckResult:
     """Both hardware timestamps -- receive AND transmit -- are being captured.
 
     THIS IS THE CHECK THAT MUST RUN BEFORE ptp_sync, and the reason is finding 1 of
-    docs/threadx_netxduo_feasibility.md: flexPTP's CMSIS-RTOS2 binding invokes the
+    projects/flexptp_threadx_netx_demo/docs/threadx_netxduo_feasibility.md: flexPTP's CMSIS-RTOS2 binding invokes the
     transmit-timestamp callback from an ISR with a blocking enqueue, which ST's wrapper
     rejects, so every t3 is silently discarded. A servo missing t3 can still *look* like it
     is converging, so a sync test alone does not exclude it.

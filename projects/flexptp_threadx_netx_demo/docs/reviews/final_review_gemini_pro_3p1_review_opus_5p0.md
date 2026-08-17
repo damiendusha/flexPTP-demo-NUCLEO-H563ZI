@@ -75,7 +75,7 @@ unchecked clock configuration, and the uncompiled EtherLib path). A verdict of
 
 **Finding 3 describes the pre-fix state as current.** It says *"Leaving it undefined falls
 back to `FLEXPTP_FREERTOS`"*. The project **does** define it —
-[`Inc/flexptp_options.h:14`](../../projects/flexptp_threadx_netx_demo/flexptp_options.h#L14) has `#define FLEXPTP_FREERTOS (1)`
+[`Inc/flexptp_options.h:14`](../../flexptp_options.h#L14) has `#define FLEXPTP_FREERTOS (1)`
 with a comment explaining that the fallback happens to be right but the choice is
 load-bearing. That was Stage 13's response to F40. The finding's *substance* (flexPTP uses
 raw FreeRTOS while the app uses CMSIS-OS2) is correct and remains true; its framing implies
@@ -179,7 +179,7 @@ host's — is right either way.
 
 *"Add a comment block … warning against enabling DCACHE"* is already done, twice: the
 linker script carries exactly that warning at the `.EthDrv_sec` placement
-([`stm32h563zitx_FLASH.ld:170-179`](../../projects/flexptp_threadx_netx_demo/startup/stm32h563zitx_FLASH.ld#L170)), and `design_doc.md`
+([`stm32h563zitx_FLASH.ld:170-179`](../../startup/stm32h563zitx_FLASH.ld#L170)), and `design_doc.md`
 devotes a [whole section](../design_doc.md#caches-and-dma-coherency) to it.
 
 The *other* half of the suggestion — an `#error` directive — is new and worth doing,

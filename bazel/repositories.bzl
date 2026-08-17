@@ -29,7 +29,7 @@ def _vendored_impl(_mctx):
     )
 
     # Eclipse ThreadX, not ST's stm32-mw-threadx fork -- see
-    # docs/threadx_netxduo_feasibility.md, "Choosing the supply chain".
+    # projects/flexptp_threadx_netx_demo/docs/threadx_netxduo_feasibility.md, "Choosing the supply chain".
     new_git_repository(
         name = "threadx",
         build_file = "//bazel:threadx.BUILD",

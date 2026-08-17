@@ -63,8 +63,8 @@ stated separately in each item.
 
 #### N1 — The FIFO reports empty when it is exactly full *(NEW)*
 
-[`blocking_fifo.c:26-40`](../../projects/flexptp_threadx_netx_demo/blocking_io/blocking_fifo.c#L26) ·
-[`blocking_fifo.c:42-95`](../../projects/flexptp_threadx_netx_demo/blocking_io/blocking_fifo.c#L42)
+[`blocking_fifo.c:26-40`](../../blocking_io/blocking_fifo.c#L26) ·
+[`blocking_fifo.c:42-95`](../../blocking_io/blocking_fifo.c#L42)
 
 `BFifo` tracks only `readIdx` and `writeIdx`, and derives occupancy from them:
 
@@ -110,7 +110,7 @@ transmitted twice.
 **Reachability.** The console FIFO drains at 11.5 KB/s (115200 8N1), so filling 16 KB needs a
 burst that outruns the UART — not normal PTP logging, but easily a `?` help dump chased by
 several `ptp log … on` streams, or any future code that prints in a loop. The CLI *input* FIFO
-([`cli.c:39-41`](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L39), 512 bytes) has the same defect and a far lower
+([`cli.c:39-41`](../../cli/cli.c#L39), 512 bytes) has the same defect and a far lower
 bar: a 512-byte paste into the terminal reaches it directly.
 
 Note that P5.4 made this **more** likely, not less. `bfifo_push_all()` loops until everything
@@ -125,8 +125,8 @@ functions. Whichever is chosen, `bfifo_push()` must never be able to make `write
 
 #### N2 — The TX ownership wait is compiled away at `-O2` and above *(NEW)*
 
-[`mac_drv.c:596-607`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L596) ·
-[`mac_drv.h:29-52`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.h#L29)
+[`mac_drv.c:596-607`](../../eth/mac_drv.c#L596) ·
+[`mac_drv.h:29-52`](../../eth/mac_drv.h#L29)
 
 P2.3 bounded the descriptor-ownership wait in `ETHHW_Transmit()` with the driver's spin-count
 idiom:
@@ -153,7 +153,7 @@ the frame is dropped immediately, with no retry at all. That inverts the trade P
 verified against ("healthy hardware: 0 drops") — on a busy link the drop rate becomes whatever
 fraction of transmits arrive while the ring is briefly behind.
 
-This matters *now* because [`CMakeLists.txt:160-185`](../../CMakeLists.txt#L160) explicitly
+This matters *now* because [`CMakeLists.txt:160-185`](../../../../CMakeLists.txt#L160) explicitly
 advertises `-O2` and `-Os` as measured, hardware-tested, known-good alternatives, and wires
 `-O2` into `RelWithDebInfo`. The measurement is real; what it did not cover is that the retry
 loop is not present in those images.
@@ -169,9 +169,9 @@ three disassemblies afterwards is a five-minute job and should be added next to 
 
 #### N3 — A receive-buffer-unavailable stall is permanent, and the flag that reports it is discarded *(NEW)*
 
-[`mac_drv.c:547-579`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L547) ·
-[`mac_drv.c:253-265`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L253) ·
-[`mac_drv.c:172-176`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L172)
+[`mac_drv.c:547-579`](../../eth/mac_drv.c#L547) ·
+[`mac_drv.c:253-265`](../../eth/mac_drv.c#L253) ·
+[`mac_drv.c:172-176`](../../eth/mac_drv.c#L172)
 
 The RX tail pointer is written exactly once, at init, with the comment `// tail pointer WON'T
 STOP`:
@@ -223,8 +223,8 @@ constraint applies as for every other `MSG()` in this file; see [N6](#n6--msg-is
 
 #### N4 — A recognised vendor with an unrecognised model dereferences NULL at boot *(NEW)*
 
-[`phy_common.c:21`](../../projects/flexptp_threadx_netx_demo/eth/phy_drv/phy_common.c#L21) ·
-[`phy_common.c:382-451`](../../projects/flexptp_threadx_netx_demo/eth/phy_drv/phy_common.c#L382)
+[`phy_common.c:21`](../../eth/phy_drv/phy_common.c#L21) ·
+[`phy_common.c:382-451`](../../eth/phy_drv/phy_common.c#L382)
 
 ```c
 static const char *phyName = NULL;
@@ -258,8 +258,8 @@ outer default. Both remaining reads then behave.
 
 #### N5 — Every lwIP assertion is a silent no-op *(NEW)*
 
-[`cc.h:83`](../../Modules/lwip_port/arch/cc.h#L83) · [`syscall.c:35`](../../projects/flexptp_threadx_netx_demo/syscall.c#L35) ·
-[`syscall.c:80-90`](../../projects/flexptp_threadx_netx_demo/syscall.c#L80) · [`lwipopts.h:48-62`](../../Inc/lwipopts.h#L48)
+[`cc.h:83`](../../../../Modules/lwip_port/arch/cc.h#L83) · [`syscall.c:35`](../../syscall.c#L35) ·
+[`syscall.c:80-90`](../../syscall.c#L80) · [`lwipopts.h:48-62`](../../../../Inc/lwipopts.h#L48)
 
 The port's assertion macro is the lwIP stock one:
 
@@ -318,9 +318,9 @@ flash back as `printf` drops out of the link.
 
 #### N6 — `MSG()` is documented as ISR-safe in one file and ISR-unsafe in another *(NEW)*
 
-[`standard_output.c:33-46`](../../projects/flexptp_threadx_netx_demo/standard_output/standard_output.c#L33) ·
-[`serial_io.c:120-131`](../../projects/flexptp_threadx_netx_demo/standard_output/serial_io.c#L120) ·
-[`mac_drv.c:9-17`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L9)
+[`standard_output.c:33-46`](../../standard_output/standard_output.c#L33) ·
+[`serial_io.c:120-131`](../../standard_output/serial_io.c#L120) ·
+[`mac_drv.c:9-17`](../../eth/mac_drv.c#L9)
 
 Three comments, written during the same review cycle, disagree:
 
@@ -333,7 +333,7 @@ Three comments, written during the same review cycle, disagree:
 
 The last one is right, and the consequence is worse than a garbled message. From interrupt
 context the CMSIS-RTOS2 shim rejects a blocking acquire outright
-([`cmsis_os2.c:1969-1972`](../../Drivers/CMSIS/CMSIS_RTOS_V2/cmsis_os2.c#L1969)):
+([`cmsis_os2.c:1969-1972`](../../../../Drivers/CMSIS/CMSIS_RTOS_V2/cmsis_os2.c#L1969)):
 `osSemaphoreAcquire(sem, osWaitForever)` returns `osErrorParameter` without taking anything.
 `bfifo_push()` ignores that return and proceeds unserialised — and if the FIFO has no free
 space it returns 0, at which point `bfifo_push_all()`'s `while (pushLeft > 0)` loop **never
@@ -356,8 +356,8 @@ three comments so they agree.
 
 #### N7 — `bfifo_pop()` hands the write token to a second writer *(NEW)*
 
-[`blocking_fifo.c:142`](../../projects/flexptp_threadx_netx_demo/blocking_io/blocking_fifo.c#L142) ·
-[`blocking_fifo.c:49`](../../projects/flexptp_threadx_netx_demo/blocking_io/blocking_fifo.c#L49)
+[`blocking_fifo.c:142`](../../blocking_io/blocking_fifo.c#L142) ·
+[`blocking_fifo.c:49`](../../blocking_io/blocking_fifo.c#L49)
 
 `writeSem` is created with count 1 and is used as a writer mutex: `bfifo_push()` acquires it on
 entry and releases it on exit only if space remains. But `bfifo_pop()` releases it
@@ -376,7 +376,7 @@ mid-byte-range and one message is partly overwritten.
 
 There is more than one producer in practice, and the `MSG()` mutex does not cover them:
 `MSGraw()` and `MSGchar()` go straight to `serial_io_write()`
-([`standard_output.c:97-103`](../../projects/flexptp_threadx_netx_demo/standard_output/standard_output.c#L97)), and the CLI
+([`standard_output.c:97-103`](../../standard_output/standard_output.c#L97)), and the CLI
 echoes every keystroke that way from the `cli` thread while other threads log.
 
 **Fix.** The write token is doing two jobs — "there is space" and "no other writer" — and they
@@ -386,7 +386,7 @@ both are worth fixing in one pass over a 161-line file.
 
 #### N8 — `tokenize_cli_line()` overflows its copy by one byte, and is shared across threads *(NEW)*
 
-[`cli.c:78-106`](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L78) · [`cli.c:453`](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L453)
+[`cli.c:78-106`](../../cli/cli.c#L78) · [`cli.c:453`](../../cli/cli.c#L453)
 
 ```c
 #define CLI_LINEBUF_LENGTH (191)
@@ -415,8 +415,8 @@ hazard for free.
 
 #### N9 — No memory barriers at descriptor handoff *(NEW)*
 
-[`mac_drv.c:258-264`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L258) ·
-[`mac_drv.c:632-640`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L632)
+[`mac_drv.c:258-264`](../../eth/mac_drv.c#L258) ·
+[`mac_drv.c:632-640`](../../eth/mac_drv.c#L632)
 
 Both handoffs to the DMA write the payload/buffer fields and then the `OWN` bit, with nothing
 in between:
@@ -447,7 +447,7 @@ this makes the ring accesses correct by construction rather than by fabric behav
 
 #### N10 — The EtherLib RX path retires a descriptor for every allocation failure *(NEW)*
 
-[`eth_drv_etherlib.c:129-158`](../../Drivers/EthDrv/eth_drv_etherlib.c#L129)
+[`eth_drv_etherlib.c:129-158`](../../../../Drivers/EthDrv/eth_drv_etherlib.c#L129)
 
 ```c
 uint8_t *plBuf = dynmem_alloc(size);
@@ -463,7 +463,7 @@ thread now owns it and will restore it" — but on this path nobody took it. Eac
 failure permanently removes one descriptor from the ring; 24 failures and reception stops for
 good, which is [N3](#n3--a-receive-buffer-unavailable-stall-is-permanent-and-the-flag-that-reports-it-is-discarded-new)
 arrived at by a different route. The lwIP path gets this right — its queue-full branch returns
-`ETHHW_RET_RX_PROCESSED` ([`eth_drv_lwip.c:393-397`](../../Drivers/EthDrv/eth_drv_lwip.c#L393)).
+`ETHHW_RET_RX_PROCESSED` ([`eth_drv_lwip.c:393-397`](../../../../Drivers/EthDrv/eth_drv_lwip.c#L393)).
 
 Not compiled today. P5.21/P5.22 prepared this path so that its first build is not a debugging
 session; this is one more thing to fix while that is still cheap. **Fix:** return
@@ -472,7 +472,7 @@ session; this is one more thing to fix while that is still cheap. **Fix:** retur
 
 #### N11 — A received packet sizes a stack array *(NEW)*
 
-[`ethernet_etherlib.c:7-13`](../../Src/ethernet/ethernet_etherlib.c#L7)
+[`ethernet_etherlib.c:7-13`](../../../../Src/ethernet/ethernet_etherlib.c#L7)
 
 ```c
 int udp_recv_cb(const Pckt *packet, PcktSieveLayerTag tag) {
@@ -488,8 +488,8 @@ compiled, cheap to fix now. **Fix:** a fixed bounded buffer and `MIN(payloadSize
 
 #### N12 — `strncpy` without termination in two CLI paths *(NEW)*
 
-[`cli.c:94`](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L94) · [`cli.c:102`](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L102) ·
-[`cli.c:506`](../../projects/flexptp_threadx_netx_demo/cli/cli.c#L506)
+[`cli.c:94`](../../cli/cli.c#L94) · [`cli.c:102`](../../cli/cli.c#L102) ·
+[`cli.c:506`](../../cli/cli.c#L506)
 
 `strncpy(&ppTok[i][0], pTok, tokMaxLen)` leaves the token unterminated when it is exactly
 `MAX_TOK_LEN` (32) characters or longer; every later `strcmp` then runs off the end of the
@@ -500,7 +500,7 @@ places.
 
 #### N13 — The FCS is never stripped, so every frame is four bytes longer than it was on the wire *(NEW)*
 
-[`mac_drv.c:143`](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L143)
+[`mac_drv.c:143`](../../eth/mac_drv.c#L143)
 
 ```c
 WRITE_REG(eth->MACCR, mode | ETH_MACCR_IPC);
@@ -521,7 +521,7 @@ appears to be.
 
 #### N14 — A dropped frame is reported to lwIP as sent *(NEW)*
 
-[`eth_drv_lwip.c:290-308`](../../Drivers/EthDrv/eth_drv_lwip.c#L290)
+[`eth_drv_lwip.c:290-308`](../../../../Drivers/EthDrv/eth_drv_lwip.c#L290)
 
 `ETHHW_Transmit()` can drop the frame (descriptor busy — and with [N2](#n2--the-tx-ownership-wait-is-compiled-away-at--o2-and-above-new)
 that happens on the first try at `-O2`), but it returns `void`, and `low_level_output()`
@@ -533,7 +533,7 @@ case (not `ERR_MEM`).
 
 #### N15 — The `LWIP_PROVIDE_ERRNO` undef does not take effect *(NEW)*
 
-[`lwipopts.h:238-239`](../../Inc/lwipopts.h#L238) · [`cc.h:42`](../../Modules/lwip_port/arch/cc.h#L42)
+[`lwipopts.h:238-239`](../../../../Inc/lwipopts.h#L238) · [`cc.h:42`](../../../../Modules/lwip_port/arch/cc.h#L42)
 
 ```c
 /* LIBC ships errno */
@@ -549,7 +549,7 @@ the comment claims a configuration the code does not have. **Fix:** delete the `
 
 #### N16 — CI cannot fail on a failed build *(NEW)*
 
-[`.github/workflows/ci.yml:35`](../../.github/workflows/ci.yml#L35)
+[`.github/workflows/ci.yml:35`](../../../../.github/workflows/ci.yml#L35)
 
 ```yaml
 run: ./build.sh -t ${{ matrix.config }} -b build/${{ matrix.config }} 2>&1 | tee build.log
@@ -606,10 +606,10 @@ second. Pick one.
   `submodules: recursive` to that job or teach the checker to skip submodule paths. (This
   review deliberately links to `Modules/` targets only in prose, not as Markdown links, for
   this reason.)
-- **`-Wl,--gc-sections` is set in `CMAKE_C_FLAGS`** ([`cmake/gcc-arm-none-eabi.cmake:6`](../../cmake/gcc-arm-none-eabi.cmake#L6))
+- **`-Wl,--gc-sections` is set in `CMAKE_C_FLAGS`** ([`cmake/gcc-arm-none-eabi.cmake:6`](../../../../cmake/gcc-arm-none-eabi.cmake#L6))
   rather than in the link options, so it is passed to every compile invocation as well. Ignored
   by the compiler; cosmetic, inherited from the ST template.
-- **`lwipopts.h` carries a full block of `LWIP_HTTPD_*` options** ([`lwipopts.h:165-175`](../../Inc/lwipopts.h#L165))
+- **`lwipopts.h` carries a full block of `LWIP_HTTPD_*` options** ([`lwipopts.h:165-175`](../../../../Inc/lwipopts.h#L165))
   for an httpd that is not compiled, and `MEMP_NUM_PARALLEL_HTTPD_CONNS` with it. Harmless,
   but it reads as configuration and is not.
 - **`_Min_Heap_Size` in the linker script is decorative.** `_sbrk()` bounds the newlib heap

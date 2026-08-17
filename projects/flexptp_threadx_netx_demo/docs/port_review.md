@@ -589,7 +589,7 @@ frequency error, measured and corrected.
 > | `corr_ppb` column | servo log line | the **per-cycle increment** the servo applies this cycle. Mean tends toward zero once locked; it is a residual drive, not an offset |
 > | `(addend − 0xCCCCCCCC) / K` | not logged; derive it | the **total** frequency offset now applied, where `K` = `PTP_ADDEND_CORR_PER_PPB_F` ≈ 3.436 addend units per ppb |
 >
-> They differ because [`slave.c`](../Modules/flexptp/src/flexptp/slave.c) *accumulates*:
+> They differ because [`slave.c`](../../../Modules/flexptp/src/flexptp/slave.c) *accumulates*:
 > `compAddend = addend + (int64_t)(tuning_ppb * K)`. Confirmed against 209 strictly
 > consecutive log lines — `addend[n] − addend[n−1]` matches `corr_ppb[n] × K` with a maximum
 > residual of **1.00 unit**, exactly the `(int64_t)` truncation.
@@ -1127,7 +1127,7 @@ Three guards, because any one of them alone would have prevented this:
 | `slave.c`, `ptp_tune_clock()` | Ignore a non-finite tuning value instead of converting it to an unpredictable integer |
 
 Both are submodule changes, recorded in
-[`patches/flexptp/0002-servo-nan-latch-fix.patch`](../patches/flexptp/0002-servo-nan-latch-fix.patch).
+[`patches/flexptp/0002-servo-nan-latch-fix.patch`](../../../patches/flexptp/0002-servo-nan-latch-fix.patch).
 
 #### Verified on hardware
 
@@ -1176,7 +1176,7 @@ The mean path delay would have exposed F42 far sooner. `LEN_LONG` already reads
 why that is worse than it sounds. Now prints `nan` / `inf` / `-inf`.
 
 Recorded in
-[`patches/embfmt/0001-formatting-fixes.patch`](../patches/embfmt/0001-formatting-fixes.patch).
+[`patches/embfmt/0001-formatting-fixes.patch`](../../../patches/embfmt/0001-formatting-fixes.patch).
 Both are worth reporting upstream: they are target-independent.
 
 ### F61 — `ETHHW_ProcessRx()` re-delivers frames already queued *(RESOLVED)*
@@ -1759,7 +1759,7 @@ an ISR". Nothing in the code decided the question.
 #### What actually happened
 
 The CMSIS-RTOS2 shim refuses a blocking acquire in interrupt context and returns immediately
-([`cmsis_os2.c:1969`](../Drivers/CMSIS/CMSIS_RTOS_V2/cmsis_os2.c#L1969)), so `bfifo_push()` ran
+([`cmsis_os2.c:1969`](../../../Drivers/CMSIS/CMSIS_RTOS_V2/cmsis_os2.c#L1969)), so `bfifo_push()` ran
 unserialised and, with the FIFO full, its wait loop did not wait — it spun with interrupts
 disabled. Reproduced on hardware with a scaffold that called `MSG()` from every 64th receive
 interrupt, under a saturated console and a 500 pps ping flood:
@@ -1783,7 +1783,7 @@ for a quiet one, which is the wrong direction for this project.
 
 **The FIFO already had an unsynchronised interrupt producer.** `serial_io_rx_callback()` runs
 in the USART3 receive ISR and pushes every keystroke into the CLI's input FIFO
-([`cli.c:475`](../projects/flexptp_threadx_netx_demo/cli/cli.c#L475)). Its `osSemaphoreAcquire()` had always been failing
+([`cli.c:475`](../cli/cli.c#L475)). Its `osSemaphoreAcquire()` had always been failing
 silently there, so that push proceeded with no exclusion at all against a concurrent thread
 push. Making the acquire failure fatal — the obvious hardening — therefore *dropped every
 keystroke* and left a board that booted, printed and pinged normally with a completely dead

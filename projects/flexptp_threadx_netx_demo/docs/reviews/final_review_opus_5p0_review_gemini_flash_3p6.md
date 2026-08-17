@@ -134,7 +134,7 @@ While Claude Opus 5.0 performed an extraordinarily comprehensive review, the fol
 ---
 
 ### [Missed Finding 1] Write-1-to-Clear (w1c) Interrupt Register Corruption in `ETHHW_ISR`
-- **Location:** [Drivers/EthDrv/mac_drv.c:520-540](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L520-L540)
+- **Location:** [Drivers/EthDrv/mac_drv.c:520-540](../../eth/mac_drv.c#L520-L540)
 - **Mechanism:**
   ```c
   if (csr & ETH_DMACSR_NIS) {
@@ -159,7 +159,7 @@ While Claude Opus 5.0 performed an extraordinarily comprehensive review, the fol
 ---
 
 ### [Missed Finding 2] 16-Bit Sequence Counter Wrap-Around Arithmetic Underflow in `ETHHW_ProcessTx`
-- **Location:** [Drivers/EthDrv/mac_drv.c:473](../../projects/flexptp_threadx_netx_demo/eth/mac_drv.c#L473)
+- **Location:** [Drivers/EthDrv/mac_drv.c:473](../../eth/mac_drv.c#L473)
 - **Mechanism:**
   `txCntr` and `txCntAcked` are `uint16_t`. In `ETHHW_ProcessTx`:
   ```c
@@ -173,7 +173,7 @@ While Claude Opus 5.0 performed an extraordinarily comprehensive review, the fol
 ---
 
 ### [Missed Finding 3] Linker Script Memory Collision Risk Between Newlib Heap & FreeRTOS Heap
-- **Location:** [stm32h563zitx_FLASH.ld:153-169](../../projects/flexptp_threadx_netx_demo/startup/stm32h563zitx_FLASH.ld#L153-L169), [Src/sysmem.c:53-79](../../projects/flexptp_threadx_netx_demo/sysmem.c#L53-L79)
+- **Location:** [stm32h563zitx_FLASH.ld:153-169](../../startup/stm32h563zitx_FLASH.ld#L153-L169), [Src/sysmem.c:53-79](../../sysmem.c#L53-L79)
 - **Mechanism:**
   In `stm32h563zitx_FLASH.ld`:
   ```ld
@@ -201,7 +201,7 @@ While Claude Opus 5.0 performed an extraordinarily comprehensive review, the fol
 ---
 
 ### [Missed Finding 4] Unused Float Printf & C++ Standard Library Linker Flags
-- **Location:** [CMakeLists.txt:166, 171-172](../../CMakeLists.txt#L166)
+- **Location:** [CMakeLists.txt:166, 171-172](../../../../CMakeLists.txt#L166)
 - **Mechanism:**
   `CMakeLists.txt` passes `-u _printf_float` and links `-lstdc++ -lsupc++`. The project is written in pure C and uses `embfmt` / `MSG()` exclusively, making Newlib float formatting and C++ runtime support dead code.
 - **Remediation:** Remove `-u _printf_float`, `-lstdc++`, and `-lsupc++` from `target_link_options`.

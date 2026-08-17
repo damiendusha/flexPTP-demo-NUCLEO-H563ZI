@@ -13,7 +13,7 @@ about *which* profile to pick.
 ## The short answer
 
 **Run `default` unless you have a reason not to.** It is the boot preset
-([`FLEXPTP_INITIAL_PROFILE`](../projects/flexptp_threadx_netx_demo/main.c)), the one proven on this port, the only one that
+([`FLEXPTP_INITIAL_PROFILE`](../main.c)), the one proven on this port, the only one that
 survives ordinary switches, and the one a stock `ptp4l` with no config file already matches.
 
 Pick `gPTP` only if the entire path is 802.1AS-capable or a direct cable, and `defp2p` only
@@ -21,9 +21,9 @@ on a direct cable or an all-peer-delay fabric.
 
 ## The three presets
 
-Defined in [`ptp_profile_presets.c`](../Modules/flexptp/src/flexptp/ptp_profile_presets.c),
+Defined in [`ptp_profile_presets.c`](../../../Modules/flexptp/src/flexptp/ptp_profile_presets.c),
 fields per `PtpProfile` in
-[`ptp_types.h`](../Modules/flexptp/src/flexptp/ptp_types.h):
+[`ptp_types.h`](../../../Modules/flexptp/src/flexptp/ptp_types.h):
 
 | | **`default`** | **`gPTP`** | **`defp2p`** |
 |---|---|---|---|
@@ -199,7 +199,7 @@ With `ptp log def on` the board prints one line per Sync. Two columns matter:
   free-running, however healthy the state machine looks. That was [F59](port_review.md).
 
 `corr_ppb` is an *increment*, not the total correction in force — the addend accumulates it
-(`addend += corr_ppb × K` in [`slave.c`](../Modules/flexptp/src/flexptp/slave.c)). So once
+(`addend += corr_ppb × K` in [`slave.c`](../../../Modules/flexptp/src/flexptp/slave.c)). So once
 the clock is locked `corr_ppb` hovers near zero, and reading it as the oscillator's error
 understates that error by orders of magnitude. The total correction currently applied is
 
@@ -213,7 +213,7 @@ an unremarkable magnitude for an ordinary crystal. Conflating the two quantities
 a wrong figure in the docs for months; see [port_review.md](port_review.md).
 
 The equivalent check without logging is `ptp addend`: the nominal free-run value on this port
-is **3435973836** (`0xCCCCCCCC`, from [`flexptp_options.h`](../projects/flexptp_threadx_netx_demo/flexptp_options.h)). An
+is **3435973836** (`0xCCCCCCCC`, from [`flexptp_options.h`](../flexptp_options.h)). An
 addend still sitting exactly there means the servo has never applied a correction. Likewise
 `ptp info` showing the master clock ID equal to the board's own clock ID means it heard no
 Announce it recognised and elected itself — the classic profile-mismatch signature.
@@ -235,7 +235,7 @@ Two further limits are inherent to this board:
 
 ## Changing the boot profile
 
-The preset loaded at startup is `FLEXPTP_INITIAL_PROFILE` in [`Src/main.c`](../projects/flexptp_threadx_netx_demo/main.c),
+The preset loaded at startup is `FLEXPTP_INITIAL_PROFILE` in [`Src/main.c`](../main.c),
 applied from the `PTP_UEV_INIT_DONE` user-event callback:
 
 ```c

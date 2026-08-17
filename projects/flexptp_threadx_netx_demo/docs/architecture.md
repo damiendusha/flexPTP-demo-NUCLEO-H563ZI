@@ -71,8 +71,8 @@ source. Two submodules are the exception, and both changes are **permanent bug f
 > Because the parent repository records only a submodule's commit pointer, working-tree edits
 > inside `Modules/` are invisible to a clone and are destroyed by `git submodule update` —
 > which is why the patches are kept in-tree. Neither is target-specific; both are worth
-> reporting upstream. See [patches/flexptp/README.md](../patches/flexptp/README.md) and
-> [patches/embfmt/README.md](../patches/embfmt/README.md).
+> reporting upstream. See [patches/flexptp/README.md](../../../patches/flexptp/README.md) and
+> [patches/embfmt/README.md](../../../patches/embfmt/README.md).
 >
 > **`build.sh` applies them**, immediately after the submodule update, and **refuses to
 > build** if a submodule is neither pristine nor patched. This matters because omitting them

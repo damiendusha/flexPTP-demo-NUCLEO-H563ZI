@@ -11,10 +11,16 @@ from the STM32H743 (Cortex-M7) to the STM32H563 (Cortex-M33). It has since been 
 second time, from FreeRTOS and lwIP to **Eclipse ThreadX and Eclipse NetX Duo**, which is what
 it runs today.
 
-The porting work, the decisions behind it and every defect found along the way are documented
-in [`docs/`](docs/) — start with [`docs/architecture.md`](docs/architecture.md) for how the
-firmware fits together, or [`docs/testing_architecture.md`](docs/testing_architecture.md) for
-how it is verified.
+Documentation is **per project**: each firmware's design, defect record and testing notes live
+beside its sources, in `projects/<name>/docs/`. Only repository-level documents — the Bazel
+migration [plan](docs/bazel_migration.md) and its
+[rationale](docs/bazel_decisions.md) — are at the top.
+
+For the ThreadX + NetX Duo firmware, start with
+[`architecture.md`](projects/flexptp_threadx_netx_demo/docs/architecture.md) for how it fits
+together, or
+[`testing_architecture.md`](projects/flexptp_threadx_netx_demo/docs/testing_architecture.md)
+for how it is verified — including what each tier of testing *cannot* tell you.
 
 ### Get the sources
 
@@ -84,7 +90,7 @@ bazel test //...
 
 Two suites. The host suite needs nothing but a compiler; the hardware suite needs the board.
 What each one can and — just as importantly — **cannot** prove is set out in
-[`docs/testing_architecture.md`](docs/testing_architecture.md).
+[`docs/testing_architecture.md`](projects/flexptp_threadx_netx_demo/docs/testing_architecture.md).
 
 ### Host unit tests — no board required
 
@@ -112,7 +118,7 @@ bazel test //tools/ci:cxx_rules_test
 > downstream of the timestamp capture. Two of this port's findings were an optimisation-level
 > HardFault and a bounded wait the compiler deleted above `-Og`; the host tests compile
 > different code, with a different compiler, for a different instruction set. Roughly a
-> quarter of the findings in [`docs/port_review.md`](docs/port_review.md) are reachable only
+> quarter of the findings in [`docs/port_review.md`](projects/flexptp_threadx_netx_demo/docs/port_review.md) are reachable only
 > on hardware.
 
 ### Hardware in the loop — board required
@@ -196,13 +202,13 @@ nearest power of two from 1 Hz to 16384 Hz; `ptp pps 0` stops it.
 > "Stops it" needed a fix. The MAC's fixed-frequency PPS mode has no *disabled* encoding —
 > `PPSCTRL = 0b0000` is the **1 Hz** code — so `ptp pps 0` used to leave the pin toggling once a
 > second while the CLI reported it off. Stopping the output means leaving that mode entirely.
-> See NX-09 in [`docs/review_v1_opus_5p0.md`](docs/review_v1_opus_5p0.md).
+> See NX-09 in [`docs/review_v1_opus_5p0.md`](projects/flexptp_threadx_netx_demo/docs/review_v1_opus_5p0.md).
 
 ## Test environment
 
 To evaluate synchronization accuracy, connect the devboard to another PTP-capable device —
 a dedicated master clock, or a Linux host running [linuxptp](https://github.com/richardcochran/linuxptp).
-**[`docs/host_ptp_setup.md`](docs/host_ptp_setup.md) is a step-by-step guide** to setting the
+**[`docs/host_ptp_setup.md`](projects/flexptp_threadx_netx_demo/docs/host_ptp_setup.md) is a step-by-step guide** to setting the
 host up, including a direct-cable configuration and the failure modes worth knowing about.
 
 Two things that cost days here and are worth reading before you start:
@@ -212,7 +218,7 @@ Two things that cost days here and are worth reading before you start:
   other presets (`gPTP`, `defp2p`) need the host matched to them, and `gPTP` additionally
   needs a direct cable or 802.1AS-capable bridges throughout. Profiles are not persisted, so
   any runtime `ptp profile preset …` is lost on reset. See
-  **[`docs/ptp_profiles.md`](docs/ptp_profiles.md)** for the trade-offs.
+  **[`docs/ptp_profiles.md`](projects/flexptp_threadx_netx_demo/docs/ptp_profiles.md)** for the trade-offs.
 - **A switch may silently discard PTP `Delay_Resp`** while forwarding `Sync` and `Announce`
   on the same multicast group. Verified on this setup. If sync never completes, try a direct
   cable before suspecting the firmware.
@@ -256,7 +262,7 @@ The project relies on the following large software building blocks:
 > verifies on hardware. `ETHERLIB`, and `NONE` (no stack at all — the S3–S5 staging state, and
 > the fallback if NetX Duo ever has to be bisected out), are **compiled in CI and nothing
 > more**. EtherLib has never been *run* on this port; see
-> [`docs/design_doc.md`](docs/design_doc.md#remaining-work-to-enable-etherlib) for what remains.
+> [`docs/design_doc.md`](projects/flexptp_threadx_netx_demo/docs/design_doc.md#remaining-work-to-enable-etherlib) for what remains.
 > Until recently neither alternative even configured — `main.c` and `cmds.c` included NetX Duo
 > headers unconditionally — which is why the compile gate now exists.
 >
@@ -304,15 +310,15 @@ ROOT
 Two submodules carry local changes, kept in [`patches/`](patches/) because the parent
 repository records only submodule commit pointers — **four patch files in total**:
 
-- **flexPTP, three.** A servo NaN-latch fix ([F59](docs/port_review.md)); a generic
+- **flexPTP, three.** A servo NaN-latch fix ([F59](projects/flexptp_threadx_netx_demo/docs/port_review.md)); a generic
   network-stack extension point for the two IGMP group addresses; and a non-blocking heartbeat
-  enqueue, without which the BMCA never leaves `INITIALIZING` ([F80](docs/port_review.md)).
+  enqueue, without which the BMCA never leaves `INITIALIZING` ([F80](projects/flexptp_threadx_netx_demo/docs/port_review.md)).
 - **embfmt, one** — carrying **four** defects across **two** findings: `%ll` conversions
-  dropped and NaN rendered as `0.0000` ([F60](docs/port_review.md)), plus small `%e` values
+  dropped and NaN rendered as `0.0000` ([F60](projects/flexptp_threadx_netx_demo/docs/port_review.md)), plus small `%e` values
   swallowed by a pre-normalisation rounding constant and a `%f`/`%e` rounding carry that
-  subtracted 10 instead of 10^precision ([F66](docs/port_review.md)).
+  subtracted 10 instead of 10^precision ([F66](projects/flexptp_threadx_netx_demo/docs/port_review.md)).
 
-All are described in [`docs/port_review.md`](docs/port_review.md) and all are worth reporting
+All are described in [`docs/port_review.md`](projects/flexptp_threadx_netx_demo/docs/port_review.md) and all are worth reporting
 upstream. **The build applies them as part of fetching the dependency** — see
 [Get the sources](#get-the-sources) for why that matters.
 
@@ -383,18 +389,18 @@ PID servo expose `ptp servo params` instead.
 
 | Document | Contents |
 |---|---|
-| [`docs/architecture.md`](docs/architecture.md) | Module inventory and versions, layering, boot sequence, threads and priorities, interrupts, clocking, the PTP timestamp path, memory layout |
-| [`docs/testing_architecture.md`](docs/testing_architecture.md) | The three test tiers, what each one reaches, the mutation-testing discipline, and the gaps stated plainly |
-| [`docs/design_doc.md`](docs/design_doc.md) | Porting decisions and their rationale, submodule pinning, clock tree, pin map, the EtherLib and TrustZone guides, stage-by-stage log |
-| [`docs/ptp_clock.md`](docs/ptp_clock.md) | Full derivation of the PTP timestamp clock, and why a 4 ns increment is possible but not adopted |
-| [`docs/ptp_profiles.md`](docs/ptp_profiles.md) | The three profile presets, the transport and delay-mechanism trade-offs, and what a switched network costs |
-| [`docs/host_ptp_setup.md`](docs/host_ptp_setup.md) | Running a PTP master on a Linux host, and what to check when nothing happens |
-| [`docs/port_review.md`](docs/port_review.md) | Every finding of the port review, with evidence — including the ones that cost days |
-| [`docs/implementation_plan.md`](docs/implementation_plan.md) | The staged plan for the **first** port (H743 → H563). Closed and historical; ends with a table of what changed afterwards |
-| [`docs/threadx_netxduo_feasibility.md`](docs/threadx_netxduo_feasibility.md) | What porting to Eclipse ThreadX and NetX Duo would cost, and the one flexPTP defect that would break it silently |
-| [`docs/threadx_porting_plan.md`](docs/threadx_porting_plan.md) | The staged execution plan for that port — hardware checkpoints, the host test tree, and progress tracking |
-| [`docs/threadx_s5e_plan.md`](docs/threadx_s5e_plan.md) | The one stage left undone: running the real stack on the host, what it would and would not have caught, and a cheaper alternative |
-| [`docs/reviews/`](docs/reviews/README.md) | Archive of the independent reviews that fed `port_review.md` — historical, superseded by it where they disagree |
+| [`docs/architecture.md`](projects/flexptp_threadx_netx_demo/docs/architecture.md) | Module inventory and versions, layering, boot sequence, threads and priorities, interrupts, clocking, the PTP timestamp path, memory layout |
+| [`docs/testing_architecture.md`](projects/flexptp_threadx_netx_demo/docs/testing_architecture.md) | The three test tiers, what each one reaches, the mutation-testing discipline, and the gaps stated plainly |
+| [`docs/design_doc.md`](projects/flexptp_threadx_netx_demo/docs/design_doc.md) | Porting decisions and their rationale, submodule pinning, clock tree, pin map, the EtherLib and TrustZone guides, stage-by-stage log |
+| [`docs/ptp_clock.md`](projects/flexptp_threadx_netx_demo/docs/ptp_clock.md) | Full derivation of the PTP timestamp clock, and why a 4 ns increment is possible but not adopted |
+| [`docs/ptp_profiles.md`](projects/flexptp_threadx_netx_demo/docs/ptp_profiles.md) | The three profile presets, the transport and delay-mechanism trade-offs, and what a switched network costs |
+| [`docs/host_ptp_setup.md`](projects/flexptp_threadx_netx_demo/docs/host_ptp_setup.md) | Running a PTP master on a Linux host, and what to check when nothing happens |
+| [`docs/port_review.md`](projects/flexptp_threadx_netx_demo/docs/port_review.md) | Every finding of the port review, with evidence — including the ones that cost days |
+| [`docs/implementation_plan.md`](projects/flexptp_threadx_netx_demo/docs/implementation_plan.md) | The staged plan for the **first** port (H743 → H563). Closed and historical; ends with a table of what changed afterwards |
+| [`docs/threadx_netxduo_feasibility.md`](projects/flexptp_threadx_netx_demo/docs/threadx_netxduo_feasibility.md) | What porting to Eclipse ThreadX and NetX Duo would cost, and the one flexPTP defect that would break it silently |
+| [`docs/threadx_porting_plan.md`](projects/flexptp_threadx_netx_demo/docs/threadx_porting_plan.md) | The staged execution plan for that port — hardware checkpoints, the host test tree, and progress tracking |
+| [`docs/threadx_s5e_plan.md`](projects/flexptp_threadx_netx_demo/docs/threadx_s5e_plan.md) | The one stage left undone: running the real stack on the host, what it would and would not have caught, and a cheaper alternative |
+| [`docs/reviews/`](projects/flexptp_threadx_netx_demo/docs/reviews/README.md) | Archive of the independent reviews that fed `port_review.md` — historical, superseded by it where they disagree |
 
 ## Related papers and references
 

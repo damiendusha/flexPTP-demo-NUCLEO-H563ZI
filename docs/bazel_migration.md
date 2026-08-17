@@ -13,7 +13,7 @@ Status: **phases 0–4 landed and verified on hardware; phases 5–7 outstanding
 | 5 — flashing | **landed**, both OpenOCD modes |
 | 6 — host tests | **landed** — 13/13, and both mutation checks still bite |
 | 7 — delete CMake | **landed** |
-| 8 — the FreeRTOS + lwIP project | outstanding |
+| 8 — the FreeRTOS + lwIP project | **landed** — both firmwares build and pass on hardware; D15 partially met |
 | 9 — unification | outstanding |
 
 CMake still builds and still passes S8 at every point, so there is a working fallback until
@@ -1332,7 +1332,12 @@ on platform ([decisions §5](bazel_decisions.md#5-why-not-imus-embedded_cc_binar
    ([§5.3](#53-the-firmware-binary)) matters more here than it did with one project: with two
    images in the tree, "flashed the wrong thing" becomes a plausible mistake rather than a
    theoretical one.
-6. **`check_docs_links.py` is clean** after the documents move.
+6. **`check_docs_links.py` is clean** after the documents move. **Done.** The move needed link
+   *recomputation*, not substitution: `docs/` is one level from the root and
+   `projects/<name>/docs/` is three, and the targets moved along with the files pointing at
+   them, so a sibling link had to stay unchanged while a link to `tools/` gained two levels.
+   Resolving each link against its old location and re-expressing it from the new one handles
+   both; the ~480 edits landed in three passes, and the checker found each remaining case.
 7. **D15's FreeRTOS context tests exist and are re-derived, not translated.** **Partially met,
    and the shortfall is recorded rather than papered over.**
 
