@@ -61,6 +61,11 @@ class Context:
     # The ELF this run claims to be testing, for check_build_id. None means no claim was made.
     elf: "Path | None" = None
 
+    # Registered CLI commands to expect. Per-firmware; the literal rather than
+    # EXPECTED_CMD_COUNT because that constant is defined below this class, with the reasoning
+    # for both firmwares' numbers.
+    cli_commands: int = 25
+
 
 # The addend's NOMINAL value: 2^32 / 1.25 for a 250 MHz clk_ptp_ref_i at a 5 ns increment.
 # See docs/ptp_clock.md.
@@ -84,6 +89,9 @@ ADDEND_TOLERANCE = 0.01
 # counters as machine-readable key=value, making 25. Asserted exactly rather than as a minimum,
 # because a command silently failing to register is a real failure mode -- that is what the
 # check is for -- so a deliberate addition is expected to move this number.
+# check. It is also per-FIRMWARE, which the monorepo makes concrete: the FreeRTOS + lwIP project is
+# the pre-port lineage and registers 23, the ThreadX + NetX Duo one registers 25. Overridable
+# with run.py --cli-commands so neither firmware has to be tested against the other's number.
 EXPECTED_CMD_COUNT = 25
 
 
@@ -159,11 +167,11 @@ def check_cli(board: Board, ctx: Context) -> CheckResult:
     names = re.findall(r"^(\S.*?)\s{2,}\S", out, re.M)
     data = {"registered": registered, "slots": slots, "commands": names}
 
-    if registered != EXPECTED_CMD_COUNT:
+    if registered != ctx.cli_commands:
         return CheckResult(
             "cli",
             Status.FAIL,
-            f"expected {EXPECTED_CMD_COUNT} registered commands, got {registered}",
+            f"expected {ctx.cli_commands} registered commands, got {registered}",
             data,
         )
     return CheckResult("cli", Status.PASS, f"{registered}/{slots} commands", data)

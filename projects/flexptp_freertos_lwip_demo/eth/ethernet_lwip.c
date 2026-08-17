@@ -1,6 +1,6 @@
 #include "ethernet_lwip.h"
 
-#include "Drivers/EthDrv/eth_drv_lwip.h"
+#include "eth/eth_drv_lwip.h"
 #include "cmsis_os2.h"
 #include "lwip/dhcp.h"
 #include "lwip/ip4_addr.h"

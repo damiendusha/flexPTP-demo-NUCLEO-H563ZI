@@ -46,8 +46,13 @@ The build is Bazel. Nothing to install but Bazel itself: the compiler is fetched
 `git submodule update` step and no patch-application step.
 
 ```bash
-bazel build //projects/flexptp_threadx_netx_demo:flexptp-demo
+bazel build //projects/flexptp_threadx_netx_demo:flexptp-demo    # ThreadX + NetX Duo
+bazel build //projects/flexptp_freertos_lwip_demo:flexptp-demo-freertos   # FreeRTOS + lwIP
 ```
+
+There are two firmwares for the same board. `bazel build //...` builds both. They share most of
+their code — the MAC driver, the flexPTP hardware port, the CLI, the console — and differ in the
+RTOS, the network stack and the glue between them.
 
 That produces the `.elf`, `.map`, `.hex` and `.bin`. No `--platforms` flag is needed — the
 target carries a transition onto the board's platform, so it cannot silently produce a host

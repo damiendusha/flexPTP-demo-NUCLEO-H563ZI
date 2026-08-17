@@ -37,6 +37,13 @@ filegroup(
     ],
 )
 
+# flexPTP's own lwIP network-stack driver, which the FreeRTOS project uses (FLEXPTP_NSD=LWIP).
+# The ThreadX project supplies its own instead, from its ptp/ directory.
+filegroup(
+    name = "nsd_lwip_srcs",
+    srcs = ["src/flexptp/port/example_netstack_drivers/nsd_lwip.c"],
+)
+
 # FLEXPTP_SERVO=KALMAN.
 filegroup(
     name = "servo_kalman_srcs",

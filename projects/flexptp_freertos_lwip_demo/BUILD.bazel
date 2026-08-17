@@ -9,6 +9,9 @@
 # lwIP glue comes from master. tools/ci/check_seeding.sh asserts that, and it is a real hazard:
 # getting it wrong is not a build failure, it is a silently older firmware.
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//bazel:flexptp.bzl", "flexptp_library")
+load("//tools/build_rules:firmware.bzl", "stm32_firmware")
+load("//tools/flash:flash.bzl", "stm32_flash_binary")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -77,4 +80,301 @@ cc_library(
         ":hal_conf",
         ":project_defines",
     ],
+)
+
+# ST's FreeRTOS-backed CMSIS-RTOS2 wrapper, built here rather than in //third_party because it
+# needs this project's device selection and CMSIS_device_header -- which the FreeRTOS CMake port
+# used to supply and which nothing in Bazel does automatically.
+cc_library(
+    name = "cmsis_rtos",
+    srcs = ["//third_party/CMSIS:CMSIS_RTOS_V2/cmsis_os2_freertos.c"],
+    hdrs = [
+        "//third_party/CMSIS:CMSIS_RTOS_V2/freertos_mpool.h",
+        "//third_party/CMSIS:CMSIS_RTOS_V2/freertos_os2.h",
+    ],
+    copts = ["-w"],
+    defines = [r'CMSIS_device_header=\"stm32h5xx.h\"'],
+    include_prefix = "",
+    strip_include_prefix = "/third_party/CMSIS/CMSIS_RTOS_V2",
+    target_compatible_with = ["//toolchain:stm32h563"],
+    deps = [
+        ":freertos_config",
+        ":hal_conf",
+        "//third_party/CMSIS:cmsis",
+        "@freertos",
+        "@stm32h5_hal//:hal_headers",
+    ],
+)
+
+FIRST_PARTY = ["first_party_warnings"]
+
+TARGET_ONLY = ["//toolchain:stm32h563"]
+
+# --- Libraries ------------------------------------------------------------------------------
+#
+# The same shape as the ThreadX project's, with FreeRTOS where ThreadX is and lwIP where NetX
+# Duo is. Phase 9 unifies what is genuinely common; until then the duplication is deliberate
+# (D11) and tools/ci/check_seeding.sh keeps the copies identical.
+
+cc_library(
+    name = "blocking_io",
+    srcs = ["blocking_io/blocking_fifo.c"],
+    hdrs = ["blocking_io/blocking_fifo.h"],
+    features = FIRST_PARTY,
+    includes = [
+        ".",
+        "blocking_io",
+    ],
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":includes",
+        ":cmsis_rtos",
+    ],
+)
+
+cc_library(
+    name = "standard_output",
+    srcs = [
+        "standard_output/serial_io.c",
+        "standard_output/standard_output.c",
+    ],
+    hdrs = [
+        "standard_output/serial_io.h",
+        "standard_output/standard_output.h",
+        "standard_output/term_colors.h",
+    ],
+    features = FIRST_PARTY,
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":blocking_io",
+        ":includes",
+        ":cmsis_rtos",
+        "@embfmt",
+        "@stm32h5_hal//:hal",
+    ],
+)
+
+cc_library(
+    name = "cli",
+    srcs = ["cli/cli.c"],
+    hdrs = ["cli/cli.h"],
+    features = FIRST_PARTY,
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":blocking_io",
+        ":includes",
+        ":standard_output",
+        ":cmsis_rtos",
+    ],
+)
+
+cc_library(
+    name = "eth_framer",
+    srcs = ["eth/eth_framer.cpp"],
+    hdrs = ["eth/eth_framer.h"],
+    features = FIRST_PARTY,
+    includes = [
+        ".",
+        "eth",
+    ],
+)
+
+cc_library(
+    name = "eth_link_state",
+    srcs = ["eth/eth_link_state.cpp"],
+    hdrs = ["eth/eth_link_state.h"],
+    features = FIRST_PARTY,
+    includes = [
+        ".",
+        "eth",
+    ],
+)
+
+cc_library(
+    name = "ptp_units",
+    srcs = [
+        "ptp/ptp_endpoint.cpp",
+        "ptp/ptp_nsd_lifecycle.cpp",
+        "ptp/ptp_ts_codec.cpp",
+        "ptp/ptp_tx_registry.cpp",
+    ],
+    hdrs = [
+        "ptp/ptp_endpoint.h",
+        "ptp/ptp_nsd_lifecycle.h",
+        "ptp/ptp_ts_codec.h",
+        "ptp/ptp_tx_registry.h",
+    ],
+    features = FIRST_PARTY,
+    includes = [
+        ".",
+        "ptp",
+    ],
+)
+
+cc_library(
+    name = "mac_drv",
+    srcs = [
+        "eth/mac_drv.c",
+        "eth/phy_drv/phy_common.c",
+    ],
+    hdrs = [
+        "eth/mac_drv.h",
+        "eth/phy_drv/phy_common.h",
+    ],
+    features = FIRST_PARTY,
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":includes",
+        ":standard_output",
+        "@stm32h5_hal//:hal",
+    ],
+)
+
+# The lwIP-facing glue, from master: this is the half that differs from the ThreadX project.
+cc_library(
+    name = "eth",
+    srcs = [
+        "eth/eth_drv_lwip.c",
+        "eth/ethernet_lwip.c",
+    ],
+    hdrs = [
+        "eth/eth_drv_lwip.h",
+        "eth/ethernet_lwip.h",
+    ],
+    features = FIRST_PARTY,
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":eth_framer",
+        ":eth_link_state",
+        ":includes",
+        ":mac_drv",
+        ":standard_output",
+        "@lwip",
+    ],
+)
+
+# lwIP's port. Unlike FreeRTOS, whose Cortex-M33 port ships inside the kernel, this is the
+# integrator's to supply -- so it is here rather than in @lwip.
+cc_library(
+    name = "lwip_port",
+    srcs = ["lwip_port/sys_arch.c"],
+    hdrs = glob(["lwip_port/arch/*.h"]),
+    copts = ["-w"],  # vendored-derived port glue, not this project's style
+    includes = ["lwip_port"],
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":includes",
+        ":lwip_config",
+        ":cmsis_rtos",
+        "@lwip",
+    ],
+)
+
+cc_library(
+    name = "startup",
+    srcs = ["startup/startup_stm32h563zitx.s"],
+    target_compatible_with = TARGET_ONLY,
+    deps = [":includes"],
+    alwayslink = True,
+)
+
+exports_files(["startup/stm32h563zitx_FLASH.ld"])
+
+# --- flexPTP, and the firmware ---------------------------------------------------------------
+
+# flexPTP's own lwIP driver, not a project-supplied one: master set FLEXPTP_NSD=${ETH_STACK},
+# which resolves to LWIP and selects flexPTP's bundled nsd_lwip.c. The ThreadX project supplies
+# its own instead, which is why flexptp_library takes the NSD as a parameter.
+cc_library(
+    name = "flexptp_config",
+    hdrs = [
+        "flexptp_options.h",
+        "ptp/ptp_port_stm32h563.h",
+    ],
+    features = FIRST_PARTY,
+    includes = [
+        ".",
+        "ptp",
+    ],
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":cli",
+        ":includes",
+        ":mac_drv",
+        ":standard_output",
+        "@embfmt",
+        "@flexptp//:headers",
+        "@lwip",
+    ],
+)
+
+flexptp_library(
+    name = "flexptp",
+    config = ":flexptp_config",
+    features = FIRST_PARTY,
+    nsd_srcs = ["@flexptp//:nsd_lwip_srcs"],
+    port_srcs = ["ptp/ptp_port_stm32h563.c"],
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":cmsis_rtos",
+        ":eth",
+        ":includes",
+        ":mac_drv",
+        ":ptp_units",
+        ":standard_output",
+        "@lwip",
+        "@stm32h5_hal//:hal",
+    ],
+)
+
+cc_library(
+    name = "app",
+    srcs = [
+        "cmds.c",
+        "cpp_support.cpp",
+        "main.c",
+        "syscall.c",
+        "sysmem.c",
+        "system_stm32h5xx.c",
+    ],
+    hdrs = [
+        "cmds.h",
+        "sysmem_bounds.h",
+    ],
+    features = FIRST_PARTY,
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":cli",
+        ":cmsis_rtos",
+        ":eth",
+        ":flexptp",
+        ":flexptp_config",
+        ":includes",
+        ":lwip_port",
+        ":mac_drv",
+        ":standard_output",
+        "@lwip",
+        "@stm32h5_hal//:hal",
+    ],
+    alwayslink = True,
+)
+
+stm32_firmware(
+    name = "flexptp-demo-freertos",
+    linker_script = "startup/stm32h563zitx_FLASH.ld",
+    deps = [
+        ":app",
+        ":startup",
+    ],
+)
+
+filegroup(
+    name = "flexptp-demo-freertos_elf",
+    srcs = [":flexptp-demo-freertos"],
+    output_group = "elf",
+)
+
+stm32_flash_binary(
+    name = "flash",
+    elf_image = ":flexptp-demo-freertos.elf",
 )

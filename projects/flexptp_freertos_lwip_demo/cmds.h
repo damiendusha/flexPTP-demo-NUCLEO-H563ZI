@@ -1,7 +1,7 @@
 #ifndef SRC_CMDS
 #define SRC_CMDS
 
-#include <cliutils/cli.h>
+#include <cli/cli.h>
 
 /**
  * Initialize CLI commands.

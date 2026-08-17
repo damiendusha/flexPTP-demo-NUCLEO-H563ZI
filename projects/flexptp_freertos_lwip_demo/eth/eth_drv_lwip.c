@@ -72,7 +72,15 @@ static LinkState linkState = {false, false, 0, false};
 
 static osMessageQueueId_t rx_msg_q;
 
-static void fetch_link_properties() {
+/* Takes the tcpip_callback argument it is registered with, and ignores it.
+ *
+ * This was  -- an empty parameter list, which in C means "unspecified"
+ * rather than "none", so passing it to tcpip_callback() was a type mismatch that GCC reported
+ * as -Wincompatible-pointer-types. The CMake build compiled it with -Wall -Wextra but not
+ * -Werror, so it warned on every build and nobody had to act on it. D13 makes first-party
+ * warnings errors, which is what surfaced it. */
+static void fetch_link_properties(void *arg) {
+    (void)arg;
     const PHY_LinkStatus *status = phy_get_link_status();
 
     // set link up/down state

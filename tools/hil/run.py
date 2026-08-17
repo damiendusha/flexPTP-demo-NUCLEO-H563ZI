@@ -47,6 +47,9 @@ def parse_args() -> argparse.Namespace:
     sel.add_argument("--checks", help="comma-separated check names")
     p.add_argument("--list", action="store_true", help="list checks and stages, then exit")
     p.add_argument("--port", default="/dev/ttyACM0")
+    p.add_argument("--cli-commands", type=int, default=None,
+                   help="registered CLI commands to expect. Per-firmware: 25 for the ThreadX + "
+                        "NetX Duo project, 23 for the FreeRTOS + lwIP one.")
     p.add_argument("--openocd", type=Path,
                    help="OpenOCD to use. Defaults to the search in hil.find_openocd(): "
                         "$OPENOCD, then toolchains/openocd/bin/openocd, then PATH.")
@@ -119,6 +122,7 @@ def main() -> int:
         expect_phy=(args.stage not in STAGES_WITHOUT_PHY),
         expect_ip_thread=(args.stage not in STAGES_WITHOUT_IP_THREAD),
         elf=(args.elf or args.flash),
+        **({"cli_commands": args.cli_commands} if args.cli_commands else {}),
     )
 
     if args.flash:

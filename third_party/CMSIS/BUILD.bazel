@@ -18,3 +18,18 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+# ST's FreeRTOS-backed CMSIS-RTOS2 implementation, from master.
+#
+# The counterpart of @cmsis_rtos_threadx: one cmsis_os2.h -- ARM's, RTOS-agnostic -- with two
+# implementations underneath. That is what lets cli.c, cmds.c and serial_io.c be common to both
+# projects, and it is why the monorepo is natural rather than forced.
+#
+# Exposed as SOURCES, not a library: it needs CMSIS_device_header and the device selection, which
+# are the consuming project's to supply. //projects/flexptp_freertos_lwip_demo:cmsis_rtos builds
+# it.
+exports_files([
+    "CMSIS_RTOS_V2/cmsis_os2_freertos.c",
+    "CMSIS_RTOS_V2/freertos_os2.h",
+    "CMSIS_RTOS_V2/freertos_mpool.h",
+])

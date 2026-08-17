@@ -12,9 +12,9 @@
 #include "task.h"
 
 
-#include "cliutils/cli.h"
+#include "cli/cli.h"
 #include "cmds.h"
-#include "ethernet/ethernet_lwip.h"
+#include "eth/ethernet_lwip.h"
 
 #include "flexptp/event.h"
 #include "flexptp/logging.h"
@@ -27,7 +27,16 @@
 #include <cmsis_os2.h>
 
 
-#define FLEXPTP_INITIAL_PROFILE ("gPTP")
+// Plain IEEE 1588 over UDP/IPv4 with E2E delay measurement. Chosen over 'gPTP' because it is
+// the only preset that survives ordinary, non-802.1AS switches: gPTP's destination MAC
+// 01:80:C2:00:00:0E is in the IEEE 802.1D reserved range that conformant bridges must not
+// forward. See docs/ptp_profiles.md.
+//
+// This is a RECONCILIATION, not a restoration: master booted into 'gPTP' and the ThreadX line
+// changed it afterwards. Carried across because the reasoning is about the network, not the
+// RTOS or the stack -- and because without it this firmware reaches PTP_START and then never
+// reaches SLAVE, which is exactly the silent profile mismatch docs/ptp_profiles.md warns about.
+#define FLEXPTP_INITIAL_PROFILE ("default")
 
 // ------------------------
 
@@ -146,9 +155,10 @@ void print_welcome_message() {
     MSGraw("\033[2J\033[H");
     MSG(ANSI_COLOR_BGREEN "Hi!" ANSI_COLOR_BYELLOW " This is a flexPTP demo for the STMicroelectronics NUCLEO-H563ZI (STM32H563) board.\n\n"
                           "The application is built on FreeRTOS, flexPTP is currently compiled against %s and uses the supplied example %s Network Stack Driver. "
-                          "In this demo, the underlying Ethernet stack can be either lwip or EtherLib, the 'ETH_STACK' CMake variable (in the main CMakeLists.txt file) determines which one will be used. "
+                          "This build uses lwIP. "
                           "The STM32H5xx PTP hardware module driver is supplied by this project. This flexPTP instance features a full CLI control interface, the help can be listed by typing '?' once the flexPTP has loaded. "
-                          "The initial PTP preset that loads upon flexPTP initialization is the 'gPTP' (802.1AS) profile. It's a nowadays common profile, but we encourage "
+                          "The initial PTP preset that loads upon flexPTP initialization is the 'default' (plain IEEE 1588) profile: UDP/IPv4 transport with E2E delay measurement. "
+                          "It is the preset that works across ordinary switches, and a stock 'ptp4l' with no config file matches it. The 'gPTP' (802.1AS) preset is also available "
                           "you to also try out the 'default' (plain IEEE 1588) profile and fiddle around with other options as well. The application will try to acquire an IP-address with DHCP. "
                           "Once the IP-address is secured, you might start the flexPTP module by typing 'flexptp'. 'Have a great time! :)'\n\n" ANSI_COLOR_RESET,
         ETH_STACK, ETH_STACK);
@@ -253,27 +263,36 @@ int main(void) {
     // before the scheduler starts: cli_init() creates the "cli" task, whose first act is to
     // print, while task_startup() goes on to print the banner -- both at priority 24, so
     // they can interleave from the very first tick.
-    MSG_init();
+    /* Hardware half only. The RTOS half -- FIFO, event flags, thread -- is serial_io_start(),
+       below, after osKernelInitialize(). */
     serial_io_init();
 
     // -------------
 
-    /* Note on ordering: serial_io_init() above calls osThreadNew() to create "serialio",
-     * BEFORE osKernelInitialize(). That is outside the CMSIS-RTOS2 contract, which says
-     * osKernelInitialize() comes first.
+    /* Note on ordering, and on why this differs from the version this file was restored from.
      *
-     * It works, and is left alone deliberately. The shim's osThreadNew() checks only for IRQ
-     * context, then calls xTaskCreate(), which is explicitly documented as callable before
-     * vTaskStartScheduler() -- the task is created and simply does not run until
-     * osKernelStart(). Reordering would mean either splitting serial_io_init() into hardware
-     * setup and thread creation, or moving all of it after osKernelInitialize() and giving up
-     * having USART3 configured before anything can want to print through it.
+     * master's FreeRTOS build called MSG_init() and a single serial_io_init() here, BEFORE
+     * osKernelInitialize(), and its comment recorded that as safe-but-outside-the-contract:
+     * the shim's osThreadNew() calls xTaskCreate(), which FreeRTOS documents as legal before
+     * vTaskStartScheduler(). True under FreeRTOS, and it stopped being true under ThreadX --
+     * whose CMSIS-RTOS2 wrapper carves the byte pools that back every RTOS object inside
+     * osKernelInitialize(), so anything allocated before it has nowhere to come from. That is
+     * why serial_io.c was split into a hardware half and an RTOS half.
      *
-     * Recorded rather than corrected, so the next reader does not have to re-derive that this
-     * is safe. */
+     * This project uses the SAME serial_io.c as the ThreadX one -- that is the point of the
+     * monorepo -- so it follows the same order. It costs nothing here: USART3 is still
+     * configured before anything can want to print through it, which is what the old ordering
+     * was protecting.
+     *
+     * Getting this wrong is not a build error. The firmware links, boots, and reaches
+     * prvIdleTask with no console at all, which is exactly how it presented. */
 
     // initialize the FreeRTOS kernel
     osKernelInitialize();
+
+    // Objects, now that there is somewhere to allocate them from.
+    MSG_init();
+    serial_io_start();
 
     // create startup thread
     osThreadAttr_t attr;
