@@ -13,7 +13,7 @@ package(default_visibility = ["//visibility:public"])
 
 label_flag(
     name = "freertos_config",
-    build_setting_default = "@flexptp_demo//projects/flexptp_freertos_lwip_demo:freertos_config",
+    build_setting_default = "@flexptp_demo//projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo:freertos_config",
 )
 
 cc_library(

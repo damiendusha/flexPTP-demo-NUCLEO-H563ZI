@@ -10,11 +10,11 @@ sh_test(
     name = "cxx_rules_test",
     srcs = ["check_cxx_rules.sh"],
     args = [
-        "$(location //projects/flexptp_threadx_netx_demo:flexptp-demo_elf)",
+        "$(location //projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:flexptp-demo_elf)",
         "$(location @arm_gnu_toolchain//:bin/arm-none-eabi-nm)",
     ],
     data = [
-        "//projects/flexptp_threadx_netx_demo:flexptp-demo_elf",
+        "//projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:flexptp-demo_elf",
         "@arm_gnu_toolchain//:bin/arm-none-eabi-nm",
     ],
     # The ELF is a target-platform artefact; the test itself runs on the host.
@@ -25,11 +25,11 @@ sh_test(
     name = "cxx_rules_freertos_test",
     srcs = ["check_cxx_rules.sh"],
     args = [
-        "$(location //projects/flexptp_freertos_lwip_demo:flexptp-demo-freertos_elf)",
+        "$(location //projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo:flexptp-demo-freertos_elf)",
         "$(location @arm_gnu_toolchain//:bin/arm-none-eabi-nm)",
     ],
     data = [
-        "//projects/flexptp_freertos_lwip_demo:flexptp-demo-freertos_elf",
+        "//projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo:flexptp-demo-freertos_elf",
         "@arm_gnu_toolchain//:bin/arm-none-eabi-nm",
     ],
     target_compatible_with = ["@platforms//os:linux"],
@@ -44,7 +44,7 @@ sh_test(
     name = "seeding_test",
     srcs = ["check_seeding.sh"],
     data = [
-        "//projects/flexptp_freertos_lwip_demo:all_sources",
-        "//projects/flexptp_threadx_netx_demo:all_sources",
+        "//projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo:all_sources",
+        "//projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:all_sources",
     ],
 )

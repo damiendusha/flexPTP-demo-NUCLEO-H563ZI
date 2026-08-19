@@ -1,0 +1,279 @@
+# The FreeRTOS + lwIP firmware.
+#
+# The second project of the monorepo (D10/D11). Deliberately independent of
+# //projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo for now: the two carry their own copies of the common
+# files, and phase 9 factors them out against two real applications rather than against a guess.
+#
+# The common files here were seeded from the ThreadX project, NOT from master -- master's copies
+# are ~1000 lines behind and include the F57, F62, GI-01 and GI-02 fixes. Only the FreeRTOS and
+# lwIP glue comes from master. tools/ci/check_seeding.sh asserts that, and it is a real hazard:
+# getting it wrong is not a build failure, it is a silently older firmware.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//bazel:flexptp.bzl", "flexptp_library")
+load("//tools/build_rules:firmware.bzl", "stm32_firmware")
+load("//tools/flash:flash.bzl", "stm32_flash_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+# --- Configuration headers: the seam the vendored libraries reach this project through -------
+
+
+# The FreeRTOS configuration @freertos reaches this project through, and it is PLATFORM
+# DEPENDENT.
+#
+# The firmware's FreeRTOSConfig.h configures a Cortex-M33: interrupt priorities, a 30 KB heap,
+# and configAPPLICATION_ALLOCATED_HEAP=1 so the heap can be placed by the linker script. None of
+# that is meaningful on a host, and the last one is not merely useless -- heap_4.c then expects
+# the application to define ucHeap, which a test binary does not, and the failure is an
+# undefined reference a long way from its cause.
+#
+# A select() rather than a transition, because the difference is driven by the PLATFORM: see
+# docs/bazel_decisions.md §5, which works out that only @flexptp needs two configurations on the
+# same platform and everything else here is a select.
+alias(
+    name = "freertos_config",
+    actual = select({
+        "//toolchain:is_cortex_m33": ":freertos_config_target",
+        "//conditions:default": "//projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo/test:freertos_config_host",
+    }),
+)
+
+cc_library(
+    name = "freertos_config_target",
+    hdrs = ["FreeRTOSConfig.h"],
+    includes = ["."],
+    deps = ["//third_party/CMSIS:cmsis"],
+)
+
+# lwIP's options header, plus the port's arch/ headers, which lwIP includes as <arch/cc.h>.
+cc_library(
+    name = "lwip_config",
+    hdrs = [
+        "lwipopts.h",
+        "lwip_port/arch/cc.h",
+        "lwip_port/arch/cpu.h",
+        "lwip_port/arch/sys_arch.h",
+    ],
+    includes = [
+        ".",
+        "lwip_port",
+    ],
+    deps = [
+        ":freertos_config",
+        "//projects/flexptp_demo_stm32h563/lib:io_headers",
+        "@freertos//:headers",
+    ],
+)
+
+cc_library(
+    name = "project_defines",
+    defines = [
+        "CMSIS_OS2",
+        "PPS_SIMPLE",
+        "ETH_LWIP",
+        r'ETH_STACK=\"LWIP\"',
+        r'PROJECT_NAME=\"flexptp-demo-freertos\"',
+    ],
+)
+
+cc_library(
+    name = "includes",
+    includes = ["."],
+    deps = [
+        "//projects/flexptp_demo_stm32h563/lib:hal_conf",
+        ":project_defines",
+    ],
+)
+
+# ST's FreeRTOS-backed CMSIS-RTOS2 wrapper, built here rather than in //third_party because it
+# needs this project's device selection and CMSIS_device_header -- which the FreeRTOS CMake port
+# used to supply and which nothing in Bazel does automatically.
+cc_library(
+    name = "cmsis_rtos",
+    srcs = ["//third_party/CMSIS:CMSIS_RTOS_V2/cmsis_os2_freertos.c"],
+    hdrs = [
+        "//third_party/CMSIS:CMSIS_RTOS_V2/freertos_mpool.h",
+        "//third_party/CMSIS:CMSIS_RTOS_V2/freertos_os2.h",
+    ],
+    copts = ["-w"],
+    defines = [r'CMSIS_device_header=\"stm32h5xx.h\"'],
+    include_prefix = "",
+    strip_include_prefix = "/third_party/CMSIS/CMSIS_RTOS_V2",
+    target_compatible_with = ["//toolchain:stm32h563"],
+    deps = [
+        ":freertos_config",
+        "//projects/flexptp_demo_stm32h563/lib:hal_conf",
+        "//third_party/CMSIS:cmsis",
+        "@freertos",
+        "@stm32h5_hal//:hal_headers",
+    ],
+)
+
+FIRST_PARTY = ["first_party_warnings"]
+
+TARGET_ONLY = ["//toolchain:stm32h563"]
+
+# --- Libraries ------------------------------------------------------------------------------
+#
+# The same shape as the ThreadX project's, with FreeRTOS where ThreadX is and lwIP where NetX
+# Duo is. Phase 9 unifies what is genuinely common; until then the duplication is deliberate
+# (D11) and tools/ci/check_seeding.sh keeps the copies identical.
+
+
+
+
+
+
+
+# The lwIP-facing glue, from master: this is the half that differs from the ThreadX project.
+cc_library(
+    name = "eth",
+    srcs = [
+        "eth/eth_drv_lwip.c",
+        "eth/ethernet_lwip.c",
+    ],
+    hdrs = [
+        "eth/eth_drv_lwip.h",
+        "eth/ethernet_lwip.h",
+    ],
+    features = FIRST_PARTY,
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        "//projects/flexptp_demo_stm32h563/lib:eth_framer",
+        "//projects/flexptp_demo_stm32h563/lib:eth_link_state",
+        ":includes",
+        "//projects/flexptp_demo_stm32h563/lib:mac_drv",
+        "//projects/flexptp_demo_stm32h563/lib:standard_output",
+        "@lwip",
+    ],
+)
+
+# lwIP's port. Unlike FreeRTOS, whose Cortex-M33 port ships inside the kernel, this is the
+# integrator's to supply -- so it is here rather than in @lwip.
+cc_library(
+    name = "lwip_port",
+    srcs = ["lwip_port/sys_arch.c"],
+    hdrs = [
+        "lwip_port/arch/cc.h",
+        "lwip_port/arch/cpu.h",
+        "lwip_port/arch/sys_arch.h",
+    ],
+    copts = ["-w"],  # vendored-derived port glue, not this project's style
+    includes = ["lwip_port"],
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":includes",
+        ":lwip_config",
+        ":cmsis_rtos",
+        "@lwip",
+    ],
+)
+
+
+
+# --- flexPTP, and the firmware ---------------------------------------------------------------
+
+# flexPTP's own lwIP driver, not a project-supplied one: master set FLEXPTP_NSD=${ETH_STACK},
+# which resolves to LWIP and selects flexPTP's bundled nsd_lwip.c. The ThreadX project supplies
+# its own instead, which is why flexptp_library takes the NSD as a parameter.
+cc_library(
+    name = "flexptp_config",
+    hdrs = [
+        "flexptp_options.h",
+        "//projects/flexptp_demo_stm32h563/lib:ptp/ptp_port_stm32h563.h",
+    ],
+    features = FIRST_PARTY,
+    includes = [
+        ".",
+        "ptp",
+    ],
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        "//projects/flexptp_demo_stm32h563/lib:cli",
+        ":includes",
+        "//projects/flexptp_demo_stm32h563/lib:mac_drv",
+        "//projects/flexptp_demo_stm32h563/lib:standard_output",
+        "@embfmt",
+        "@flexptp//:headers",
+        "@lwip",
+    ],
+)
+
+flexptp_library(
+    name = "flexptp",
+    config = ":flexptp_config",
+    features = FIRST_PARTY,
+    nsd_srcs = ["@flexptp//:nsd_lwip_srcs"],
+    port_srcs = ["//projects/flexptp_demo_stm32h563/lib:ptp/ptp_port_stm32h563.c"],
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        ":cmsis_rtos",
+        ":eth",
+        ":includes",
+        "//projects/flexptp_demo_stm32h563/lib:mac_drv",
+        "//projects/flexptp_demo_stm32h563/lib:ptp_units",
+        "//projects/flexptp_demo_stm32h563/lib:standard_output",
+        "@lwip",
+        "@stm32h5_hal//:hal",
+    ],
+)
+
+cc_library(
+    name = "app",
+    srcs = [
+        "cmds.c",
+        "main.c",
+    ],
+    hdrs = ["cmds.h"],
+    features = FIRST_PARTY,
+    target_compatible_with = TARGET_ONLY,
+    deps = [
+        "//projects/flexptp_demo_stm32h563/lib:cli",
+        "//projects/flexptp_demo_stm32h563/lib:runtime",
+        ":cmsis_rtos",
+        ":eth",
+        ":flexptp",
+        ":flexptp_config",
+        ":includes",
+        ":lwip_port",
+        "//projects/flexptp_demo_stm32h563/lib:mac_drv",
+        "//projects/flexptp_demo_stm32h563/lib:standard_output",
+        "@lwip",
+        "@stm32h5_hal//:hal",
+    ],
+    alwayslink = True,
+)
+
+stm32_firmware(
+    name = "flexptp-demo-freertos",
+    linker_script = "//projects/flexptp_demo_stm32h563/lib:startup/stm32h563zitx_FLASH.ld",
+    deps = [
+        "//projects/flexptp_demo_stm32h563/lib:runtime",
+        "//projects/flexptp_demo_stm32h563/lib:startup",
+        ":app",
+    ],
+)
+
+filegroup(
+    name = "flexptp-demo-freertos_elf",
+    srcs = [":flexptp-demo-freertos"],
+    output_group = "elf",
+)
+
+stm32_flash_binary(
+    name = "flash",
+    elf_image = ":flexptp-demo-freertos.elf",
+)
+
+# Every source in this project, for //tools/ci:seeding_test to compare the two trees.
+filegroup(
+    name = "all_sources",
+    srcs = glob([
+        "**/*.c",
+        "**/*.h",
+        "**/*.cpp",
+        "**/*.s",
+        "**/*.S",
+        "**/*.ld",
+    ], allow_empty = True),
+)

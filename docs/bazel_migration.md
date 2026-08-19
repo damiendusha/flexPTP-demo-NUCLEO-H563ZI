@@ -14,7 +14,7 @@ Status: **phases 0–4 landed and verified on hardware; phases 5–7 outstanding
 | 6 — host tests | **landed** — 13/13, and both mutation checks still bite |
 | 7 — delete CMake | **landed** |
 | 8 — the FreeRTOS + lwIP project | **landed** — both firmwares build and pass on hardware; D15 fully met |
-| 9 — unification | **all five tiers landed** — units, drivers, CMSIS-RTOS2 layer, runtime and startup, and the HAL config are all in `//lib` |
+| 9 — unification | **all five tiers landed** — units, drivers, CMSIS-RTOS2 layer, runtime and startup, and the HAL config are all in `//projects/flexptp_demo_stm32h563/lib` |
 
 Every phase is landed. CMake was the fallback throughout — it built and passed S8 at every
 point up to phase 7, which deleted it; a clean clone now builds with Bazel alone, in 34 s, to an
@@ -102,7 +102,7 @@ Four modules. `rules_cc` is unavoidable ([decisions §1.1](bazel_decisions.md#11
 `platforms` supplies the `@platforms//cpu:armv8-m` and `@platforms//os:none` constraints;
 `bazel_skylib` supplies `string_flag`/`bool_flag` for the configuration model in
 [§4](#4-platforms-and-the-configuration-model); `googletest` is the host test framework and is
-already pinned to v1.15.2 by [`test/CMakeLists.txt`](../projects/flexptp_threadx_netx_demo/test/CMakeLists.txt), so this is not a
+already pinned to v1.15.2 by [`test/CMakeLists.txt`](../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/test/CMakeLists.txt), so this is not a
 new dependency, only a new way of fetching the same commit.
 
 `MODULE.bazel.lock` is **checked in**. Without it the "pinned" versions above are still
@@ -251,9 +251,20 @@ tools/flash/                    stm32_flash_binary (§9.2)
 patches/*/BUILD.bazel           exports_files() for the patch labels
 ```
 
-**Label shorthand.** `//P` abbreviates `//projects/flexptp_threadx_netx_demo` throughout the
+> [!NOTE]
+> **Later change: both projects and `lib/` were nested a level deeper.** The tree above is the
+> shape phase 0 created and phases 1–9 worked in. Monorepo preparation afterwards moved
+> `projects/flexptp_threadx_netx_demo/`, `projects/flexptp_freertos_lwip_demo/` and `lib/` under
+> a single **`projects/flexptp_demo_stm32h563/`** — one directory per board, so a second target
+> can be added beside it without the top level filling up with this board's pieces. Nothing else
+> changed: the same targets, the same dependency edges, the same build IDs. Paths and labels
+> elsewhere in this document name the **current** locations, so they stay clickable; where the
+> text describes what a phase did at the time, read the last path component as the thing that
+> matters.
+
+**Label shorthand.** `//P` abbreviates `//projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo` throughout the
 rest of this document, because the full package path is long and appears often. The second
-project is `//projects/flexptp_freertos_lwip_demo` and gets no abbreviation, since it appears
+project is `//projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo` and gets no abbreviation, since it appears
 only in [§13](#13-target-state-the-two-firmware-monorepo).
 
 **There is deliberately no shared `lib/` yet.** D11 makes the two projects mostly independent
@@ -279,7 +290,7 @@ Once a second project exists, an unqualified `docs/` is ambiguous.
 
 | Destination | Documents |
 |---|---|
-| `projects/flexptp_threadx_netx_demo/docs/` | `architecture.md`, `design_doc.md`, `testing_architecture.md`, `ptp_clock.md`, `ptp_profiles.md`, `host_ptp_setup.md`, `implementation_plan.md`, `threadx_porting_plan.md`, `threadx_netxduo_feasibility.md`, `threadx_s5e_plan.md`, `port_review.md`, `review_v1_opus_5p0.md`, `reviews/` |
+| `projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/` | `architecture.md`, `design_doc.md`, `testing_architecture.md`, `ptp_clock.md`, `ptp_profiles.md`, `host_ptp_setup.md`, `implementation_plan.md`, `threadx_porting_plan.md`, `threadx_netxduo_feasibility.md`, `threadx_s5e_plan.md`, `port_review.md`, `review_v1_opus_5p0.md`, `reviews/` |
 | `docs/` (repo level) | `bazel_migration.md`, `bazel_decisions.md` |
 
 **Unification, later.** Three of those are hardware- or protocol-level rather than
@@ -466,7 +477,7 @@ toolchain(
 ```
 
 The host toolchain stays Bazel's autodetected local one, which is what the host tests want:
-[`test/CMakeLists.txt`](../projects/flexptp_threadx_netx_demo/test/CMakeLists.txt) compiles with the system gcc/g++ today.
+[`test/CMakeLists.txt`](../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/test/CMakeLists.txt) compiles with the system gcc/g++ today.
 
 ---
 
@@ -586,7 +597,7 @@ indirection solves it:
 # bazel/threadx.BUILD
 label_flag(
     name = "tx_user",
-    build_setting_default = "@flexptp_demo//projects/flexptp_threadx_netx_demo:tx_user",
+    build_setting_default = "@flexptp_demo//projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:tx_user",
 )
 cc_library(
     name = "threadx",
@@ -604,7 +615,7 @@ retrofitting later; see [§13.1](#131-it-strengthens-the-case-for-migrating-and-
 
 with `//P:tx_user` a `cc_library` exporting just that header. The flag makes the host test
 build able to point ThreadX at a different configuration without forking the `BUILD` file —
-though note that [`test/CMakeLists.txt`](../projects/flexptp_threadx_netx_demo/test/CMakeLists.txt) deliberately shares the
+though note that [`test/CMakeLists.txt`](../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/test/CMakeLists.txt) deliberately shares the
 *firmware's* `tx_user.h` ("sharing the header means a test that passes here is a test of the
 kernel the board actually runs"), so the default is what both use, and the flag exists for the
 pool sizes that genuinely do differ.
@@ -633,7 +644,7 @@ warnings gate meaningful.
 
 The `startup_stm32h563xx.s` fix imu needs in its `stm32cubeh5` genrule (`sed 's/\.thumb_set /\.set /g'`)
 is **not** needed here: this project has its own
-[its own `startup/startup_stm32h563zitx.s`](../lib/startup/startup_stm32h563zitx.s), not CubeH5's.
+[its own `startup/startup_stm32h563zitx.s`](../projects/flexptp_demo_stm32h563/lib/startup/startup_stm32h563zitx.s), not CubeH5's.
 
 ### 5.2 First-party libraries
 
@@ -732,7 +743,7 @@ Two flags to carry over verbatim:
 ## 6. Host tests
 
 13 test binaries (plus `eth_model.cpp`, a support library), currently a **separate CMake root**
-([`test/CMakeLists.txt`](../projects/flexptp_threadx_netx_demo/test/CMakeLists.txt)) because the top-level CMake includes the ARM
+([`test/CMakeLists.txt`](../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/test/CMakeLists.txt)) because the top-level CMake includes the ARM
 toolchain file unconditionally and there is no flag that makes it produce a host binary.
 
 In Bazel this separation disappears: host and target are two platforms in one graph, and
@@ -770,7 +781,7 @@ binary to enumerate — the CMake build notes the same about `gtest_discover_tes
 Bazel reads the result.
 
 **The timeout gets 6× looser, and that should be said plainly.** CMake sets `TIMEOUT 10`, and
-[`test/CMakeLists.txt`](../projects/flexptp_threadx_netx_demo/test/CMakeLists.txt) records why it is not boilerplate: some defects
+[`test/CMakeLists.txt`](../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/test/CMakeLists.txt) records why it is not boilerplate: some defects
 these tests pin present as a *hang* rather than a wrong value — reintroducing F57 makes
 `ETHHW_ProcessTx()`'s drain loop spin forever. Bazel's `timeout` attribute has fixed buckets and
 its smallest, `short`, is **60 s**. So the fail-fast window goes from 10 s to 60 s. A hang still
@@ -994,7 +1005,7 @@ source move under CMake; phases 1–6 are the first landing (D4); phase 7 remove
 ### Phase 0 — Restructure into `projects/`, under CMake
 
 A pure source move, no build-system change: today's firmware becomes
-`projects/flexptp_threadx_netx_demo/` in the shape of [§2](#2-repository-layout-after-the-migration),
+`projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/` in the shape of [§2](#2-repository-layout-after-the-migration),
 with `CMakeLists.txt`, the seven nested ones, `Middlewares/*.cmake` and `test/CMakeLists.txt`
 updated to the new paths, and the **279** `docs/`→source links fixed. The documents themselves
 stay in `docs/` until phase 8 (D18, [§2.1](#21-documentation)).
@@ -1252,7 +1263,7 @@ Independent of phases 4–5 and can be done in parallel by a second pair of hand
 ### Phase 7 — Delete CMake
 
 **Landed, and a clean clone is the proof:** `git clone` then
-`bazel build --config=opt //projects/flexptp_threadx_netx_demo:flexptp-demo` produces the
+`bazel build --config=opt //projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:flexptp-demo` produces the
 firmware in ~34 s with no submodule init, no patch step and no toolchain download step — and the
 build ID is *identical* to the working tree's, so the result is reproducible rather than merely
 working. `bazel test //...` from that clone is 16/16.
@@ -1288,7 +1299,7 @@ parts of imu's tooling.
 The monorepo's second firmware. Design is [§13](#13-target-state-the-two-firmware-monorepo);
 this is the work and how it is gated.
 
-**Sources.** `projects/flexptp_freertos_lwip_demo/`, seeded strictly per the table in
+**Sources.** `projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo/`, seeded strictly per the table in
 [§13.3](#133-layout-two-independent-projects-first): common files from the **current** tree,
 only the stack-specific glue from `master` @ `5e25b7b`. Plus the one breaking signature change
 across the shared headers, `serial_io_init()`.
@@ -1331,7 +1342,7 @@ on platform ([decisions §5](bazel_decisions.md#5-why-not-imus-embedded_cc_binar
    the first image that boots, not at the end: `checks.py` asserts the registered CLI command
    count exactly and it will differ between the two firmwares. The board is available from this
    phase's first commit ([§13.7](#137-sequencing)) — there is no reason to work on inspection.
-5. **Both flash targets work** — `bazel run //projects/flexptp_threadx_netx_demo:flash` and the
+5. **Both flash targets work** — `bazel run //projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:flash` and the
    FreeRTOS equivalent, each flashing its own image and not the other's. The platform transition
    ([§5.3](#53-the-firmware-binary)) matters more here than it did with one project: with two
    images in the tree, "flashed the wrong thing" becomes a plausible mistake rather than a
@@ -1612,8 +1623,8 @@ of `cmds.c`, which are per-app by nature and will need real work.
 **D11: the two firmwares start out mostly independent, and unification comes afterwards.**
 
 ```
-projects/flexptp_threadx_netx_demo/     exists today, moved here by phase 0
-projects/flexptp_freertos_lwip_demo/    added in phase 8, from master (§14.2)
+projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/     exists today, moved here by phase 0
+projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo/    added in phase 8, from master (§14.2)
 ```
 
 Each carries its own copy of everything it needs. There is **no shared `lib/` at the outset**,
@@ -1639,7 +1650,7 @@ is an actual planned phase rather than an aspiration.
 #### One thing the duplication must *not* do
 
 The obvious reading of "independent" is that
-`projects/flexptp_freertos_lwip_demo/` is populated wholesale from `master`. **It must not be.**
+`projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo/` is populated wholesale from `master`. **It must not be.**
 [§13.2](#132-where-the-freertos--lwip-firmware-comes-from) measured what that would cost:
 `master`'s copies of the common files are behind by `mac_drv.c` +99/−18, `cmds.c` +338,
 `sysmem.c` +114, `serial_io.c` +63/−18 and more — changes that include the F57, F62, GI-01 and
@@ -1649,10 +1660,10 @@ Seeding the new project from `master` wholesale would ship a second firmware wit
 silently reverted, and unification would then have to rediscover them.
 
 **The rule, in terms of the layout that now exists.** Phase 0 landed
-`projects/flexptp_threadx_netx_demo/`, so this can name paths rather than describe them. Copy
+`projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/`, so this can name paths rather than describe them. Copy
 the ThreadX project's tree, then replace only the stack-specific files:
 
-| Destination in `projects/flexptp_freertos_lwip_demo/` | Source |
+| Destination in `projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo/` | Source |
 |---|---|
 | `eth/mac_drv.c`, `eth/phy_drv/`, `eth/eth_framer.cpp`, `eth/eth_link_state.cpp` | **current** — the descriptor-level driver and the pure units are common |
 | `ptp/ptp_port_stm32h563.c`, `ptp/ptp_endpoint.cpp`, `ptp/ptp_ts_codec.cpp`, `ptp/ptp_tx_registry.cpp`, `ptp/ptp_nsd_lifecycle.cpp`, `ptp/ptp_tx_timestamp.c` | **current** |
@@ -1725,7 +1736,7 @@ Worth stating, because it is most of the plan:
   and the per-binary transition already exists.
 - **Flashing** ([§8](#8-flashing)). `stm32_flash_binary` takes an `elf_image` label, so two
   flash targets fall out for free: `bazel run //P:flash` and
-  `bazel run //projects/flexptp_freertos_lwip_demo:flash`. No rule change.
+  `bazel run //projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo:flash`. No rule change.
 - **The vendored git repositories** ([§1.2](#12-from-git-everything-the-project-actually-compiles)),
   the patches, the HAL, flexPTP, ThreadX and NetX Duo.
 
@@ -1734,7 +1745,7 @@ Worth stating, because it is most of the plan:
 - **Host tests (D15).** The stack-agnostic ones (`ptp_units`, `eth_framer`, `eth_link_state`,
   `sysmem_bounds`, the ring tests) serve both projects unchanged. The RTOS ones do not, and
   **they must not simply be translated** — reading what
-  [`test/test_rtos_context.cpp`](../projects/flexptp_threadx_netx_demo/test/test_rtos_context.cpp) actually asserts, its four
+  [`test/test_rtos_context.cpp`](../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/test/test_rtos_context.cpp) actually asserts, its four
   context tests pin *two different rules from two different layers*:
 
   1. **The ISR half** — ST's CMSIS-RTOS2 wrapper rejecting a blocking call from interrupt
@@ -1769,10 +1780,10 @@ The restructure comes **first**, not last (D11). Full order, with the phase numb
 
 | Phase | What | Verified by | State |
 |---|---|---|---|
-| **0** | Move today's firmware into `projects/flexptp_threadx_netx_demo/`, **under CMake** | CMake still builds; HIL S8 passes; sections match modulo `__FILE__` | **landed** — sections came out identical |
+| **0** | Move today's firmware into `projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/`, **under CMake** | CMake still builds; HIL S8 passes; sections match modulo `__FILE__` | **landed** — sections came out identical |
 | 1–6 | The Bazel migration, writing `BUILD` files into their final home | as [§9](#9-phases) | 1–4 landed |
 | 7 | Delete CMake and `build.sh` (D3, D7) | | |
-| **8** | Add `projects/flexptp_freertos_lwip_demo/` from `master`, plus the FreeRTOS and lwIP `BUILD` files and per-project configuration; **and move the documents into `projects/<name>/docs/`** (D18) | seven criteria in [§9, Phase 8](#9-phases) | |
+| **8** | Add `projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo/` from `master`, plus the FreeRTOS and lwIP `BUILD` files and per-project configuration; **and move the documents into `projects/<name>/docs/`** (D18) | seven criteria in [§9, Phase 8](#9-phases) | |
 | **9** | Unification ([§13.8](#138-unification-afterwards)), incrementally | three criteria per layer, in [§9, Phase 9](#9-phases) | |
 
 **Phase 8 can use the board from its first commit.** This plan assumed the hardware gate arrived
@@ -1820,7 +1831,7 @@ duplication rather than by prediction. Rough order, easiest and safest first:
 
 1. **The pure-logic units. DONE.** `ptp_endpoint`, `ptp_ts_codec`, `ptp_tx_registry`,
    `ptp_nsd_lifecycle`, `eth_framer`, `eth_link_state` and `sysmem_bounds.h` now live in
-   `//lib`, with their tests in `//lib/test`. They depend on nothing but `stdint` — that is
+   `//projects/flexptp_demo_stm32h563/lib`, with their tests in `//projects/flexptp_demo_stm32h563/lib/test`. They depend on nothing but `stdint` — that is
    precisely why they were extracted — and the host tests already pinned their behaviour.
 
    **Both firmwares' build IDs were unchanged by the move**, which is criterion 3 doing its job:
@@ -1830,18 +1841,18 @@ duplication rather than by prediction. Rough order, easiest and safest first:
    it here: it includes `cmsis_os2.h`, so it belongs with the CMSIS-RTOS2 layer rather than with
    the units that depend on nothing.
 2. **The hardware layer. DONE.** `mac_drv.c`, `phy_drv/` and `ptp_port_stm32h563.c` are in
-   `//lib`, with the ring and harness tests in `//lib/test`. Same silicon, same registers, and
+   `//projects/flexptp_demo_stm32h563/lib`, with the ring and harness tests in `//projects/flexptp_demo_stm32h563/lib/test`. Same silicon, same registers, and
    `mac_drv.h` is stack-agnostic by design — it was written that way so the driver could outlive
    a change of network stack, which is exactly what happened. **Both build IDs unchanged.**
 
    One thing had to come with it that this section did not anticipate: the **console's headers**.
    `mac_drv.c` calls `MSG()`, so it needs `standard_output.h` — but not the implementation, which
-   creates an RTOS thread and is therefore still per-project. `//lib:io_headers` shares the
+   creates an RTOS thread and is therefore still per-project. `//projects/flexptp_demo_stm32h563/lib:io_headers` shares the
    interface alone and the symbol resolves at link against whichever implementation the firmware
    links. That is the tier boundary being less clean than the list implies: a tier-2 file needed
    a tier-3 header, and splitting interface from implementation was what let it move.
 3. **The CMSIS-RTOS2 layer. DONE.** `cli.c`, `serial_io.c`, `standard_output.c` and
-   `blocking_fifo.c` are in `//lib`. **Both build IDs unchanged.**
+   `blocking_fifo.c` are in `//projects/flexptp_demo_stm32h563/lib`. **Both build IDs unchanged.**
 
    These moved with less friction than tier 2, which is the opposite of what the tier order
    suggests — and the reason is the one
@@ -1855,8 +1866,8 @@ duplication rather than by prediction. Rough order, easiest and safest first:
    `cmds.c` stays per-project, as this section anticipated: `ethinfo`/`ethstat` and the
    stack-specific commands differ.
 4. **The runtime odds and ends. DONE.** `syscall.c`, `sysmem.c`, `cpp_support.cpp` and
-   `system_stm32h5xx.c` are in `//lib:runtime`; `startup_stm32h563zitx.s` and the linker script
-   are in `//lib:startup`. `ptp/ptp_tx_timestamp.c` was deleted rather than moved — it was
+   `system_stm32h5xx.c` are in `//projects/flexptp_demo_stm32h563/lib:runtime`; `startup_stm32h563zitx.s` and the linker script
+   are in `//projects/flexptp_demo_stm32h563/lib:startup`. `ptp/ptp_tx_timestamp.c` was deleted rather than moved — it was
    seeded into the FreeRTOS project and never built by either firmware.
 
    **This is the first tier that changed an image**, and it is worth being precise about what
@@ -1873,7 +1884,7 @@ duplication rather than by prediction. Rough order, easiest and safest first:
    8 bytes would have been rejecting a correct change on a link-layout artifact. What kept this
    honest was that the check is cheap: `size` plus `nm --defined-only` on both ELFs answers it
    directly, and *that* is the check to run when a build ID moves.
-5. **The HAL configuration. DONE.** `stm32h5xx_hal_conf.h` is `//lib:hal_conf`, and
+5. **The HAL configuration. DONE.** `stm32h5xx_hal_conf.h` is `//projects/flexptp_demo_stm32h563/lib:hal_conf`, and
    `@stm32h5_hal//:hal_conf`'s `label_flag` now defaults there rather than at the ThreadX
    project. This was listed as a judgement call — share it only if both projects genuinely want
    the same values — and the answer turned out to be yes: `tools/ci/check_seeding.sh` had been
@@ -1899,7 +1910,7 @@ Backported, all verified on hardware:
 
 | What | Finding behind it | Note |
 |---|---|---|
-| `report_build_id()` → `//lib:runtime` | GI-01 | Was a byte-identical static function in both `cmds.c` files. Now shared, with `runtime_info.h` giving `sysmem_heap_usage`, `cpp_static_init_status` and `cpp_standard` real prototypes instead of the local `extern` lines each project had been repeating — a local `extern` is a second, unchecked copy of a prototype |
+| `report_build_id()` → `//projects/flexptp_demo_stm32h563/lib:runtime` | GI-01 | Was a byte-identical static function in both `cmds.c` files. Now shared, with `runtime_info.h` giving `sysmem_heap_usage`, `cpp_static_init_status` and `cpp_standard` real prototypes instead of the local `extern` lines each project had been repeating — a local `extern` is a second, unchecked copy of a prototype |
 | C heap high-water mark in `osinfo` | NX-03 | The `_sbrk` bound is shared code, so both firmwares always had it; only one reported the number that says whether it is marginal |
 | Task enumeration in `osinfo` | — | Different API (`uxTaskGetSystemState()` against ThreadX's `_tx_thread_created_ptr` walk), identical claim. Both scales printed, because FreeRTOS counts *up* for urgency and ThreadX counts *down*, and printing one guarantees a misreading against the other |
 | Interrupt priorities in `osinfo` | NX-04 | The readback is what catches it. The table itself is **per-firmware** — see below |

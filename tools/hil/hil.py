@@ -89,7 +89,7 @@ class OpenOcd:
             raise BoardError(
                 "No OpenOCD found. Looked at $OPENOCD, toolchains/openocd/bin/openocd, and "
                 "PATH. An STM32H5 needs ST's fork -- upstream has no compiled-in stm32h5x "
-                "flash driver. Get one with `bazel run //projects/flexptp_threadx_netx_demo:flash`, "
+                "flash driver. Get one with `bazel run //projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:flash`, "
                 "or set OPENOCD to a build you already have."
             )
         argv = [str(self.binary), "-f", self.board_cfg]

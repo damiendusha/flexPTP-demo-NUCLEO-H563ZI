@@ -5,7 +5,7 @@ package(default_visibility = ["//visibility:public"])
 
 label_flag(
     name = "nx_user",
-    build_setting_default = "@flexptp_demo//projects/flexptp_threadx_netx_demo:nx_user",
+    build_setting_default = "@flexptp_demo//projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:nx_user",
 )
 
 # addons are opt-in file by file, not by directory: nxd_dhcp_client.c is needed, and its sibling

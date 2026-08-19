@@ -78,8 +78,8 @@ REMOVED_WITH_CMAKE = {
     "Middlewares/netxduo.cmake",
     "Middlewares/threadx.cmake",
     "Modules/CMakeLists.txt",
-    "projects/flexptp_threadx_netx_demo/CMakeLists.txt",
-    "projects/flexptp_threadx_netx_demo/test/CMakeLists.txt",
+    "projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/CMakeLists.txt",
+    "projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/test/CMakeLists.txt",
 }
 
 

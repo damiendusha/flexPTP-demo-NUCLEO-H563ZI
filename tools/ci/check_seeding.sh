@@ -14,11 +14,11 @@
 # list below, or a fix that has been reverted.
 set -uo pipefail
 
-TX=projects/flexptp_threadx_netx_demo
-RT=projects/flexptp_freertos_lwip_demo
+TX=projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo
+RT=projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo
 
 # Phase 9 note: files that are UNIFIED no longer appear in either project and so are not
-# compared here at all -- //lib is the single copy, and there is nothing left to drift. This
+# compared here at all -- //projects/flexptp_demo_stm32h563/lib is the single copy, and there is nothing left to drift. This
 # check therefore shrinks as unification proceeds, and what remains in it is the still-duplicated
 # surface. See docs/bazel_migration.md §13.8.
 #

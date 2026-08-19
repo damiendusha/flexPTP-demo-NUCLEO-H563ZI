@@ -1,0 +1,513 @@
+# Code common to both firmwares.
+#
+# Phase 9 of the Bazel migration (D11): the two projects were kept deliberately independent
+# while the second was brought up, and what is genuinely shared is factored out afterwards --
+# against two real applications rather than against a guess about what one of them would need.
+#
+# This is tier 1 of the order in docs/bazel_migration.md §13.8: units that depend on nothing but
+# stdint. They were extracted from the driver in the first place so they could be tested
+# off-target, which is also what makes them the safest thing to unify -- the host suite already
+# pins their behaviour, and //tools/ci:seeding_test had been asserting the two projects' copies
+# were byte-identical, so there is nothing to reconcile.
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+package(default_visibility = ["//visibility:public"])
+
+FIRST_PARTY = ["first_party_warnings"]
+
+# The flexPTP network-stack-driver logic, lifted out of the NSD so it could be tested without a
+# board, an RTOS or a network stack.
+cc_library(
+    name = "ptp_units",
+    srcs = [
+        "ptp/ptp_endpoint.cpp",
+        "ptp/ptp_nsd_lifecycle.cpp",
+        "ptp/ptp_ts_codec.cpp",
+        "ptp/ptp_tx_registry.cpp",
+    ],
+    # ptp_port_stm32h563.h is here but its .c is NOT: the port is compiled per-project
+    # (see :ptp_port_srcs below), while its header is part of this library's interface.
+    hdrs = [
+        "ptp/ptp_endpoint.h",
+        "ptp/ptp_nsd_lifecycle.h",
+        "ptp/ptp_port_stm32h563.h",
+        "ptp/ptp_ts_codec.h",
+        "ptp/ptp_tx_registry.h",
+    ],
+    features = FIRST_PARTY,
+    includes = [
+        ".",
+        "ptp",
+    ],
+)
+
+# The unit tests, kept beside the code they test, so a unit and its test move together and
+# neither can be found without the other.
+#
+# Tests and sources share the .cpp extension, so only the _test suffix separates them. That is
+# safe because every srcs list in this file is explicit -- but it means a glob like
+# glob(["ptp/*.cpp"]) reintroduced here would silently compile the tests INTO the library they
+# cover, linking GoogleTest into the firmware. List the files.
+cc_test(
+    name = "ptp_endpoint_test",
+    size = "small",
+    srcs = ["ptp/ptp_endpoint_test.cpp"],
+    deps = [
+        ":ptp_units",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ptp_nsd_lifecycle_test",
+    size = "small",
+    srcs = ["ptp/ptp_nsd_lifecycle_test.cpp"],
+    deps = [
+        ":ptp_units",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ptp_ts_codec_test",
+    size = "small",
+    srcs = ["ptp/ptp_ts_codec_test.cpp"],
+    deps = [
+        ":ptp_units",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ptp_tx_registry_test",
+    size = "small",
+    srcs = ["ptp/ptp_tx_registry_test.cpp"],
+    deps = [
+        ":ptp_units",
+        "@googletest//:gtest_main",
+    ],
+)
+
+# The framing and link-state decisions lifted out of the Ethernet driver (TS-04, CX-06).
+cc_library(
+    name = "eth_framer",
+    srcs = ["eth/eth_framer.cpp"],
+    hdrs = ["eth/eth_framer.h"],
+    features = FIRST_PARTY,
+    includes = [
+        ".",
+        "eth",
+    ],
+)
+
+cc_library(
+    name = "eth_link_state",
+    srcs = ["eth/eth_link_state.cpp"],
+    hdrs = ["eth/eth_link_state.h"],
+    features = FIRST_PARTY,
+    includes = [
+        ".",
+        "eth",
+    ],
+)
+
+cc_test(
+    name = "eth_framer_test",
+    size = "small",
+    srcs = ["eth/eth_framer_test.cpp"],
+    deps = [
+        ":eth_framer",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "eth_link_state_test",
+    size = "small",
+    srcs = ["eth/eth_link_state_test.cpp"],
+    deps = [
+        ":eth_link_state",
+        "@googletest//:gtest_main",
+    ],
+)
+
+# The bounds arithmetic _sbrk relies on. Header-only.
+cc_library(
+    name = "sysmem_bounds",
+    hdrs = ["runtime/sysmem_bounds.h"],
+    features = FIRST_PARTY,
+    includes = ["runtime"],
+)
+
+cc_test(
+    name = "sysmem_bounds_test",
+    size = "small",
+    srcs = ["runtime/sysmem_bounds_test.cpp"],
+    deps = [
+        ":sysmem_bounds",
+        "@googletest//:gtest_main",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Tier 2 -- the hardware layer
+# ---------------------------------------------------------------------------
+#
+# Same silicon, same registers, and mac_drv.h is stack-agnostic by design: it was written that
+# way so the driver could outlive a change of network stack, which is exactly what happened.
+
+# The console's INTERFACE. The implementation stays per-project for now, because it creates an
+# RTOS thread and the two firmwares' CMSIS-RTOS2 wrappers are different objects -- that is tier
+# 3. Sharing the header alone is enough for the driver: MSG() resolves at link time against
+# whichever implementation the firmware links.
+cc_library(
+    name = "io_headers",
+    hdrs = [
+        "io/serial_io.h",
+        "io/standard_output.h",
+        "io/term_colors.h",
+    ],
+    includes = ["."],
+    strip_include_prefix = "io",
+    include_prefix = "standard_output",
+)
+
+# The MAC driver, at the DMA descriptor level. Always built, in both firmwares: it owns the PTP
+# clock registers the flexPTP hardware port reaches, which is why it stayed compiled even in the
+# configurations that linked no network stack at all.
+cc_library(
+    name = "mac_drv",
+    srcs = [
+        "eth/mac_drv.c",
+        "eth/phy_drv/phy_common.c",
+    ],
+    hdrs = [
+        "eth/mac_drv.h",
+        "eth/phy_drv/phy_common.h",
+    ],
+    features = FIRST_PARTY,
+    includes = [
+        ".",
+        "eth",
+    ],
+    target_compatible_with = ["//toolchain:stm32h563"],
+    deps = [
+        ":io_headers",
+        "@stm32h5_hal//:hal",
+    ],
+)
+
+# mac_drv.c for TEXTUAL inclusion, which is how the host harness reaches its file statics.
+cc_library(
+    name = "mac_drv_textual",
+    hdrs = [
+        "eth/mac_drv.h",
+        "eth/phy_drv/phy_common.h",
+    ],
+    includes = [
+        ".",
+        "eth",
+    ],
+    textual_hdrs = [
+        "eth/mac_drv.c",
+        "eth/phy_drv/phy_common.c",
+    ],
+    deps = [":io_headers"],
+)
+
+# flexPTP's STM32H563 hardware port. Sources rather than a library: it is compiled INTO flexPTP,
+# which each project instantiates with its own configuration.
+exports_files([
+    "ptp/ptp_port_stm32h563.c",
+    "ptp/ptp_port_stm32h563.h",
+])
+
+cc_library(
+    name = "ptp_port_headers",
+    hdrs = ["ptp/ptp_port_stm32h563.h"],
+    includes = [
+        ".",
+        "ptp",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Tier 3 -- the CMSIS-RTOS2 layer
+# ---------------------------------------------------------------------------
+#
+# These are portable between the two firmwares for one reason, and it is the reason the monorepo
+# is natural rather than forced: the project is CMSIS-RTOS2 throughout. cmsis_os2.h is ARM's and
+# RTOS-agnostic, so this code compiles against the API and each firmware links its own
+# implementation underneath -- ST's ThreadX-backed wrapper in one, its FreeRTOS-backed one in
+# the other. Middlewares/CMakeLists.txt made exactly this observation when the kernel was
+# swapped: "the application never called FreeRTOS in any quantity".
+#
+# Neither library names an RTOS. The osThreadNew() and osMutexAcquire() calls resolve at link
+# against whichever wrapper the firmware pulls in.
+
+# The FIFO source, for the host tests that compile it against a real kernel.
+exports_files(["blocking_io/blocking_fifo.c"])
+
+cc_library(
+    name = "blocking_io",
+    srcs = ["blocking_io/blocking_fifo.c"],
+    hdrs = ["blocking_io/blocking_fifo.h"],
+    features = FIRST_PARTY,
+    includes = [
+        ".",
+        "blocking_io",
+    ],
+    target_compatible_with = ["//toolchain:stm32h563"],
+    deps = ["//third_party/CMSIS:cmsis"],
+)
+
+# cli.c for TEXTUAL inclusion: the CLI test includes the .c verbatim to reach its file statics.
+cc_library(
+    name = "cli_textual",
+    hdrs = ["cli/cli.h"],
+    includes = [
+        ".",
+        "cli",
+    ],
+    textual_hdrs = ["cli/cli.c"],
+    deps = [
+        ":blocking_io_headers",
+        ":io_headers",
+    ],
+)
+
+cc_library(
+    name = "blocking_io_headers",
+    hdrs = ["blocking_io/blocking_fifo.h"],
+    includes = [
+        ".",
+        "blocking_io",
+    ],
+)
+
+cc_library(
+    name = "cli",
+    srcs = ["cli/cli.c"],
+    hdrs = ["cli/cli.h"],
+    features = FIRST_PARTY,
+    includes = [
+        ".",
+        "cli",
+    ],
+    target_compatible_with = ["//toolchain:stm32h563"],
+    deps = [
+        ":blocking_io",
+        ":io_headers",
+        "//third_party/CMSIS:cmsis",
+    ],
+)
+
+# The console. serial_io.c splits into a hardware half and an RTOS half deliberately -- see the
+# note in main.c of either firmware: ThreadX's CMSIS-RTOS2 wrapper carves its byte pools inside
+# osKernelInitialize(), so nothing can be allocated before it, and both firmwares now follow
+# that order.
+cc_library(
+    name = "standard_output",
+    srcs = [
+        "io/serial_io.c",
+        "io/standard_output.c",
+    ],
+    features = FIRST_PARTY,
+    target_compatible_with = ["//toolchain:stm32h563"],
+    deps = [
+        ":blocking_io",
+        ":io_headers",
+        "//third_party/CMSIS:cmsis",
+        "@embfmt",
+        "@stm32h5_hal//:hal",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Tier 4 -- the runtime, the reset vector and the memory map
+# ---------------------------------------------------------------------------
+
+# The HAL's configuration, and the device selection that goes with it.
+#
+# §13.8 listed this as a judgement call -- share it only if both firmwares genuinely want the
+# same values. They do, byte for byte: same part, same HAL modules, same HAL_ETH_USE_PTP and
+# ETH_RX_DESC_CNT. If one ever needs to differ, this goes back to being per-project behind the
+# label_flag @stm32h5_hal//:hal_conf already provides.
+cc_library(
+    name = "hal_conf",
+    hdrs = ["runtime/stm32h5xx_hal_conf.h"],
+    defines = [
+        "STM32H563xx",
+        "USE_HAL_DRIVER",
+    ],
+    includes = ["runtime"],
+    deps = ["//third_party/CMSIS:cmsis"],
+)
+
+# newlib's syscalls, the heap, the C++ runtime probe, and the clock tree.
+#
+# sysmem.c is the interesting one: _sbrk is bounded against the linker script's symbols so that
+# exhaustion REPORTS AND HALTS rather than silently returning memory that overlaps the stack.
+# cpp_support.cpp exists to make the C++ runtime observable on hardware -- the cpp_ctor check in
+# tools/hil/ asks the running board whether static constructors ran.
+cc_library(
+    name = "runtime",
+    srcs = [
+        "runtime/build_id.c",
+        "runtime/cpp_support.cpp",
+        "runtime/syscall.c",
+        "runtime/sysmem.c",
+        "runtime/system_stm32h5xx.c",
+    ],
+    hdrs = ["runtime/runtime_info.h"],
+    features = FIRST_PARTY,
+    target_compatible_with = ["//toolchain:stm32h563"],
+    deps = [
+        ":hal_conf",
+        ":io_headers",
+        ":sysmem_bounds",
+        "@stm32h5_hal//:hal",
+    ],
+    alwayslink = True,
+)
+
+# The reset vector and the memory map. Both firmwares are the same part with the same layout;
+# what differs is what the RTOS adds -- ThreadX contributes tx_initialize_low_level.S, which
+# stays in that project because the clock, tick and end-of-RAM marker are its integrator's to
+# supply.
+cc_library(
+    name = "startup",
+    srcs = ["startup/startup_stm32h563zitx.s"],
+    target_compatible_with = ["//toolchain:stm32h563"],
+    deps = [":hal_conf"],
+    alwayslink = True,
+)
+
+exports_files(["startup/stm32h563zitx_FLASH.ld"])
+
+# ---------------------------------------------------------------------------
+# The MAC driver's host test rig, and the tests that need it
+# ---------------------------------------------------------------------------
+#
+# Unlike the unit tests above, these are not one source file's test: all three drive mac_drv.c
+# against a software model of the Ethernet DMA (eth_model), so the model, the unit-under-test
+# wrapper and the Cortex-M33 shims are shared infrastructure. They lived in //lib/test until
+# that package was dissolved; the shims sit in host/ rather than eth/ because the ThreadX
+# project's tests use them too.
+#
+# Two constraints carried from the CMake build, both load-bearing:
+#
+#   INCLUDE ORDER. host/ must come FIRST so its core_cm33.h, system_stm32h5xx.h and
+#   cmsis_compiler.h shadow ARM's -- ARM's cmsis_gcc.h emits `mrs r0, ipsr` for __get_IPSR(),
+#   which x86 cannot assemble. Everything below the shim is the REAL thing: ST's CMSIS device
+#   header and ST's HAL headers, so the register layouts under test are the definitions the
+#   firmware compiles against, following the pinned HAL automatically.
+#
+#   -no-pie / -fno-pie. The driver casts pointers to uint32_t because on the target they are 32
+#   bits; -no-pie puts .text low enough that a function pointer still fits in the uint32_t
+#   ETHHW_DescExt.tsCbPtr field. Without it the transmit-timestamp callback truncates and the
+#   first dispatch jumps into nowhere.
+
+cc_library(
+    name = "host_shims",
+    testonly = True,
+    hdrs = [
+        "host/cmsis_compiler.h",
+        "host/core_cm33.h",
+        "host/host_arena.h",
+        "host/host_mmio.h",
+        "host/system_stm32h5xx.h",
+    ],
+    includes = ["host"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "host_mac_drv",
+    testonly = True,
+    srcs = [
+        "eth/mac_drv_uut.c",
+        "host/host_arena.c",
+        "host/host_mmio.c",
+    ],
+    hdrs = [
+        "host/host_arena.h",
+        "host/host_mmio.h",
+    ],
+    copts = [
+        "-Iprojects/flexptp_demo_stm32h563/lib/host",
+        "-Wall",
+        "-Wextra",
+        "-Wno-unused-parameter",
+        # Deliberate, and handled by keeping every such object in the MAP_32BIT arena.
+        "-Wno-pointer-to-int-cast",
+        "-Wno-int-to-pointer-cast",
+        "-fno-pie",
+    ],
+    defines = [
+        "STM32H563xx",
+        "USE_HAL_DRIVER",
+    ],
+    includes = ["."],
+    linkopts = ["-no-pie"],
+    linkstatic = True,
+    deps = [
+        # do not sort: :host_shims MUST come first. Bazel emits each dep's include directories
+        # in this order, all as -I, so whichever is listed first wins in the compiler's search.
+        # Put it after :hal_conf (which pulls in CMSIS) and ARM's core_cm33.h shadows the shim
+        # instead of the other way round -- the build then fails in the assembler, on
+        # `dmb 0xF` and `mrs %eax,primask`, a long way from this list.
+        ":host_shims",
+        ":hal_conf",
+        ":mac_drv_textual",
+        "//third_party/CMSIS:cmsis",
+        "@stm32h5_hal//:hal_headers",
+    ],
+)
+
+cc_library(
+    name = "eth_model",
+    testonly = True,
+    srcs = ["eth/eth_model.cpp"],
+    hdrs = ["eth/eth_model.hpp"],
+    copts = ["-Iprojects/flexptp_demo_stm32h563/lib/host"],
+    includes = ["eth"],
+    linkstatic = True,
+    deps = [":host_mac_drv"],
+)
+
+cc_test(
+    name = "host_harness_test",
+    size = "small",
+    srcs = ["eth/host_harness_test.cpp"],
+    copts = ["-Iprojects/flexptp_demo_stm32h563/lib/host"],
+    linkopts = ["-no-pie"],
+    deps = [
+        ":eth_model",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "mac_drv_rx_ring_test",
+    size = "small",
+    srcs = ["eth/mac_drv_rx_ring_test.cpp"],
+    copts = ["-Iprojects/flexptp_demo_stm32h563/lib/host"],
+    linkopts = ["-no-pie"],
+    deps = [
+        ":eth_model",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "mac_drv_tx_ring_test",
+    size = "small",
+    srcs = ["eth/mac_drv_tx_ring_test.cpp"],
+    copts = ["-Iprojects/flexptp_demo_stm32h563/lib/host"],
+    linkopts = ["-no-pie"],
+    deps = [
+        ":eth_model",
+        "@googletest//:gtest_main",
+    ],
+)

@@ -6,11 +6,44 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 cc_library(
     name = "cmsis",
-    hdrs = glob([
-        "Device/ST/STM32H5xx/Include/*.h",
-        "Include/*.h",
-        "CMSIS_RTOS_V2/*.h",
-    ]),
+    hdrs = [
+        "Device/ST/STM32H5xx/Include/stm32h563xx.h",
+        "Device/ST/STM32H5xx/Include/stm32h5xx.h",
+        "Device/ST/STM32H5xx/Include/system_stm32h5xx.h",
+        "Include/cachel1_armv7.h",
+        "Include/cmsis_armcc.h",
+        "Include/cmsis_armclang.h",
+        "Include/cmsis_armclang_ltm.h",
+        "Include/cmsis_compiler.h",
+        "Include/cmsis_gcc.h",
+        "Include/cmsis_iccarm.h",
+        "Include/cmsis_version.h",
+        "Include/core_armv81mml.h",
+        "Include/core_armv8mbl.h",
+        "Include/core_armv8mml.h",
+        "Include/core_cm0.h",
+        "Include/core_cm0plus.h",
+        "Include/core_cm1.h",
+        "Include/core_cm23.h",
+        "Include/core_cm3.h",
+        "Include/core_cm33.h",
+        "Include/core_cm35p.h",
+        "Include/core_cm4.h",
+        "Include/core_cm55.h",
+        "Include/core_cm7.h",
+        "Include/core_cm85.h",
+        "Include/core_sc000.h",
+        "Include/core_sc300.h",
+        "Include/core_starmc1.h",
+        "Include/mpu_armv7.h",
+        "Include/mpu_armv8.h",
+        "Include/pac_armv81.h",
+        "Include/pmu_armv8.h",
+        "Include/tz_context.h",
+        "CMSIS_RTOS_V2/cmsis_os2.h",
+        "CMSIS_RTOS_V2/freertos_mpool.h",
+        "CMSIS_RTOS_V2/freertos_os2.h",
+    ],
     includes = [
         "CMSIS_RTOS_V2",
         "Device/ST/STM32H5xx/Include",
@@ -26,7 +59,7 @@ cc_library(
 # projects, and it is why the monorepo is natural rather than forced.
 #
 # Exposed as SOURCES, not a library: it needs CMSIS_device_header and the device selection, which
-# are the consuming project's to supply. //projects/flexptp_freertos_lwip_demo:cmsis_rtos builds
+# are the consuming project's to supply. //projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo:cmsis_rtos builds
 # it.
 exports_files([
     "CMSIS_RTOS_V2/cmsis_os2_freertos.c",

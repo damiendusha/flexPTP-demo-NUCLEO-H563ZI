@@ -32,7 +32,7 @@ git -C Modules/embfmt checkout -- embformat.c
 ### `0001-formatting-fixes.patch` — **permanent, keep**
 
 Two fixes, both target-independent and both worth reporting upstream. Full analysis in
-[`docs/port_review.md`](../../projects/flexptp_threadx_netx_demo/docs/port_review.md) under F60.
+[`docs/port_review.md`](../../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/port_review.md) under F60.
 
 | Change | Why |
 |---|---|

@@ -1148,7 +1148,7 @@ osStatus_t osDelayUntil (uint32_t ticks) {
 
    On this firmware's Cortex-M33 that is lossless -- a pointer is 32 bits -- so the target is
    unaffected and the change generates identical code there. On the 64-bit host used by
-   //projects/flexptp_freertos_lwip_demo/test it truncates a heap address, and callb->func()
+   //projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo/test it truncates a heap address, and callb->func()
    then calls through a garbage pointer: a SIGSEGV inside TimerCallback, reached from
    prvProcessExpiredTimer on the "Tmr Svc" task.
 

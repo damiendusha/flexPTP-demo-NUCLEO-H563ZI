@@ -54,7 +54,7 @@ Makes the clock servo survive a repeated Sync cycle. Without it a single duplica
 gives `measSyncPeriodNs == 0`, the Kalman filter computes `0.0/0.0`, and NaN latches into
 its state permanently — the servo then reports a correction of `0.0000` for ever while the
 clock free-runs. Full analysis in
-[`docs/port_review.md`](../../projects/flexptp_threadx_netx_demo/docs/port_review.md) under F59.
+[`docs/port_review.md`](../../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/port_review.md) under F59.
 
 | File | Change |
 |---|---|
@@ -85,7 +85,7 @@ So every heartbeat was discarded: `S.ticks` stayed at 0, `ptp_bmca_tick()` never
 BMCA FSM never left `INITIALIZING` — the one state in which `ptp_handle_announce_msg()` falls
 through its `default:` arm and drops the Announce. Receive worked perfectly throughout, which
 is what made it look like a receive fault. Full analysis in
-[`docs/port_review.md`](../../projects/flexptp_threadx_netx_demo/docs/port_review.md) under F80.
+[`docs/port_review.md`](../../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/port_review.md) under F80.
 
 | File | Change |
 |---|---|

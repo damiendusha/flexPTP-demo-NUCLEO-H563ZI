@@ -420,7 +420,7 @@ to that project's target and be depended on normally.
 
 Where `@freertos` does need a second configuration is the **host** — D15's Posix-port context
 tests, which want a different `FreeRTOSConfig.h` and a different port, exactly as
-[`test/CMakeLists.txt`](../projects/flexptp_threadx_netx_demo/test/CMakeLists.txt) already gives ThreadX different byte-pool sizes
+[`test/CMakeLists.txt`](../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/test/CMakeLists.txt) already gives ThreadX different byte-pool sizes
 on the host. That divergence is driven by *platform*, so it is a `select()`:
 
 ```python

@@ -5,7 +5,7 @@ package(default_visibility = ["//visibility:public"])
 
 label_flag(
     name = "tx_user",
-    build_setting_default = "@flexptp_demo//projects/flexptp_threadx_netx_demo:tx_user",
+    build_setting_default = "@flexptp_demo//projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:tx_user",
 )
 
 # The board-specific low-level init is the integrator's to supply -- Eclipse keeps it in

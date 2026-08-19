@@ -20,12 +20,12 @@ jobs:
       matrix:
         config: [dbg, opt]
         project:
-          - flexptp_threadx_netx_demo
-          - flexptp_freertos_lwip_demo
+          - flexptp_demo_stm32h563/flexptp_threadx_netx_demo
+          - flexptp_demo_stm32h563/flexptp_freertos_lwip_demo
         include:
-          - project: flexptp_threadx_netx_demo
+          - project: flexptp_demo_stm32h563/flexptp_threadx_netx_demo
             target: flexptp-demo
-          - project: flexptp_freertos_lwip_demo
+          - project: flexptp_demo_stm32h563/flexptp_freertos_lwip_demo
             target: flexptp-demo-freertos
 
     steps:
@@ -91,8 +91,8 @@ jobs:
       fail-fast: false
       matrix:
         project:
-          - flexptp_threadx_netx_demo
-          - flexptp_freertos_lwip_demo
+          - flexptp_demo_stm32h563/flexptp_threadx_netx_demo
+          - flexptp_demo_stm32h563/flexptp_freertos_lwip_demo
     steps:
       - uses: actions/checkout@v4
 
