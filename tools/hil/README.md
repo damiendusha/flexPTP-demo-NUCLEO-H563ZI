@@ -94,13 +94,34 @@ sudo tools/hil/setup_host_net.sh --with-ptp4l
 or by hand:
 
 ```bash
-sudo ptp4l -i enp5s0 -S -m --serverOnly=1 --priority1=100
+sudo ptp4l -i enp5s0 -H -m --serverOnly=1 --priority1=100
 ```
 
-`-S` selects software timestamping and is **required** unless your NIC has a PTP hardware
-clock — check with `ethtool -T <iface> | grep 'PTP Hardware Clock'`. On this bench the
-board-facing NIC is an RTL8125 with none, which puts the offset floor in the tens of
-microseconds. That is the host, not the board. See
+`-H` is hardware timestamping. The board-facing NIC on this bench is an **Intel i226**
+(`igc`) with a PHC at `/dev/ptp0`, so the script picks `-H` by itself; it falls back to `-S`
+(software) only on a NIC without one, and `--software` forces that fallback. Software
+timestamping puts the offset floor in the tens of microseconds — that is the host, not the
+board.
+
+> Detect a PHC with `ethtool -T <iface> | grep -w hardware-transmit`, **not** with
+> `grep 'PTP Hardware Clock'`. ethtool 6.x prints `PTP Hardware Clock: none` for a NIC
+> without one, but describes a NIC *with* one as `Hardware timestamp provider index: N` and
+> drops the line altogether — so the older grep comes back empty in both cases.
+
+What the board actually achieves against this master, for both firmware images, is measured in
+[`docs/l4_performance.md`](../../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/l4_performance.md).
+Note that `ptp_sync` below is a 30-second regression gate, not a characterisation.
+
+To run the master in the **gPTP** (802.1AS) profile instead:
+
+```bash
+sudo tools/hil/setup_host_net.sh --gptp
+```
+
+That installs `tools/linuxptp/flexptp-gm.cfg` to `/etc/linuxptp/` (where AppArmor lets
+`ptp4l` read it) and starts the master on it. The board does **not** boot into gPTP — issue
+`ptp profile preset gPTP` at the VCP, and re-issue it after every reflash. Anything after
+`--` is passed to `ptp4l` verbatim. See
 [`docs/host_ptp_setup.md`](../../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/host_ptp_setup.md).
 
 ## The baseline

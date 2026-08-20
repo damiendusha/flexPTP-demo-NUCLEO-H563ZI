@@ -2,18 +2,28 @@
 
 How to set up a Linux host as a PTP grandmaster for this demo, using `linuxptp`.
 
-> **Target status: locked and disciplining the clock.** Verified against `ptp4l` on a
-> directly-connected host with the **`default`** profile: 190 of 191 samples applying a
-> correction, and the offset centred on the master rather than drifting: **signed mean +40 ns**
-> over 60 samples, but a **typical magnitude of 26 µs** and an 87 µs peak. The near-zero
-> signed mean shows the servo is locked, not that the clock is accurate to 40 ns — the
-> spread is the host's software-timestamping floor, not the board — see
-> [Accuracy expectations](#accuracy-expectations).
+> **Target status: locked, sub-microsecond.** Measured 2026-08-20 against a
+> hardware-timestamping host (Intel i226) on a direct cable, in the **`default`** profile,
+> over a 15-minute steady-state window per firmware: **RMS offset 187 ns** (FreeRTOS) and
+> **203 ns** (ThreadX), p99 **520 ns** and **500 ns**, path delay ~560 ns. Both images
+> converge in under 30 s. Full method, distributions and caveats — including one unexplained
+> 11-second Sync outage on FreeRTOS — are in
+> **[l4_performance.md](l4_performance.md)**.
 >
-> Re-verified after `default` became the boot preset, with no profile command issued at all:
-> `INITIALIZING -> LISTENING -> UNCALIBRATED -> SLAVE`, then **167 of 167 samples applying a
-> correction**, signed mean **−638 ns**, typical magnitude **15 µs**, 86 µs peak, and the
-> addend ranging 3435585115 – 3436216126 around its 3435973836 nominal.
+> <details>
+> <summary>Earlier software-timestamped figures, superseded</summary>
+>
+> Taken against an RTL8125 with no PTP hardware clock, whose floor was tens of microseconds.
+> They demonstrated a locked servo, not the board's accuracy.
+>
+> - 190 of 191 samples applying a correction, signed mean **+40 ns** over 60 samples, typical
+>   magnitude **26 µs**, 87 µs peak.
+> - Re-verified after `default` became the boot preset, with no profile command issued:
+>   `INITIALIZING -> LISTENING -> UNCALIBRATED -> SLAVE`, then **167 of 167 samples applying a
+>   correction**, signed mean **−638 ns**, typical magnitude **15 µs**, 86 µs peak, addend
+>   ranging 3435585115 – 3436216126 around its 3435973836 nominal.
+>
+> </details>
 
 ## Two routes
 
@@ -25,6 +35,7 @@ The board loads the `default` profile at startup (`FLEXPTP_INITIAL_PROFILE` in
 | Transport | UDP/IPv4, multicast 224.0.1.129 | Raw Layer 2, ethertype 0x88F7 |
 | Delay mechanism | E2E | P2P |
 | Host command | plain `ptp4l`, no config file | `ptp4l -f /etc/linuxptp/gPTP.cfg` |
+| Script shortcut | `setup_host_net.sh --with-ptp4l` | `setup_host_net.sh --gptp` |
 | Board command | loaded at boot, nothing to do | **`ptp profile preset gPTP`** |
 | Through ordinary switches | **possible** — ordinary UDP multicast, but one switch here silently dropped `Delay_Resp` (F42) | **no, by design** — the 802.1AS destination MAC is in the reserved range bridges must not forward |
 | Status | **proven on this port** | not yet exercised end to end |
@@ -44,11 +55,23 @@ trade-offs, are in [ptp_profiles.md](ptp_profiles.md).
 ```bash
 sudo apt install linuxptp        # provides ptp4l, pmc, phc2sys
 ip -br addr                      # find the interface facing the board
-ethtool -T <iface> | grep -i "PTP Hardware Clock"
+ethtool -T <iface> | grep -w hardware-transmit
 ```
 
-If that last command reports `PTP Hardware Clock: none`, your NIC has no hardware
-timestamping and you must add `-S` (software timestamping) below.
+If that last command prints nothing, the NIC has no hardware timestamping and you must add
+`-S` (software timestamping) to every `ptp4l` command below. If it prints
+`hardware-transmit`, the NIC has a PTP hardware clock and `-H` — ptp4l's default — applies.
+
+> **Do not grep for `PTP Hardware Clock`,** which is what this document used to recommend.
+> ethtool 6.x prints `PTP Hardware Clock: none` for a NIC *without* one, but describes a NIC
+> *with* one as `Hardware timestamp provider index: N` and omits the line entirely — so that
+> grep returns nothing in both cases, and a capable NIC reads as incapable.
+
+The board-facing NIC on this bench is now an **Intel i226** (`igc` driver) with a PHC at
+`/dev/ptp0`, `hardware-transmit`/`hardware-receive`, and an `all` receive filter — so it
+timestamps both the UDP frames of `default` and the raw 802.3 frames of `gPTP` in hardware.
+It replaced an RTL8125, which had none; measurements in this document taken before that swap
+are noted as software-timestamped and their floor is the host's, not the board's.
 
 ### On a direct cable
 
@@ -71,7 +94,14 @@ For the **`default`** profile there is no config file and nothing to override �
 setting that matters is already `ptp4l`'s default:
 
 ```bash
-sudo ptp4l -i enp5s0 -S -m --serverOnly=1 --priority1=100
+sudo ptp4l -i enp5s0 -H -m --serverOnly=1 --priority1=100
+```
+
+or, to set up the DHCP server and the master in one step (this picks `-H` or `-S` for the
+interface by itself):
+
+```bash
+sudo tools/hil/setup_host_net.sh --with-ptp4l
 ```
 
 and on the target, over the ST-Link VCP — `default` is the boot preset, so there is no
@@ -99,6 +129,12 @@ machine looks. That was [F59](port_review.md#f59--one-duplicated-sync-cycle-latc
 
 **Read this before spending time on the `gPTP` route with `-S`.** It cannot reach `SLAVE`, and
 the reason is a threshold in the standard rather than anything wrong with either end.
+
+> **This no longer bites on the current bench.** With the i226's hardware timestamping the
+> peer-delay measurement is taken at the MAC, so the ~8–9 µs figure below — which is host
+> stack latency, not propagation — does not arise, and the `gPTP` route can be run without
+> the threshold override. What follows is why the override was needed on the old NIC, and
+> what the symptom looks like if you hit the threshold for some other reason.
 
 802.1AS only declares a port `asCapable` once the measured neighbour propagation delay is at or
 below `neighborPropDelayThresh`, which linuxptp's `gPTP.cfg` sets to **800 ns**. A port that is
@@ -129,8 +165,19 @@ Two ways forward:
 sudo ptp4l -i enp5s0 -S -m -f /etc/linuxptp/gPTP.cfg --neighborPropDelayThresh 100000
 ```
 
-or use a NIC with a PTP hardware clock (`ethtool -T <iface>`), which is the honest fix and also
-removes the tens-of-microseconds floor from the `default` profile's numbers.
+or use a NIC with a PTP hardware clock (`ethtool -T <iface> | grep -w hardware-transmit`),
+which is the honest fix and also removes the tens-of-microseconds floor from the `default`
+profile's numbers. **That is the route this bench now takes** — the i226 does both.
+
+If a hardware-timestamped link still fails to become `asCapable`, the measurement is real and
+the threshold is doing its job: 802.1AS budgets 800 ns, and a 100BASE-TX PHY pair can eat a
+meaningful part of that. Check what is actually being measured before overriding it —
+`pmc -u -b 0 -f /etc/linuxptp/flexptp-gm.cfg 'GET PORT_DATA_SET'` reports the peer mean path
+delay. The override, if you want it, goes through the script too:
+
+```bash
+sudo tools/hil/setup_host_net.sh --gptp -- --neighborPropDelayThresh 100000
+```
 
 > Note the asymmetry this creates in what can be claimed. The `default` profile is proven end to
 > end here. `gPTP` has its transmit path, its receive path and its peer-delay state machine all
@@ -169,7 +216,7 @@ sudo install -D -m644 /usr/share/doc/linuxptp/configs/gPTP.cfg /etc/linuxptp/gPT
 ```
 
 ```bash
-sudo ptp4l -f /etc/linuxptp/gPTP.cfg -i enp5s0 -S -m --serverOnly=1 --priority1=100
+sudo ptp4l -f /etc/linuxptp/gPTP.cfg -i enp5s0 -H -m --serverOnly=1 --priority1=100
 ```
 
 Replace `enp5s0` with your interface — it is the one facing the board throughout this
@@ -177,7 +224,7 @@ document. The four flags, and why each is there:
 
 | Flag | Why |
 |---|---|
-| `-S` | Software timestamping. Required **only** if your NIC has no PHC — check with `ethtool -T <iface>`. Drop it if it has one; accuracy improves by orders of magnitude. |
+| `-H` | Hardware timestamping — ptp4l's default, and what the i226 on this bench supports. Substitute `-S` **only** if the NIC has no PHC (`ethtool -T <iface> \| grep -w hardware-transmit`); accuracy then drops by orders of magnitude, and gPTP stops working altogether for the reason above. |
 | `-m` | Log to stdout so you can watch it. |
 | `--serverOnly=1` | Never become a slave. This is the linuxptp **4.x** spelling; 3.x and earlier use `--masterOnly=1`. |
 | `--priority1=100` | **Not optional.** The stock `gPTP.cfg` sets `priority1 248`, which is *worse* than the board's 128 — without this, BMCA elects the board as grandmaster and neither side ever syncs. |
@@ -193,8 +240,12 @@ forgotten:
 
 ```bash
 sudo install -D -m644 tools/linuxptp/flexptp-gm.cfg /etc/linuxptp/flexptp-gm.cfg
-sudo ptp4l -f /etc/linuxptp/flexptp-gm.cfg -i enp5s0 -S -m
+sudo ptp4l -f /etc/linuxptp/flexptp-gm.cfg -i enp5s0 -H -m
 ```
+
+`tools/hil/setup_host_net.sh --gptp` runs exactly those two commands — it installs the config
+if it differs from the repo copy, picks `-H` or `-S` for the interface, and reminds you to put
+the board into the profile with `ptp profile preset gPTP`.
 
 Being a copy, it will not pick up upstream changes to `gPTP.cfg`. The stock-file route
 above is the one to prefer.
@@ -231,6 +282,19 @@ declare LOCKED.
 With **software timestamping** on the host expect microsecond-class results — enough to
 prove the link works, not enough to characterise it. flexPTP is capable of tens of
 nanoseconds, but only against a hardware-timestamping master.
+
+The i226 now on this bench is such a master, and the re-measurement has been done: with `-H`,
+both firmware images hold **sub-microsecond** offset over a 15-minute window — RMS 187 ns
+(FreeRTOS) and 203 ns (ThreadX), p99 ~500 ns, against the tens of microseconds the RTL8125
+floor imposed. Roughly two orders of magnitude, and the change was entirely on the host side.
+
+[l4_performance.md](l4_performance.md) has the distributions, the conditions they were taken
+under, and what they do *not* establish — the headline numbers do not separate the two
+kernels, and one 15-minute run each cannot.
+
+The remaining floor is no longer the host. It is the ST-Link MCO at 8 MHz (both images
+measured the same −27 ppm pull off nominal addend) and the 5 ns timestamp granularity —
+see [ptp_clock.md](ptp_clock.md).
 
 Two further limits are inherent to this board and unrelated to the host:
 

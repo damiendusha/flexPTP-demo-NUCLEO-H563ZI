@@ -31,6 +31,7 @@ deliberately left as written.
 Companion documents: [architecture.md](architecture.md) (module stack, threads, interrupts) ·
 [testing_architecture.md](testing_architecture.md) (what is tested, and what is not) ·
 [host_ptp_setup.md](host_ptp_setup.md) (running a PTP master on the host) ·
+[l4_performance.md](l4_performance.md) (measured layer 4 accuracy, both firmwares) ·
 [ptp_clock.md](ptp_clock.md) (PTP clock derivation) ·
 [ptp_profiles.md](ptp_profiles.md) (default vs gPTP presets) ·
 [port_review.md](port_review.md) (review findings and verified-clean audit) ·

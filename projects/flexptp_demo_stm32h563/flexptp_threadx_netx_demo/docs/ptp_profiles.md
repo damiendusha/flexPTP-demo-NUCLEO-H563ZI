@@ -7,8 +7,9 @@ sets, the trade-offs behind the two axes that matter (transport and delay mechan
 how to configure a Linux host to match.
 
 For the mechanics of running `ptp4l` — installation, DHCP on a direct cable, verification
-commands and a symptom table — see [host_ptp_setup.md](host_ptp_setup.md). This document is
-about *which* profile to pick.
+commands and a symptom table — see [host_ptp_setup.md](host_ptp_setup.md); for what the
+`default` profile actually achieves on this hardware, see
+[l4_performance.md](l4_performance.md). This document is about *which* profile to pick.
 
 ## The short answer
 

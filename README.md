@@ -232,8 +232,19 @@ Two things that cost days here and are worth reading before you start:
   cable before suspecting the firmware.
 
 Hardware timestamping on the host side is available out-of-the-box on several Intel NICs, such
-as the I210, I219-V or 82576. With software timestamping expect microsecond-class results —
-enough to prove the link works, not enough to characterise it.
+as the I210, I219-V, I226 or 82576. With software timestamping expect microsecond-class results —
+enough to prove the link works, not enough to characterise it. The bench here now uses an
+**I226** (`igc`), so `ptp4l` runs with `-H`; `tools/hil/setup_host_net.sh --with-ptp4l` picks
+hardware or software timestamping for the interface by itself, and `--gptp` starts the master
+in the 802.1AS profile instead.
+
+Against such a master, on a direct cable, both firmware images hold **sub-microsecond** offset
+in the `default` (layer 4) profile — RMS **187 ns** on FreeRTOS/lwIP and **203 ns** on
+ThreadX/NetX Duo over a 15-minute window, p99 around 500 ns. The two are not distinguishable
+from one 15-minute run each, and
+[`docs/l4_performance.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/l4_performance.md)
+says so explicitly alongside the method, the distributions and an unexplained 11-second Sync
+outage seen on FreeRTOS.
 
 ## Development
 
@@ -433,6 +444,7 @@ PID servo expose `ptp servo params` instead.
 | [`docs/ptp_clock.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/ptp_clock.md) | Full derivation of the PTP timestamp clock, and why a 4 ns increment is possible but not adopted |
 | [`docs/ptp_profiles.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/ptp_profiles.md) | The three profile presets, the transport and delay-mechanism trade-offs, and what a switched network costs |
 | [`docs/host_ptp_setup.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/host_ptp_setup.md) | Running a PTP master on a Linux host, and what to check when nothing happens |
+| [`docs/l4_performance.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/l4_performance.md) | Measured layer 4 accuracy of both firmwares against a hardware-timestamping master, and what a single run cannot establish |
 | [`docs/port_review.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/port_review.md) | Every finding of the port review, with evidence — including the ones that cost days |
 | [`docs/implementation_plan.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/implementation_plan.md) | The staged plan for the **first** port (H743 → H563). Closed and historical; ends with a table of what changed afterwards |
 | [`docs/threadx_netxduo_feasibility.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/threadx_netxduo_feasibility.md) | What porting to Eclipse ThreadX and NetX Duo would cost, and the one flexPTP defect that would break it silently |

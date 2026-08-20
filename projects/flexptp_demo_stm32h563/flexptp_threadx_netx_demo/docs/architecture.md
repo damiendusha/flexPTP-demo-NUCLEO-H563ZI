@@ -7,6 +7,7 @@ Companion documents: [design_doc.md](design_doc.md) (porting decisions) ·
 [testing_architecture.md](testing_architecture.md) (how it is tested, and what is not) ·
 [ptp_clock.md](ptp_clock.md) (PTP clock derivation) ·
 [ptp_profiles.md](ptp_profiles.md) (default vs gPTP presets) ·
+[l4_performance.md](l4_performance.md) (measured layer 4 accuracy) ·
 [port_review.md](port_review.md) (findings) ·
 [threadx_porting_plan.md](threadx_porting_plan.md) (the RTOS/stack port) ·
 [implementation_plan.md](implementation_plan.md) (the original silicon port — historical)
