@@ -210,6 +210,45 @@ selection and changes the source binding.
 
 ---
 
+### U7 — `ptp transport` does not take effect · **found while testing U4, confirmed on hardware**
+
+`ptp_set_transport_type()` writes the profile field and stops, while its immediate neighbour
+does the necessary second half and says why:
+
+```c
+void ptp_set_transport_type(PtpTransportType tp) {
+    S.profile.transportType = tp;
+}
+
+void ptp_set_delay_mechanism(PtpDelayMechanism dm) {
+    S.profile.delayMechanism = dm;
+    ptp_reset(); // this is mandatory
+}
+```
+
+It is equally mandatory here. Every network stack driver latches the transport in its own state
+at `ptp_nsd_init()` time — `nsd_lwip.c` keeps it in a static `TP` — and nothing else re-runs
+that. So the core believes one thing and the driver another: `ptp transport 802.3` prints
+`Transport layer: 802.3`, `ptp info` agrees, and the driver carries on with UDP sockets.
+
+Measured on the FreeRTOS + lwIP firmware, raw-802.3 PTP frames transmitted in 100 s after
+`ptp profile preset defp2p` followed by `ptp transport 802.3`:
+
+| | Frames |
+|---|---|
+| before | **0** |
+| after | **280** |
+
+Zero from a cold boot as well, so it is not stale state. The gPTP preset hid it: its own
+`transportType` is already 802.3 and a profile load resets the engine anyway, so the defect only
+appears when the transport is changed on its own.
+
+**This is why U4's negative case was untestable.** gPTP is the only preset that is natively
+802.3, so the only route to "802.3 with no custom destination" is the transport switch — which
+did not work. Fixing U7 first is what made U4 measurable.
+
+---
+
 ### Minor
 
 - **`xQueueSendFromISR(..., NULL)`** in `ptp_receive_enqueue()`, `ptp_transmit_enqueue()` and
@@ -246,11 +285,40 @@ selection and changes the source binding.
 Neither firmware needed a source change for anything else. Both build clean and all 19 host
 tests pass.
 
-## 4. Recommended upstream reports
+## 4. The fixes
 
-In order of consequence: **U1** (wrong identity displayed, wrong BMCA comparison), **U2** (a
-saved configuration is discarded if the obvious one-character fix is applied alone), **U5**
-(spurious hardware timestamps proportional to transmit volume), **U4** (profile change does not
-take effect), **U3** (console noise), **U6** and the minors as a single tidy-up.
+Seven branches off `494e644`, each touching a disjoint set of lines so they can be merged,
+rejected or reordered in any combination. Every one is verified on a NUCLEO-H563ZI; where a
+before/after number exists, it is a measurement and not an argument.
 
-U1, U2, U3 and U5 are all target-independent.
+| | Branch | Verification | Before | After |
+|---|---|---|---|---|
+| U1 | `fix/u1-gm-clock-identity-byte-order` | Master clock ID vs the host NIC's derived identity, both firmwares | `e42126feffc9a000` | `00a0c9fffe2621e4` |
+| U2 | `fix/u2-logid-config-bit` | Config round trip through a CLI hook, three states | logid bit missing; semicolon-only fix → **whole record rejected** | round-trips, every flag restored |
+| U3 | `fix/u3-locked-log-prefix` | 25 s of console, logid + locked on | 25 orphan prefixes | 0 orphans, prefix on every real transition |
+| U4 | `fix/u4-p2p-8023-dest-sticky` | Destination histogram over 280 frames, gPTP → defp2p | 0 frames to the primary group | 233 to primary, 47 to peer-delay |
+| U5 | `fix/u5-stale-pbuf-tx-cb` | `ptp.drop_txts` over a 120 s, 78 Mbit/s flood | **284 392** | **0** |
+| U6 | `fix/u6-pdelay-pcb-comment` | Comment only; full suite unchanged | — | — |
+| U7 | `fix/u7-transport-type-reset` | 802.3 frames after a runtime transport switch | 0 | 280 |
+
+All seven apply together without conflict, and with all seven applied both firmwares pass the
+full S8 hardware stage — ThreadX 14/14, FreeRTOS 13/14 with one pre-existing skip — including
+the 120-second saturation flood.
+
+File them with [`tools/upstream/file_flexptp_prs.sh`](../tools/upstream/file_flexptp_prs.sh),
+one at a time. See [`tools/upstream/README.md`](../tools/upstream/README.md).
+
+## 5. Order to file in
+
+By consequence, not by number — a maintainer who reads only the first two should have read the
+two that lose data.
+
+1. **U1** — wrong identity displayed, and a BMCA comparison that cannot match
+2. **U2** — a saved configuration is discarded if the obvious one-character fix is applied alone
+3. **U5** — spurious hardware timestamps proportional to transmit volume
+4. **U7** — a documented control silently does nothing
+5. **U4** — a profile change silently does not take effect
+6. **U3** — console noise
+7. **U6** — tidiness; bundle with the minors
+
+All seven are target-independent.
