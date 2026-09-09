@@ -5,6 +5,7 @@
 
 /* For ethstat's ptp.* fields: flexPTP's core state and tick. */
 #include "flexptp/clock_utils.h"
+#include "flexptp/config.h"
 #include "flexptp/stats.h"
 #include "flexptp/event.h"
 #include "flexptp/ptp_core.h"
@@ -249,6 +250,52 @@ CMD_FUNCTION(eth_stats) {
     return 0;
 }
 
+/* `ptpcfg` -- exercise flexPTP's retained-configuration round trip.
+ *
+ * This board defines no PTP_CONFIG_PTR, so ptp_store_config()/ptp_load_config() have no caller
+ * and the whole path is dead code on this firmware. That is exactly why it needs a hook: the
+ * two defects in flexPTP's config.c mask each other, and neither is reachable from anything
+ * this firmware does on its own.
+ *
+ *   store   capture the live logging flags into a RAM-resident PtpConfig
+ *   show    print the captured logging byte
+ *   load    push it back through ptp_load_config()
+ *
+ * A round trip must preserve every logging flag. `logid` (bit 0x80) did not survive one, and
+ * once it did, the record was rejected wholesale as corrupted -- see docs/flexptp_upstream_review.md
+ * finding U2. RAM-resident, not flash: the point is the encode/decode, not persistence. */
+static PtpConfig s_ptpcfg;
+static bool s_ptpcfg_valid;
+
+CMD_FUNCTION(ptp_cfg) {
+    if (argc < 1) {
+        MSG("usage: ptpcfg {store|show|load}\n");
+        return -1;
+    }
+
+    if (!strcmp(ppArgs[0], "store")) {
+        ptp_store_config(&s_ptpcfg);
+        s_ptpcfg_valid = true;
+        MSG("ptpcfg: stored, logging=0x%02x\n", (unsigned)s_ptpcfg.logging);
+    } else if (!strcmp(ppArgs[0], "show")) {
+        if (!s_ptpcfg_valid) {
+            MSG("ptpcfg: nothing stored\n");
+            return 0;
+        }
+        MSG("ptpcfg: logging=0x%02x\n", (unsigned)s_ptpcfg.logging);
+    } else if (!strcmp(ppArgs[0], "load")) {
+        if (!s_ptpcfg_valid) {
+            MSG("ptpcfg: nothing stored\n");
+            return 0;
+        }
+        ptp_load_config(&s_ptpcfg);
+        MSG("ptpcfg: loaded\n");
+    } else {
+        return -1;
+    }
+    return 0;
+}
+
 CMD_FUNCTION(start_flexptp) {
     // flexPTP renamed task_ptp_is_operating() -> is_flexPTP_operating() at a60190f
     if (!is_flexPTP_operating()) {
@@ -269,4 +316,5 @@ void cmd_init() {
     cli_register_command("osinfo \t\t\tPrint OS-related information", 1, 0, os_info);
     cli_register_command("flexptp \t\t\tStart flexPTP daemon", 1, 0, start_flexptp);
     cli_register_command("ethinfo \t\t\tPrint Ethernet driver state and counters", 1, 0, eth_info);
+    cli_register_command("ptpcfg {store|show|load} \t\t\tExercise flexPTP's retained-config round trip", 1, 1, ptp_cfg);
 }

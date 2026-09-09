@@ -65,7 +65,7 @@ class Context:
     # Registered CLI commands to expect. Per-firmware; the literal rather than
     # EXPECTED_CMD_COUNT because that constant is defined below this class, with the reasoning
     # for both firmwares' numbers.
-    cli_commands: int = 25
+    cli_commands: int = 26
 
     # The interrupt priority table this firmware must hold, and the FreeRTOS syscall ceiling to
     # check ISRs against. Both per-firmware and both defaulted to the ThreadX firmware's values;
@@ -108,12 +108,15 @@ ADDEND_TOLERANCE = 0.01
 # counters as machine-readable key=value, making 25. Asserted exactly rather than as a minimum,
 # because a command silently failing to register is a real failure mode -- that is what the
 # check is for -- so a deliberate addition is expected to move this number.
-# check. It is also per-FIRMWARE, which the monorepo makes concrete -- and both now register 25,
+# check. It is also per-FIRMWARE, which the monorepo makes concrete -- and both now register 26,
 # for the same reason rather than by coincidence. The FreeRTOS + lwIP project is the pre-port
 # lineage: it started at 23, phase 8 brought it `ethstat` (24), and phase 9's backport brought
 # it `ethinfo` (25), which is the same set the ThreadX firmware arrived at by the other route.
+# Both then gained `ptpcfg`, the hook that exercises flexPTP's retained-configuration round
+# trip -- a path neither firmware reaches on its own, because neither defines PTP_CONFIG_PTR,
+# and therefore the only way to test upstream finding U2 on hardware at all.
 # Selected by run.py --firmware, which sets this along with the interrupt priority table.
-EXPECTED_CMD_COUNT = 25
+EXPECTED_CMD_COUNT = 26
 
 
 # --------------------------------------------------------------------------

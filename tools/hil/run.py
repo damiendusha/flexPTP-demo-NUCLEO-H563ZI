@@ -45,11 +45,11 @@ COLOUR = {Status.PASS: GREEN, Status.FAIL: RED, Status.SKIP: YELLOW}
 # tables in checks.py.
 FIRMWARES = {
     "threadx": {
-        "cli_commands": 25,
+        "cli_commands": 26,
         "irq_priorities": EXPECTED_IRQ_PRIORITIES_THREADX,
     },
     "freertos": {
-        "cli_commands": 25,
+        "cli_commands": 26,
         "irq_priorities": EXPECTED_IRQ_PRIORITIES_FREERTOS,
         "max_syscall_prio": FREERTOS_MAX_SYSCALL_PRIO,
         "syscall_isrs": FREERTOS_SYSCALL_ISRS,
