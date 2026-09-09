@@ -1,8 +1,0 @@
-# The patches are attached to the fetch in //bazel:repositories.bzl, which is what retires
-# build.sh's apply_submodule_patches() and the --check-patches gate: there is no longer a
-# "neither pristine nor patched" state for a working tree to be in.
-exports_files([
-    "0002-servo-nan-latch-fix.patch",
-    "0003-generic-netstack-igmp-addresses.patch",
-    "0004-cmsis-os2-event-enqueue-from-timer-thread.patch",
-])

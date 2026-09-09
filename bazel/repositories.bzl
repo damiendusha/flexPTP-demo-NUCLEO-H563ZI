@@ -9,8 +9,10 @@ Two properties that the submodule arrangement did not have:
   - the patches in //patches are applied *by the fetch*, keyed by content in the repository
     cache. There is no longer a working tree that can be pristine, patched, or -- the case
     build.sh's apply_submodule_patches() had to detect and refuse -- neither. That is what
-    retires the --check-patches CI gate, which existed because patch 0004 is silent: omit it and
-    the firmware builds, links, gets an address and never syncs (finding F80).
+    retired the --check-patches CI gate, which existed because the flexPTP enqueue patch was
+    silent: omit it and the firmware builds, links, gets an address and never syncs (F80).
+    Only //patches/embfmt remains; flexPTP is now carried unpatched, upstream having taken
+    all three of its patches.
   - a clone does not need `git submodule update --init --recursive` before it can build.
 
 See docs/bazel_decisions.md for why these come from git rather than from BCR.
@@ -56,18 +58,22 @@ def _vendored_impl(_mctx):
         remote = "https://github.com/STMicroelectronics/stm32-mw-cmsis-rtos-tx.git",
     )
 
-    # flexPTP, with the three patches that were working-tree edits under the submodule
-    # arrangement and are part of the fetch here.
+    # flexPTP. Unpatched: upstream took all three of the patches this repository used to carry,
+    # so the pin moves forward instead of the patches moving with it.
+    #
+    #   0002 servo NaN latch      -> 2adbe6a (PR #15)
+    #   0003 generic-netstack IGMP -> 2a09cac (PR #18)
+    #   0004 non-blocking enqueue  -> e873105, which also took the receive, transmit and
+    #                                 TX-timestamp enqueues and the drop counters, and fixed
+    #                                 the FreeRTOS branch this repository never patched.
+    #
+    # A fourth fix that was never a working-tree patch here, because only the lwIP project
+    # reaches it, landed as 36ae306 (PR #17): nsd_lwip.c checks pbuf_alloc() before writing
+    # through it.
     new_git_repository(
         name = "flexptp",
         build_file = "//bazel:flexptp.BUILD",
-        commit = "76aaf67050dd497d09af1d60e1cc752bb93d9af4",  # RC1.0-11
-        patch_args = ["-p1"],
-        patches = [
-            "//patches/flexptp:0002-servo-nan-latch-fix.patch",
-            "//patches/flexptp:0003-generic-netstack-igmp-addresses.patch",
-            "//patches/flexptp:0004-cmsis-os2-event-enqueue-from-timer-thread.patch",
-        ],
+        commit = "494e644a3218c5867ee7397c1e9c019667b664b1",  # RC1.0-17
         remote = "https://github.com/epagris/flexPTP.git",
     )
 

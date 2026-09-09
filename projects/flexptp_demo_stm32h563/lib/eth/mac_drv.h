@@ -111,15 +111,34 @@ bool ETHHW_Transmit(ETH_TypeDef *eth, const uint8_t *buf, uint16_t len, uint8_t 
 void ETHHW_ProcessRx(ETH_TypeDef *eth);
 void ETHHW_RestoreRXDesc(ETHHW_DescFull *bd);
 
-/* Receive-timestamp pairing anomalies, both expected to stay at zero.
+/* Receive-timestamp pairing anomalies. Zero on an UNSATURATED link; see the note below the
+ * list for what a saturated one does, because it is not a fault and the harness has to know
+ * the difference.
  *
  *   deferred  a frame whose context descriptor the DMA had not written yet; retried on the
  *             next receive interrupt rather than stamped with whatever the slot held (NX-01)
- *   stray     a context descriptor with no frame in front of it, or a TSA frame followed by
- *             something that is not one; skipped and restored
+ *   strayCtx  a context descriptor reached with no frame in front of it; skipped and
+ *             restored. Costs nothing but says the ring is in a state it should not be
+ *   strayTsa  a frame whose TSA bit promised a context descriptor, followed by something that
+ *             is not one. The frame is delivered UNSTAMPED, so this one costs a receive
+ *             timestamp -- which is why it is counted apart from strayCtx
  *
- * Counted in interrupt context and read from a thread. Either pointer may be NULL. */
-void ETHHW_GetRxCtxCounters(uint32_t *pDeferred, uint32_t *pStray);
+ * strayCtx and strayTsa were a single counter until a saturation flood drove it to 20% of
+ * received frames and it could not say which arm had fired. They then came back EQUAL, which
+ * is the tell: they are two halves of one event. Under sustained saturation the DMA reports
+ * RBU (receive ring exhausted) -- measured at 249 604 DMA error interrupts in 20 s at
+ * 78 Mbit/s -- and a data descriptor gets separated from the context descriptor carrying its
+ * timestamp. The frame is then delivered unstamped (strayTsa) and its orphaned context
+ * descriptor is later skipped and restored (strayCtx).
+ *
+ * That is the DESIGNED behaviour, not a defect: NX-01 exists precisely so a frame the MAC did
+ * not stamp is delivered with a visible zero rather than with whatever the descriptor slot
+ * held. What it costs is a receive timestamp, which PTP tolerates. So these are zero on a
+ * healthy bench and non-zero under a flood, and `check_counters` in tools/hil/ therefore runs
+ * before `ptp_flood`, never after.
+ *
+ * Counted in interrupt context and read from a thread. Any pointer may be NULL. */
+void ETHHW_GetRxCtxCounters(uint32_t *pDeferred, uint32_t *pStrayCtx, uint32_t *pStrayTsa);
 
 void ETHHW_SetLinkProperties(ETH_TypeDef *eth, bool fastEthernet, bool fullDuplex);
 

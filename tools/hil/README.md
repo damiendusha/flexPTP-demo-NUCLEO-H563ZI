@@ -124,6 +124,47 @@ That installs `tools/linuxptp/flexptp-gm.cfg` to `/etc/linuxptp/` (where AppArmo
 `--` is passed to `ptp4l` verbatim. See
 [`docs/host_ptp_setup.md`](../../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/host_ptp_setup.md).
 
+## The flood check
+
+`ptp_flood` saturates the link for 120 s and asserts the board is still there afterwards. It is
+the regression test for flexPTP `e873105`, which made every enqueue in the RTOS bindings
+non-blocking. Before that commit the lwIP firmware did not stall under load, it **deadlocked**:
+lwIP calls `ptp_receive_cb()` from `tcpip_thread` with `LOCK_TCPIP_CORE` held, so a blocking
+enqueue there sleeps the thread that owns the core lock while it still holds it, and the wait
+is circular. ARP, ICMP and every UDP sender stop with it, and only a reset recovers.
+
+```bash
+tools/hil/run.py --elf <elf> --firmware freertos --checks dhcp,ptp_flood
+tools/hil/run.py --elf <elf> --checks dhcp,ptp_flood --flood-seconds 30 --flood-pps 20000
+tools/hil/flood.py --board 192.168.2.191 --seconds 30      # the flooder on its own
+```
+
+**The 120 s default is load-bearing.** The queues have to fill before any of it bites; a 30 s
+flood survives even the firmware that has the bug, so a short run proves nothing.
+
+The flooder needs no root. It sends three multicast streams into flexPTP's own receive path
+(224.0.1.129:319, :320 and 224.0.0.107:319) plus one unicast stream at the board, pinned to the
+board-facing NIC with `IP_MULTICAST_IF` and TTL 1, and it refuses to run on an interface
+carrying the default route. On this bench it reaches ~76 000 pps / ~78 Mbit/s on a 100 Mbit
+link.
+
+**It asserts liveness, not zero drops.** Under saturation, dropping is the correct behaviour —
+that is the entire content of the fix — so a run that dropped nothing would more likely mean
+the flood never arrived. What must hold after the flood: the CLI answers, ping is 100% clean,
+and PTP returns to SLAVE and produces Sync samples again. The counter deltas are reported
+rather than asserted.
+
+Two things it is normal to see, and neither is a failure:
+
+| | |
+|---|---|
+| `rx.ts_stray` in the hundreds of thousands | the DMA reports RBU (receive ring exhausted) and a frame is separated from the context descriptor carrying its timestamp; the frame is delivered unstamped, which is what NX-01 is for. See `//projects/flexptp_demo_stm32h563/lib/eth/mac_drv.h` |
+| `LISTENING -> PRE_MASTER -> MASTER` | the board stops receiving Announce long enough to time out its master and takes over. It returns to SLAVE afterwards, which is what the check asserts |
+
+**`counters` must run before `ptp_flood`, never after.** `check_counters` asserts a healthy-bench
+invariant that the flood deliberately breaks; the registry order puts `ptp_flood` last for that
+reason.
+
 ## The baseline
 
 `baseline.json` is captured from the **pre-port** firmware and is what later stages are

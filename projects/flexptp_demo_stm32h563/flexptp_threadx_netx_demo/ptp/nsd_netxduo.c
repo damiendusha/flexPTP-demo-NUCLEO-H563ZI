@@ -48,6 +48,12 @@ static NX_LINK_RECEIVE_QUEUE s_l2_queue;
 static PtpNsdLifecycle s_lifecycle;
 static bool s_lifecycle_ready;
 
+/* Profile-supplied 802.3 destination MACs, or "not supplied". See ptp_nsd_init(). */
+static uint8_t s_custom_primary_mac[6];
+static bool s_custom_primary_mac_valid;
+static uint8_t s_custom_pdelay_mac[6];
+static bool s_custom_pdelay_mac_valid;
+
 
 /* Bring-up counters. The question "is the callback firing at all?" has three different
    answers with three different causes, and none is visible from the console otherwise. */
@@ -124,8 +130,28 @@ static void extract_rx_timestamp(NX_PACKET *packet, uint32_t *ts_s, uint32_t *ts
  * the transport once the build has succeeded and before the join. A local copy updated after
  * ptp_nsd_lifecycle_configure() returns would be one step behind the join it is meant to
  * describe. */
+static bool is_zero_mac(const uint8_t *mac) {
+    static const uint8_t zero[6] = {0};
+    return memcmp(mac, zero, 6) == 0;
+}
+
 static void resolve_endpoint(PtpEndpoint *out) {
     ptp_endpoint_resolve(s_lifecycle.transport, s_lifecycle.delay, out);
+
+    /* The endpoint table stays the standard one; a profile-supplied 802.3 destination is
+       applied here, over the top of it. Only 802.3 has an override -- PtpProfile carries no
+       IPv4 equivalent -- and only the delay mechanism in force selects which of the two
+       fields applies, matching the single-address-per-mechanism shape this driver uses. */
+    if (!out->valid || out->is_ipv4) {
+        return;
+    }
+
+    const bool pdelay = (s_lifecycle.delay == PTP_EP_DELAY_P2P);
+    if (pdelay && s_custom_pdelay_mac_valid) {
+        memcpy(out->mac, s_custom_pdelay_mac, 6);
+    } else if (!pdelay && s_custom_primary_mac_valid) {
+        memcpy(out->mac, s_custom_primary_mac, 6);
+    }
 }
 
 /** The transport currently live, or PTP_EP_TRANSPORT_NONE. */
@@ -349,7 +375,24 @@ static const PtpNsdOps s_nsd_ops = {
 
 /* --- Driver interface, continued ------------------------------------------------------------ */
 
-void ptp_nsd_init(PtpTransportType tp, PtpDelayMechanism dm) {
+void ptp_nsd_init(const NsdInitSettings *init) {
+    const PtpTransportType tp = init->tp;
+    const PtpDelayMechanism dm = init->dm;
+
+    /* A profile may override the two 802.3 destination MACs (PtpProfile's
+       primary/pdelay_p2p_8023_destination, new in RC1.0-17). An all-zero field means "use the
+       standard address", so the override is recomputed from scratch on every init rather than
+       latched -- switching gPTP -> default must go back to 01:1B:19:00:00:00, and a flag that
+       is only ever set to true would leave the gPTP address in place. */
+    s_custom_primary_mac_valid = !is_zero_mac(init->primary_p2p_8023_dest);
+    if (s_custom_primary_mac_valid) {
+        memcpy(s_custom_primary_mac, init->primary_p2p_8023_dest, 6);
+    }
+    s_custom_pdelay_mac_valid = !is_zero_mac(init->pdelay_p2p_8023_dest);
+    if (s_custom_pdelay_mac_valid) {
+        memcpy(s_custom_pdelay_mac, init->pdelay_p2p_8023_dest, 6);
+    }
+
     if (!s_lifecycle_ready) {
         ptp_nsd_lifecycle_init(&s_lifecycle, &s_nsd_ops);
         s_lifecycle_ready = true;

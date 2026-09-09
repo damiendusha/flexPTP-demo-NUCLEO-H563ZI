@@ -29,9 +29,8 @@
    -- `ptp transport`, `ptp delmech` and `ptp profile preset` all re-init the driver -- so
    they must be safe to call, not merely present. */
 
-void ptp_nsd_init(PtpTransportType tp, PtpDelayMechanism dm) {
-    (void)tp;
-    (void)dm;
+void ptp_nsd_init(const NsdInitSettings *init) {
+    (void)init;
 }
 
 void ptp_nsd_get_interface_address(uint8_t *hwa) {

@@ -72,8 +72,14 @@ source. Two submodules are the exception, and both changes are **permanent bug f
 > Because the parent repository records only a submodule's commit pointer, working-tree edits
 > inside `Modules/` are invisible to a clone and are destroyed by `git submodule update` —
 > which is why the patches are kept in-tree. Neither is target-specific; both are worth
-> reporting upstream. See [patches/flexptp/README.md](../../../../patches/flexptp/README.md) and
-> [patches/embfmt/README.md](../../../../patches/embfmt/README.md).
+> reporting upstream. See [patches/embfmt/README.md](../../../../patches/embfmt/README.md).
+>
+> **The flexPTP patches were reported upstream, and taken.** All three are in flexPTP as of
+> `RC1.0-17` — [PR #15](https://github.com/epagris/flexPTP/pull/15) (servo NaN latch),
+> [PR #18](https://github.com/epagris/flexPTP/pull/18) (generic-netstack IGMP addresses) and
+> commit `e873105` (non-blocking enqueue, which upstream extended to the receive, transmit and
+> TX-timestamp paths and to the FreeRTOS branch). `patches/flexptp/` no longer exists; the pin
+> carries the fixes. embfmt's patch is still ours to carry.
 >
 > **`build.sh` applies them**, immediately after the submodule update, and **refuses to
 > build** if a submodule is neither pristine nor patched. This matters because omitting them
@@ -83,7 +89,8 @@ source. Two submodules are the exception, and both changes are **permanent bug f
 > check existed, a fresh clone built exactly that firmware with no warning.
 >
 > The temporary F42/F61 instrumentation patch that used to sit alongside them was **dropped**
-> once both findings were resolved. `patches/flexptp/README.md` records how to recover it.
+> once both findings were resolved. It is recoverable from git:
+> `git show 2963813:patches/flexptp/0001-temporary-F42-instrumentation.patch`.
 
 | Component | Version | How it is vendored | Modified? |
 |---|---|---|---|

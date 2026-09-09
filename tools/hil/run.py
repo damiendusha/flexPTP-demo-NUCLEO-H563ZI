@@ -91,6 +91,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--save", type=Path, help="write results as JSON (the baseline)")
     p.add_argument("--compare", type=Path, help="compare results against a saved baseline")
     p.add_argument("--settle", type=float, default=90.0, help="PTP settle window, seconds")
+    p.add_argument("--flood-seconds", type=float, default=120.0,
+                   help="ptp_flood duration. The default is 120 because the queues have to "
+                        "fill before the defect it targets bites; 30 s survives even the "
+                        "broken firmware")
+    p.add_argument("--flood-pps", type=int, default=None,
+                   help="cap ptp_flood's total packet rate (default: unlimited)")
+    p.add_argument("--flood-size", type=int, default=128,
+                   help="ptp_flood payload bytes per packet")
     return p.parse_args()
 
 
@@ -148,6 +156,9 @@ def main() -> int:
     ctx = Context(
         host_iface=args.iface,
         ptp_settle_s=args.settle,
+        flood_s=args.flood_seconds,
+        flood_pps=args.flood_pps,
+        flood_size=args.flood_size,
         expect_phy=(args.stage not in STAGES_WITHOUT_PHY),
         expect_ip_thread=(args.stage not in STAGES_WITHOUT_IP_THREAD),
         elf=(args.elf or args.flash),

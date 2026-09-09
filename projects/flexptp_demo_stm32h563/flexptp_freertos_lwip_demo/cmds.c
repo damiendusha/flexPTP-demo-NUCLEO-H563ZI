@@ -5,6 +5,7 @@
 
 /* For ethstat's ptp.* fields: flexPTP's core state and tick. */
 #include "flexptp/clock_utils.h"
+#include "flexptp/stats.h"
 #include "flexptp/event.h"
 #include "flexptp/ptp_core.h"
 #include "flexptp/ptp_types.h"
@@ -210,10 +211,14 @@ CMD_FUNCTION(eth_stats) {
     MSG("BEGIN ethstat\n");
 
     {
-        uint32_t deferred = 0, stray = 0;
-        ETHHW_GetRxCtxCounters(&deferred, &stray);
+        uint32_t deferred = 0, strayCtx = 0, strayTsa = 0;
+        ETHHW_GetRxCtxCounters(&deferred, &strayCtx, &strayTsa);
         MSG("rx.ts_deferred=%u\n", (unsigned)deferred);
-        MSG("rx.ts_stray=%u\n", (unsigned)stray);
+        /* The sum stays, because the harness and the saved baselines name it. The two
+           components are what say which anomaly fired -- only strayTsa costs a timestamp. */
+        MSG("rx.ts_stray=%u\n", (unsigned)(strayCtx + strayTsa));
+        MSG("rx.ts_stray_ctx=%u\n", (unsigned)strayCtx);
+        MSG("rx.ts_stray_tsa=%u\n", (unsigned)strayTsa);
     }
 
     {
@@ -227,6 +232,17 @@ CMD_FUNCTION(eth_stats) {
     if (is_flexPTP_operating()) {
         MSG("ptp.bmca=%u\n", (unsigned)gPtpCoreState.bmca.state);
         MSG("ptp.ticks=%u\n", (unsigned)ptp_get_tick());
+    }
+
+    {
+        /* flexPTP's own refusal counters, new in RC1.0-17 (upstream `e873105`). They are the
+           point of that change: every enqueue there became non-blocking, and a drop nobody
+           counts is just a quieter bug. Under a saturated link these are the numbers that say
+           what the link cost -- see tools/hil/flood.py. */
+        const PtpStats *st = ptp_get_stats();
+        MSG("ptp.drop_rx=%u\n", (unsigned)st->drop_cntrs.rx);
+        MSG("ptp.drop_tx=%u\n", (unsigned)st->drop_cntrs.tx);
+        MSG("ptp.drop_txts=%u\n", (unsigned)st->drop_cntrs.txts);
     }
 
     MSG("END ethstat\n");

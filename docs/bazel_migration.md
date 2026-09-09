@@ -169,7 +169,12 @@ rediscovering how to package lwIP for Bazel.
 
 [`patches/`](../patches/) exists because the parent repo records only a submodule pointer, so
 working-tree edits inside `Modules/` are invisible to a clone. `build.sh` applies them and CI
-verifies them independently — see [`patches/flexptp/README.md`](../patches/flexptp/README.md).
+verifies them independently — see [`patches/embfmt/README.md`](../patches/embfmt/README.md).
+
+> **Since superseded for flexPTP.** All three flexPTP patches were accepted upstream and the
+> pin moved to `494e644` (`RC1.0-17`), which carries them; `patches/flexptp/` is gone and only
+> `patches/embfmt/` remains. The mechanism described below is unchanged — it is still how
+> embfmt is patched — and the flexPTP block is kept as the phase-2 record.
 
 Bazel's git repository rules take `patches` and `patch_args` directly:
 

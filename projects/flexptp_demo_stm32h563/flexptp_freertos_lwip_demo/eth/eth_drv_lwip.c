@@ -537,8 +537,9 @@ void eth_drv_report(void) {
        `stray` counts context descriptors that turned up without a frame in front of them. A
        rising `deferred` under load is not a fault, but a rising `stray` is. */
     {
-        uint32_t ctx_deferred = 0, ctx_stray = 0;
-        ETHHW_GetRxCtxCounters(&ctx_deferred, &ctx_stray);
+        uint32_t ctx_deferred = 0, ctx_stray_ctx = 0, ctx_stray_tsa = 0;
+        ETHHW_GetRxCtxCounters(&ctx_deferred, &ctx_stray_ctx, &ctx_stray_tsa);
+        const uint32_t ctx_stray = ctx_stray_ctx + ctx_stray_tsa;
         MSG("  rx ts: %u deferred (context descriptor late), %u stray context descriptors\n",
             (unsigned)ctx_deferred, (unsigned)ctx_stray);
     }

@@ -247,7 +247,7 @@
     },
     "//bazel:repositories.bzl%vendored": {
       "general": {
-        "bzlTransitiveDigest": "VJc1AUcbbaK/GQxKb5ImRo3vAdWxd71BTuqSqalSIZM=",
+        "bzlTransitiveDigest": "JserZThKsUfd7Chr8A61xDo5YRwJPqSfeePD0mD/FGg=",
         "usagesDigest": "TXFRr/ekOJ4WkENAUY1PQ7JCVxHUmRqoFm+HcCVY/SY=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"
@@ -289,15 +289,7 @@
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:git.bzl%git_repository",
             "attributes": {
               "build_file": "@@//bazel:flexptp.BUILD",
-              "commit": "76aaf67050dd497d09af1d60e1cc752bb93d9af4",
-              "patch_args": [
-                "-p1"
-              ],
-              "patches": [
-                "@@//patches/flexptp:0002-servo-nan-latch-fix.patch",
-                "@@//patches/flexptp:0003-generic-netstack-igmp-addresses.patch",
-                "@@//patches/flexptp:0004-cmsis-os2-event-enqueue-from-timer-thread.patch"
-              ],
+              "commit": "494e644a3218c5867ee7397c1e9c019667b664b1",
               "remote": "https://github.com/epagris/flexPTP.git"
             }
           },

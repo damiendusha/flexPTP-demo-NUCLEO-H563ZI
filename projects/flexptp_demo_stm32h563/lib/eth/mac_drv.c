@@ -438,19 +438,33 @@ __attribute__((unused)) static void ETHHW_PrintRingBufStatus(ETH_TypeDef *eth,
 #define ETHHW_DESC_IS_CONTEXT(bd) \
     ((((bd)->desc.DES3) & ETH_DMARXNDESCWBF_CTXT) != 0U)
 
-/* Frames deferred because their timestamp had not been written back yet, and context
- * descriptors found without a frame in front of them. Both are expected to stay at zero; they
- * are counted rather than printed because this is interrupt context (F68), and reported by
- * `ethinfo` so that "the timestamps are odd" has somewhere to look. */
+/* Receive-timestamp pairing anomalies. Counted rather than printed because this is interrupt
+ * context (F68), and reported by `ethinfo`/`ethstat` so that "the timestamps are odd" has
+ * somewhere to look.
+ *
+ * The two stray counts were ONE counter until a saturation flood made 20% of received frames
+ * hit it and there was no way to tell which of the two arms had fired. They are different
+ * events with different consequences, so they are now counted separately:
+ *
+ *   sRxCtxStrayCtx  a context descriptor reached as the head of the scan, with no frame in
+ *                   front of it. The ring is in a state it should not be; the descriptor is
+ *                   skipped and restored.
+ *   sRxCtxStrayTsa  a frame whose TSA bit promised a context descriptor, followed by
+ *                   something that is not one. The frame is delivered UNSTAMPED -- so this
+ *                   arm costs a receive timestamp, and the one above does not. */
 static volatile uint32_t sRxCtxDeferred = 0;
-static volatile uint32_t sRxCtxStray = 0;
+static volatile uint32_t sRxCtxStrayCtx = 0;
+static volatile uint32_t sRxCtxStrayTsa = 0;
 
-void ETHHW_GetRxCtxCounters(uint32_t *pDeferred, uint32_t *pStray) {
+void ETHHW_GetRxCtxCounters(uint32_t *pDeferred, uint32_t *pStrayCtx, uint32_t *pStrayTsa) {
     if (pDeferred != NULL) {
         *pDeferred = sRxCtxDeferred;
     }
-    if (pStray != NULL) {
-        *pStray = sRxCtxStray;
+    if (pStrayCtx != NULL) {
+        *pStrayCtx = sRxCtxStrayCtx;
+    }
+    if (pStrayTsa != NULL) {
+        *pStrayTsa = sRxCtxStrayTsa;
     }
 }
 
@@ -484,7 +498,7 @@ void ETHHW_ProcessRx(ETH_TypeDef *eth) {
          * handed to the stack -- its DES3 carries CTXT and no length -- and skipping it
          * without restoring it would cost the ring a descriptor for good (F71). */
         if (ETHHW_DESC_IS_CONTEXT(bd)) {
-            sRxCtxStray++;
+            sRxCtxStrayCtx++;
             ETHHW_RestoreRXDesc(bd);
             bd = bd_next;
             continue;
@@ -545,7 +559,7 @@ void ETHHW_ProcessRx(ETH_TypeDef *eth) {
                 /* TSA set but what follows is not a context descriptor. Deliver the frame
                    unstamped rather than reading another frame's header as a time: zero is
                    wrong in a way the reader can see, which a plausible number is not. */
-                sRxCtxStray++;
+                sRxCtxStrayTsa++;
             }
         }
 

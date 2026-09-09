@@ -1126,8 +1126,10 @@ Three guards, because any one of them alone would have prevented this:
 | `servo/kalman_filter.c` | Skip a non-positive period, and **reset the filter** if the state or the tuning output goes non-finite, so a single bad sample costs one cycle rather than the session |
 | `slave.c`, `ptp_tune_clock()` | Ignore a non-finite tuning value instead of converting it to an unpredictable integer |
 
-Both are submodule changes, recorded in
-[`patches/flexptp/0002-servo-nan-latch-fix.patch`](../../../../patches/flexptp/0002-servo-nan-latch-fix.patch).
+Both were submodule changes, carried as `patches/flexptp/0002-servo-nan-latch-fix.patch` until
+upstream took them: they are now in flexPTP itself as
+[`2adbe6a`](https://github.com/epagris/flexPTP/commit/2adbe6a99c55666e43f297416e5e0452b51128b7)
+([PR #15](https://github.com/epagris/flexPTP/pull/15)), and the pin carries them unpatched.
 
 #### Verified on hardware
 

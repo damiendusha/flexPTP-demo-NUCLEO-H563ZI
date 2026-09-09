@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
+import flood as flood_mod
 from hil import Board, BoardError
 
 
@@ -76,6 +77,13 @@ class Context:
     irq_priorities: dict = field(default_factory=lambda: dict(EXPECTED_IRQ_PRIORITIES_THREADX))
     max_syscall_prio: "int | None" = None
     syscall_isrs: tuple = ()
+
+    # check_ptp_flood. 120 s because the queues have to fill before the defect it targets
+    # bites -- a 30 s flood survives even the firmware that has the bug. Unlimited rate by
+    # default; --flood-pps caps it when the point is a long soak rather than saturation.
+    flood_s: float = 120.0
+    flood_pps: "int | None" = None
+    flood_size: int = 128
 
 
 # The addend's NOMINAL value: 2^32 / 1.25 for a 250 MHz clk_ptp_ref_i at a 5 ns increment.
@@ -379,6 +387,11 @@ def check_counters(board: Board, ctx: Context) -> CheckResult:
     Deliberately NOT asserting that the positive counters are positive: the other checks do
     that where it means something (ptp_ts asserts T2/T3 advance, ping asserts loss), and a
     stage that has not started flexPTP would fail a blanket "> 0" for no reason.
+
+    This is a HEALTHY-BENCH invariant, so it must run before `ptp_flood` and not after: a
+    saturation flood legitimately drives `rx.ts_stray` into the hundreds of thousands, and
+    that is the flood's finding, not this check's. The registry order puts `ptp_flood` last
+    for exactly this reason.
     """
     stats = read_stats(board)
     if not stats:
@@ -391,6 +404,9 @@ def check_counters(board: Board, ctx: Context) -> CheckResult:
         "ptpts.dropped",
         "drv.rx_drop_nopacket", "drv.rx_drop_size", "drv.rx_drop_queue",
         "drv.tx_drop_linkdown", "drv.tx_drop_mac",
+        # flexPTP's own refusal counters (RC1.0-17). Zero on a healthy bench for the same
+        # reason as the rest; the flood is where they are expected to move.
+        "ptp.drop_rx", "ptp.drop_tx", "ptp.drop_txts",
         # A non-zero `stale` means one of the three rules that make the transmit-timestamp
         # registry's pointer key safe has a hole in it -- see PTP_TX_REGISTRY_MAX_AGE (AR-02).
         "txreg.overflows", "txreg.stale",
@@ -838,6 +854,109 @@ def check_ptp_sync(board: Board, ctx: Context) -> CheckResult:
     )
 
 
+def check_ptp_flood(board: Board, ctx: Context) -> CheckResult:
+    """The board survives a saturated link, and PTP recovers afterwards.
+
+    This is the regression test for flexPTP `e873105`. Before it, every enqueue in the
+    CMSIS-RTOS2 and FreeRTOS bindings used an unbounded wait, and on the lwIP firmware that is
+    a deadlock rather than a stall: lwIP calls `ptp_receive_cb()` from `tcpip_thread` with
+    `LOCK_TCPIP_CORE` held, so blocking there sleeps the thread that owns the core lock while
+    it still holds it. tcpip_thread waits for task_ptp() to drain the FIFO; task_ptp() waits
+    for the core lock to transmit. Nothing times out, ARP and ICMP stop with everything else,
+    and only a reset recovers it.
+
+    So the assertion is LIVENESS, not zero drops. Under a flood, dropping is the correct
+    behaviour -- that is the whole content of the fix -- and a run that dropped nothing would
+    more likely mean the flood never arrived. What must hold afterwards:
+
+      * the CLI answers                 (the board is not wedged)
+      * ping is 100% clean              (the stack still owns its lock -- the ICMP path is
+                                         what died first when this deadlocked)
+      * PTP is still SLAVE and syncing  (task_ptp() came back, rather than falling out of
+                                         SLAVE and staying there)
+
+    The 120 s default is not arbitrary. The queues have to fill before any of it bites; a 30 s
+    flood survives even the broken firmware, so a short run proves nothing.
+    """
+    if ctx.board_ip is None:
+        return CheckResult("ptp_flood", Status.SKIP, "no board IP (dhcp check did not run)")
+    if not _ptp4l_running(ctx):
+        return CheckResult("ptp_flood", Status.SKIP, f"no ptp4l on {ctx.host_iface}")
+
+    reason = _ensure_ptp_slaved(board, ctx)
+    if reason:
+        return CheckResult("ptp_flood", Status.FAIL, f"not slaved before the flood: {reason}")
+
+    before = read_stats(board)
+
+    try:
+        sent = flood_mod.flood(ctx.host_iface, ctx.board_ip, ctx.flood_s,
+                               ctx.flood_pps, ctx.flood_size, quiet=True)
+    except SystemExit as e:                       # the flooder's own refusals
+        return CheckResult("ptp_flood", Status.SKIP, str(e))
+
+    data = {"flood": sent}
+    if sent["packets"] == 0:
+        return CheckResult("ptp_flood", Status.SKIP, "flooder sent nothing", data)
+
+    # 1. The CLI answers at all. Everything below depends on it, and a wedged board fails
+    #    here rather than in a confusing way later.
+    try:
+        board.cmd("flexptp", quiet=1.5, timeout=15)
+    except BoardError as e:
+        return CheckResult("ptp_flood", Status.FAIL,
+                           f"CLI unresponsive after the flood ({e}) -- the board is wedged",
+                           data)
+
+    # 2. The network stack still works. This is the one that caught the deadlock: ICMP goes
+    #    through the same core lock that flexPTP's blocking enqueue used to strand.
+    r = subprocess.run(["ping", "-c", "20", "-i", "0.05", "-q", ctx.board_ip],
+                       capture_output=True, text=True, timeout=60)
+    loss = re.search(r"([\d.]+)% packet loss", r.stdout)
+    data["post_ping_loss_pct"] = float(loss.group(1)) if loss else None
+    if data["post_ping_loss_pct"] is None or data["post_ping_loss_pct"] > 0.0:
+        return CheckResult("ptp_flood", Status.FAIL,
+                           f"{data['post_ping_loss_pct']}% ping loss after the flood -- "
+                           "the stack did not recover", data)
+
+    # 3. PTP itself resumed. Not merely "still says SLAVE": Sync lines have to be arriving
+    #    again, which is what proves task_ptp() is running rather than parked.
+    ctx.ptp_locked = False                        # force a real re-probe
+    reason = _ensure_ptp_slaved(board, ctx)
+    if reason:
+        return CheckResult("ptp_flood", Status.FAIL,
+                           f"PTP did not return to SLAVE after the flood: {reason}", data)
+
+    board.cmd("ptp log def on")
+    text = board.read_for(20.0)
+    board.cmd("ptp log def off")
+    samples = [ln for ln in text.splitlines()
+               if len(ln.split()) >= 11 and ln.split()[0].isdigit()]
+    data["post_sync_samples"] = len(samples)
+    if len(samples) < 5:
+        return CheckResult("ptp_flood", Status.FAIL,
+                           f"only {len(samples)} sync samples in 20 s after the flood; "
+                           "PTP is not running again", data)
+
+    # The counters are REPORTED, not asserted: a drop under saturation is the designed
+    # behaviour. They are the difference between "we survived" and "we survived and here is
+    # what it cost", and a run that shows zero everywhere is worth a second look at the flood.
+    after = read_stats(board)
+    if before and after:
+        data["counter_delta"] = {
+            k: after[k] - before.get(k, 0)
+            for k in after
+            if isinstance(after[k], int) and after[k] - before.get(k, 0) != 0
+        }
+
+    return CheckResult(
+        "ptp_flood", Status.PASS,
+        f"survived {sent['seconds']:.0f} s at {sent['pps']} pps "
+        f"({sent['mbit_s']} Mbit/s), 0% loss, {len(samples)} sync samples after",
+        data,
+    )
+
+
 # --------------------------------------------------------------------------
 # Registry
 # --------------------------------------------------------------------------
@@ -856,6 +975,9 @@ ALL_CHECKS = {
     "ptp_ts": check_ptp_ts,
     "ptp_sync": check_ptp_sync,
     "counters": check_counters,
+    # Last, always: the flood is expected to move the very counters check_counters
+    # asserts are zero, so running it earlier would fail the next check by design.
+    "ptp_flood": check_ptp_flood,
 }
 
 # Which checks are meaningful at each stage of the ThreadX port. Ordering matters: `dhcp`
@@ -875,7 +997,7 @@ STAGES = {
     "S5b": ["build_id", "boot", "cli", "osinfo", "threads"],
     "S5c": ["build_id", "boot", "cli", "osinfo", "threads", "dhcp", "ping"],
     "S5d": ["build_id", "boot", "cli", "osinfo", "threads", "dhcp", "ping"],
-    "S6": ["build_id", "boot", "cli", "osinfo", "threads", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync", "counters"],
-    "S7": ["build_id", "boot", "cli", "osinfo", "threads", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync", "counters"],
+    "S6": ["build_id", "boot", "cli", "osinfo", "threads", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync", "counters", "ptp_flood"],
+    "S7": ["build_id", "boot", "cli", "osinfo", "threads", "dhcp", "ping", "ptp_start", "ptp_ts", "ptp_sync", "counters", "ptp_flood"],
     "S8": list(ALL_CHECKS),
 }
