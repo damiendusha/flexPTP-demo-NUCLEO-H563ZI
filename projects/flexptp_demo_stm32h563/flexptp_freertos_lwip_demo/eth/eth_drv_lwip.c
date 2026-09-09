@@ -256,6 +256,57 @@ static void low_level_init(struct netif *netif) {
  *       to become available since the stack doesn't retry to send a packet
  *       dropped because of memory failure (except for the TCP timers).
  */
+/* Where raw-802.3 PTP frames actually went, as a small histogram over distinct destination
+   MACs. A histogram rather than "the last one": in P2P a node interleaves PDelay_Req to the
+   peer-delay group with Sync/Announce to the primary group, so the most recent frame is a
+   coin toss between two correct answers and cannot be asserted on. Diagnostics only; see the
+   note in low_level_output(). */
+#define PTP_L2_DST_SLOTS (4U)
+static uint8_t s_l2_dst[PTP_L2_DST_SLOTS][6];
+static uint32_t s_l2_dst_count[PTP_L2_DST_SLOTS];
+static uint32_t s_ptp_l2_frames;
+
+static void note_l2_dst(const uint8_t *mac) {
+    for (unsigned i = 0; i < PTP_L2_DST_SLOTS; i++) {
+        if ((s_l2_dst_count[i] != 0U) && (memcmp(s_l2_dst[i], mac, 6) == 0)) {
+            s_l2_dst_count[i]++;
+            return;
+        }
+    }
+    for (unsigned i = 0; i < PTP_L2_DST_SLOTS; i++) {
+        if (s_l2_dst_count[i] == 0U) {
+            memcpy(s_l2_dst[i], mac, 6);
+            s_l2_dst_count[i] = 1U;
+            return;
+        }
+    }
+    /* More than PTP_L2_DST_SLOTS distinct destinations: the frame is still counted in
+       s_ptp_l2_frames, so the total and the histogram disagreeing is the signal. */
+}
+
+void eth_drv_clear_ptp_l2_dst(void) {
+    memset(s_l2_dst, 0, sizeof(s_l2_dst));
+    memset(s_l2_dst_count, 0, sizeof(s_l2_dst_count));
+    s_ptp_l2_frames = 0;
+}
+
+bool eth_drv_ptp_l2_dst(unsigned slot, uint8_t *mac6, uint32_t *pCount) {
+    if ((slot >= PTP_L2_DST_SLOTS) || (s_l2_dst_count[slot] == 0U)) {
+        return false;
+    }
+    if (mac6 != NULL) {
+        memcpy(mac6, s_l2_dst[slot], 6);
+    }
+    if (pCount != NULL) {
+        *pCount = s_l2_dst_count[slot];
+    }
+    return true;
+}
+
+uint32_t eth_drv_ptp_l2_frames(void) {
+    return s_ptp_l2_frames;
+}
+
 static err_t low_level_output(struct netif *netif, struct pbuf *p) {
     struct pbuf *q;
     static u8_t concat_buf[ETH_TX_BUF_SIZE];
@@ -288,6 +339,21 @@ static err_t low_level_output(struct netif *netif, struct pbuf *p) {
            variable. */
         memcpy(concat_buf + concat_buf_level, q->payload, q->len);
         concat_buf_level += q->len;
+    }
+
+    /* Record where PTP frames are actually being sent.
+     *
+     * The 802.3 destination is chosen inside flexPTP's nsd_lwip.c, from the profile's
+     * primary/pdelay_p2p_8023_destination fields, and nothing downstream reports it. Without
+     * this the only way to check that a profile change took effect on the wire is a packet
+     * capture, which needs root -- so a defect in that selection is invisible to the HIL
+     * suite. See docs/flexptp_upstream_review.md finding U4.
+     *
+     * concat_buf is the finished frame: destination MAC at 0..5, EtherType at 12..13. */
+    if ((concat_buf_level >= 14U) &&
+        (concat_buf[12] == 0x88U) && (concat_buf[13] == 0xF7U)) {
+        note_l2_dst(concat_buf);
+        s_ptp_l2_frames++;
     }
 
     /* check if timestamping is demanded */

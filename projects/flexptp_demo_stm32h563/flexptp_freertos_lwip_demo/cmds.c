@@ -209,6 +209,15 @@ CMD_FUNCTION(eth_info) {
 }
 
 CMD_FUNCTION(eth_stats) {
+    /* `ethstat clear` resets the 802.3 destination histogram. Without a reset the histogram
+       is cumulative across profile changes, and "did the new profile move the primary group?"
+       cannot be answered from it -- the old profile's entries are still there. */
+    if ((argc >= 1) && !strcmp(ppArgs[0], "clear")) {
+        eth_drv_clear_ptp_l2_dst();
+        MSG("ethstat: l2 destination histogram cleared\n");
+        return 0;
+    }
+
     MSG("BEGIN ethstat\n");
 
     {
@@ -244,6 +253,23 @@ CMD_FUNCTION(eth_stats) {
         MSG("ptp.drop_rx=%u\n", (unsigned)st->drop_cntrs.rx);
         MSG("ptp.drop_tx=%u\n", (unsigned)st->drop_cntrs.tx);
         MSG("ptp.drop_txts=%u\n", (unsigned)st->drop_cntrs.txts);
+    }
+
+    {
+        /* Where PTP frames are actually going on the wire, in 802.3 mode. The selection lives
+           in flexPTP's nsd_lwip.c and is otherwise only visible to a packet capture. One line
+           per distinct destination, so a profile change that should move the primary group
+           can be asserted without picking a single frame out of an interleaved stream. */
+        MSG("nsd.l2_frames=%u\n", (unsigned)eth_drv_ptp_l2_frames());
+        for (unsigned i = 0; i < 4U; i++) {
+            uint8_t dst[6] = {0};
+            uint32_t count = 0;
+            if (!eth_drv_ptp_l2_dst(i, dst, &count)) {
+                break;
+            }
+            MSG("nsd.l2_dst%u=%02x:%02x:%02x:%02x:%02x:%02x:%u\n", i,
+                dst[0], dst[1], dst[2], dst[3], dst[4], dst[5], (unsigned)count);
+        }
     }
 
     MSG("END ethstat\n");
@@ -312,7 +338,7 @@ CMD_FUNCTION(start_flexptp) {
 // ---------------------------------
 
 void cmd_init() {
-    cli_register_command("ethstat \t\t\tPrint driver, heap and PTP counters as key=value, for tooling", 1, 0, eth_stats);
+    cli_register_command("ethstat [clear] \t\t\tPrint driver, heap and PTP counters as key=value, for tooling", 1, 0, eth_stats);
     cli_register_command("osinfo \t\t\tPrint OS-related information", 1, 0, os_info);
     cli_register_command("flexptp \t\t\tStart flexPTP daemon", 1, 0, start_flexptp);
     cli_register_command("ethinfo \t\t\tPrint Ethernet driver state and counters", 1, 0, eth_info);
