@@ -1,0 +1,72 @@
+From 96ea042bf6e9e6580ab97502f4eb91325a21289c Mon Sep 17 00:00:00 2001
+From: Damien Dusha <Damien Dusha>
+Date: Wed, 9 Sep 2026 22:01:33 +1000
+Subject: [PATCH] Announce: stop byte-swapping the grandmaster clock identity
+ on receive
+
+A clock identity is an octet array, and everywhere else in flexPTP the
+uint64_t that holds one keeps those octets in wire order:
+ptp_create_clock_identity() builds it from the MAC that way, the header's
+clockIdentity is memcpy'd in both directions with no swap, and hextoclkid()
+produces the same layout for `ptp master clockid`.
+
+The Announce body's grandmasterClockIdentity was the one exception, and since
+the print and construct paths were corrected it is the only thing left
+swapping. Two consequences:
+
+The displayed identity of a remote master is byte-reversed. Measured on a
+NUCLEO-H563ZI slaved to ptp4l on a NIC with MAC 00:a0:c9:26:21:e4, whose
+clock identity is therefore 00a0c9fffe2621e4:
+
+  before:  Master clock ID: e42126feffc9a000
+  after:   Master clock ID: 00a0c9fffe2621e4
+
+Own clock ID printed correctly in both, which is what makes the inconsistency
+easy to miss -- before the print path was corrected it was the other way
+round, and fixing the print swapped which of the two was wrong rather than
+removing the disagreement.
+
+The second is not cosmetic. ptp_bmca_tick() compares the two conventions
+directly to decide whether this node takes the MASTER role:
+
+    bmCI  = S.bmca.masterProps.grandmasterClockIdentity;   // parsed
+    ourCI = S.capabilities.grandmasterClockIdentity;       // ours
+    ...
+    if (master_mode_enabled && (bmCI == ourCI)) { state = PTP_BMCA_PRE_MASTER; }
+
+Those cannot compare equal when they should. It is latent while masterProps
+is still seeded from S.capabilities in INITIALIZING, and bites when the node
+has to recognise its own Announce coming back.
+
+ptp_select_better_master()'s COMPARE_AND_RETURN on the identity also becomes
+a big-endian-ordered comparison, which is the tie-break IEEE 1588 specifies
+and is not what it was doing.
+
+Verified on hardware: both firmwares of the NUCLEO-H563ZI demo (ThreadX +
+NetX Duo, FreeRTOS + lwIP) report the correct master identity, and the
+ThreadX image passes the full hardware suite including a 120 s saturation
+flood.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+ src/flexptp/msg_utils.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/flexptp/msg_utils.c b/src/flexptp/msg_utils.c
+index 828ebe6..ad2973d 100644
+--- a/src/flexptp/msg_utils.c
++++ b/src/flexptp/msg_utils.c
+@@ -136,7 +136,12 @@ void ptp_extract_announce_message(PtpAnnounceBody *pAnnounce, void *pPayload) {
+ 
+     pAnnounce->currentUTCOffset = FLEXPTP_ntohs(pAnnounce->currentUTCOffset);
+     pAnnounce->grandmasterClockVariance = FLEXPTP_ntohs(pAnnounce->grandmasterClockVariance);
+-    pAnnounce->grandmasterClockIdentity = FLEXPTP_ntohll(pAnnounce->grandmasterClockIdentity);
++    // NO byte swap on grandmasterClockIdentity. A clock identity is an octet array, and
++    // everywhere else in flexPTP the uint64_t holding one keeps those octets in wire order:
++    // ptp_create_clock_identity() builds it that way, the header's clockIdentity is memcpy'd
++    // in both directions without a swap, hextoclkid() produces it, and both
++    // ptp_print_clock_identity() and ptp_construct_binary_announce_message() now read it that
++    // way. Swapping here made the Announce body the one exception.
+     pAnnounce->localStepsRemoved = FLEXPTP_ntohs(pAnnounce->localStepsRemoved);
+ }
+ 

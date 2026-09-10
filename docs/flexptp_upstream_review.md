@@ -3,9 +3,11 @@
 Reviewed at pin `494e644a3218c5867ee7397c1e9c019667b664b1` (`RC1.0-17`, 2026-09-07), against the
 previous pin `76aaf67` (`RC1.0-11`). Six commits, 23 files, +600/−237.
 
-Everything this repository carried as a patch is now upstream, so `//patches/flexptp` is gone
-and the pin is unpatched. Only `//patches/embfmt` remains — embfmt has no new commits and its
-patch still applies.
+Everything this repository carried as a patch is now upstream, so the original
+`//patches/flexptp` series is gone. The seven findings below replaced it: they are filed
+upstream and, until those pull requests merge, carried as a **new** patch series in
+[`//patches/flexptp`](../patches/flexptp/README.md), applied by the fetch. Each is deleted from
+there as its PR lands. `//patches/embfmt` is unchanged — embfmt has no new commits.
 
 ## 1. What landed
 

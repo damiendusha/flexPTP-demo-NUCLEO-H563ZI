@@ -11,8 +11,9 @@ Two properties that the submodule arrangement did not have:
     build.sh's apply_submodule_patches() had to detect and refuse -- neither. That is what
     retired the --check-patches CI gate, which existed because the flexPTP enqueue patch was
     silent: omit it and the firmware builds, links, gets an address and never syncs (F80).
-    Only //patches/embfmt remains; flexPTP is now carried unpatched, upstream having taken
-    all three of its patches.
+    Upstream took all three of the original flexPTP patches, so those are gone; the seven
+    that replaced them are a new series from reviewing the release that took them, and each
+    goes away as its pull request merges.
   - a clone does not need `git submodule update --init --recursive` before it can build.
 
 See docs/bazel_decisions.md for why these come from git rather than from BCR.
@@ -58,22 +59,36 @@ def _vendored_impl(_mctx):
         remote = "https://github.com/STMicroelectronics/stm32-mw-cmsis-rtos-tx.git",
     )
 
-    # flexPTP. Unpatched: upstream took all three of the patches this repository used to carry,
-    # so the pin moves forward instead of the patches moving with it.
+    # flexPTP.
     #
-    #   0002 servo NaN latch      -> 2adbe6a (PR #15)
-    #   0003 generic-netstack IGMP -> 2a09cac (PR #18)
-    #   0004 non-blocking enqueue  -> e873105, which also took the receive, transmit and
-    #                                 TX-timestamp enqueues and the drop counters, and fixed
-    #                                 the FreeRTOS branch this repository never patched.
+    # The pin moved to RC1.0-17 because upstream took all three patches this repository used to
+    # carry -- the servo NaN latch as 2adbe6a (PR #15), the generic-netstack IGMP addresses as
+    # 2a09cac (PR #18), and the non-blocking enqueues as e873105, which went further than we did
+    # and also fixed the FreeRTOS branch. A fourth, never a working-tree patch here because only
+    # the lwIP project reaches it, landed as 36ae306 (PR #17).
     #
-    # A fourth fix that was never a working-tree patch here, because only the lwIP project
-    # reaches it, landed as 36ae306 (PR #17): nsd_lwip.c checks pbuf_alloc() before writing
-    # through it.
+    # The seven below are a NEW series, found reviewing that release. Three are regressions in
+    # the maintainer's own 7bc544e. Every one is verified on hardware and filed upstream
+    # separately -- see //tools/upstream and docs/flexptp_upstream_review.md -- and each one
+    # should be deleted from here as its pull request merges, not carried indefinitely.
+    #
+    # They are independent and touch disjoint regions, so the order below is the review's order
+    # and not a dependency. //patches/flexptp/README.md has the recovery and regeneration
+    # commands.
     new_git_repository(
         name = "flexptp",
         build_file = "//bazel:flexptp.BUILD",
         commit = "494e644a3218c5867ee7397c1e9c019667b664b1",  # RC1.0-17
+        patch_args = ["-p1"],
+        patches = [
+            "//patches/flexptp:0001-u1-gm-clock-identity-byte-order.patch",
+            "//patches/flexptp:0002-u2-logid-config-bit.patch",
+            "//patches/flexptp:0003-u3-locked-log-prefix.patch",
+            "//patches/flexptp:0004-u4-p2p-8023-dest-sticky.patch",
+            "//patches/flexptp:0005-u5-stale-pbuf-tx-cb.patch",
+            "//patches/flexptp:0006-u6-pdelay-pcb-comment.patch",
+            "//patches/flexptp:0007-u7-transport-type-reset.patch",
+        ],
         remote = "https://github.com/epagris/flexPTP.git",
     )
 

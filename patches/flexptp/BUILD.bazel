@@ -1,0 +1,16 @@
+# The patches are attached to the fetch in //bazel:repositories.bzl, which is what retires
+# build.sh's apply_submodule_patches() and the --check-patches gate: there is no longer a
+# "neither pristine nor patched" state for a working tree to be in.
+#
+# Numbering restarts at 0001 because this is a NEW series. The previous 0002-0004 are upstream
+# as of RC1.0-17 and were deleted; reusing their numbers for unrelated changes would be worse
+# than the gap the old README went to some trouble to explain.
+exports_files([
+    "0001-u1-gm-clock-identity-byte-order.patch",
+    "0002-u2-logid-config-bit.patch",
+    "0003-u3-locked-log-prefix.patch",
+    "0004-u4-p2p-8023-dest-sticky.patch",
+    "0005-u5-stale-pbuf-tx-cb.patch",
+    "0006-u6-pdelay-pcb-comment.patch",
+    "0007-u7-transport-type-reset.patch",
+])

@@ -1,0 +1,74 @@
+From 349d081b62ce2e3f5184ec3e0d5d100bde78dc09 Mon Sep 17 00:00:00 2001
+From: Damien Dusha <Damien Dusha>
+Date: Wed, 9 Sep 2026 23:37:17 +1000
+Subject: [PATCH] lwIP NSD: untag the pbuf before releasing it
+
+ptp_nsd_transmit_msg() sets p->tag and p->tx_cb and never clears them:
+
+    p->tag   = (void *)uid;
+    p->tx_cb = ptp_transmit_cb;
+    ...
+    pbuf_free(p);
+
+Both live in LWIP_PBUF_CUSTOM_DATA, which lwIP does not initialise on
+allocation -- it manages its own fields and nothing else -- so the values
+survive into whatever allocation next lands on that memory. A port that gates
+hardware transmit timestamping on `p->tx_cb != NULL`, which is the only signal
+this driver offers, then requests a hardware timestamp for a frame that never
+asked for one and calls ptp_transmit_timestamp_cb() with a stale uid.
+
+Nothing consumes those, so they queue on sTxCbFIFO until it is full and are
+then dropped. Since e873105 that is a counted drop; before it, it was a
+blocking enqueue from an ISR on the one firmware where blocking meant a
+circular wait on LOCK_TCPIP_CORE.
+
+Measured on a NUCLEO-H563ZI running the FreeRTOS + lwIP demo, 120 s of
+saturated link (~8.5 M packets, ~75 000 pps, ~78 Mbit/s):
+
+    before:  ptp.drop_txts = 284392
+    after:   ptp.drop_txts = 0
+
+with the transmit-timestamp check still passing either way, so the genuine t3
+timestamps are unaffected -- only the spurious ones are gone.
+
+The count tracks TRANSMIT volume, not receive pressure, which is what
+identifies it. A flood of multicast the node does not reply to produces none;
+adding a unicast stream that provokes ICMP port-unreachable replies produced
+42531 in 30 s. The ThreadX + NetX Duo firmware, which supplies its own driver
+and passes the uid through a side channel rather than on the buffer, produced
+0 throughout.
+
+The send is synchronous -- udp_sendto() and ethernet_output() reach
+netif->linkoutput before returning -- so both values have already been taken
+by the time they are cleared.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+ .../port/example_netstack_drivers/nsd_lwip.c       | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/src/flexptp/port/example_netstack_drivers/nsd_lwip.c b/src/flexptp/port/example_netstack_drivers/nsd_lwip.c
+index 2811990..f6d25cf 100644
+--- a/src/flexptp/port/example_netstack_drivers/nsd_lwip.c
++++ b/src/flexptp/port/example_netstack_drivers/nsd_lwip.c
+@@ -188,6 +188,20 @@ void ptp_nsd_transmit_msg(RawPtpMessage *pMsg, uint32_t uid) {
+     // unlock LWIP core
+     UNLOCK_TCPIP_CORE();
+ 
++    /* Untag the pbuf before releasing it.
++     *
++     * tx_cb and tag live in LWIP_PBUF_CUSTOM_DATA, which lwIP does not initialise on
++     * allocation -- it manages its own fields and nothing else. So whatever is left here
++     * survives into the next allocation that lands on this memory, and a port that gates
++     * hardware transmit timestamping on `p->tx_cb != NULL`, which is the only signal this
++     * driver offers, then requests a timestamp for a frame that never asked for one and
++     * reports it against a stale uid.
++     *
++     * The send above is synchronous -- udp_sendto() and ethernet_output() reach
++     * netif->linkoutput before returning -- so the driver has already taken both values. */
++    p->tx_cb = NULL;
++    p->tag = NULL;
++
+     pbuf_free(p); // release buffer
+ }
+ 

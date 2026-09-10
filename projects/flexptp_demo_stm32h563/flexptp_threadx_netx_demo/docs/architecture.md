@@ -78,8 +78,9 @@ source. Two submodules are the exception, and both changes are **permanent bug f
 > `RC1.0-17` — [PR #15](https://github.com/epagris/flexPTP/pull/15) (servo NaN latch),
 > [PR #18](https://github.com/epagris/flexPTP/pull/18) (generic-netstack IGMP addresses) and
 > commit `e873105` (non-blocking enqueue, which upstream extended to the receive, transmit and
-> TX-timestamp paths and to the FreeRTOS branch). `patches/flexptp/` no longer exists; the pin
-> carries the fixes. embfmt's patch is still ours to carry.
+> TX-timestamp paths and to the FreeRTOS branch). The pin carries those fixes, and
+> `patches/flexptp/` now holds a *different* series — seven fixes found reviewing that release,
+> filed upstream and carried here until they merge. embfmt's patch is still ours to carry.
 >
 > **`build.sh` applies them**, immediately after the submodule update, and **refuses to
 > build** if a submodule is neither pristine nor patched. This matters because omitting them

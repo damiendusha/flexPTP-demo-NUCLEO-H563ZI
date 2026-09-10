@@ -1,0 +1,50 @@
+From 1b5275435304c2fb146ff55db63647dc225c1cec Mon Sep 17 00:00:00 2001
+From: Damien Dusha <Damien Dusha>
+Date: Wed, 9 Sep 2026 23:39:58 +1000
+Subject: [PATCH] lwIP NSD: say that the PDelay pcbs are receive-only
+
+7bc544e opened four pcbs where there were two, but transmit still selects the
+primary pair and overrides the destination per message type with
+udp_sendto(). That is correct -- both pairs bind the same local ports, so
+which pcb a datagram leaves through changes nothing on the wire -- but it
+reads like an oversight, and the obvious "fix" of selecting the PDelay pair
+for PDelay messages would change the source binding for no benefit.
+
+Comment only; no behaviour change. Verified on a NUCLEO-H563ZI running the
+FreeRTOS + lwIP demo to confirm exactly that: the full hardware suite passes
+unchanged.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+ src/flexptp/port/example_netstack_drivers/nsd_lwip.c | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/src/flexptp/port/example_netstack_drivers/nsd_lwip.c b/src/flexptp/port/example_netstack_drivers/nsd_lwip.c
+index 2811990..9205ccd 100644
+--- a/src/flexptp/port/example_netstack_drivers/nsd_lwip.c
++++ b/src/flexptp/port/example_netstack_drivers/nsd_lwip.c
+@@ -93,7 +93,14 @@ void ptp_nsd_init(const NsdInitSettings * init) {
+         udp_bind(PTP_L4_PRIMARY_GENERAL, &PTP_IGMP_PRIMARY, PTP_PORT_GENERAL);
+         udp_recv(PTP_L4_PRIMARY_GENERAL, ptp_receive_cb, NULL);
+ 
+-        // open event and general PDELAY* connections
++        /* Open event and general PDELAY* connections.
++         *
++         * These are RECEIVE-only. Transmit below always uses the PRIMARY pair and overrides
++         * the destination per message type with udp_sendto(), which is correct: both pairs
++         * bind the same local ports, so the pcb a datagram leaves through does not change
++         * anything on the wire. Selecting the PDelay pair for transmit instead would change
++         * only which pcb the source binding comes from -- so do not "fix" the selection
++         * below to match; there is nothing there to fix. */
+         if (init->dm == PTP_DM_P2P) {
+             PTP_L4_PDELAY_EVENT = udp_new();
+             udp_bind(PTP_L4_PDELAY_EVENT, &PTP_IGMP_PEER_DELAY, PTP_PORT_EVENT);
+@@ -174,6 +181,8 @@ void ptp_nsd_transmit_msg(RawPtpMessage *pMsg, uint32_t uid) {
+ 
+     // narrow down by transport type
+     if (TP == PTP_TP_IPv4) {
++        // Always the PRIMARY pair: the destination, not the pcb, is what selects the group.
++        // See the note on the PDELAY* pcbs in ptp_nsd_init().
+         struct udp_pcb *conn = (mc == PTP_MC_EVENT) ? PTP_L4_PRIMARY_EVENT : PTP_L4_PRIMARY_GENERAL; // select connection by message type
+         uint16_t port = (mc == PTP_MC_EVENT) ? PTP_PORT_EVENT : PTP_PORT_GENERAL;    // select port by message class
+         ip_addr_t ipaddr = isPDel_ ? PTP_IGMP_PEER_DELAY : PTP_IGMP_PRIMARY;         // select destination IP-address by PDel*/primary message types
