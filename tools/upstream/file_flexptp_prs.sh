@@ -91,8 +91,13 @@ for entry in "${FIXES[@]}"; do
     git rev-parse --verify "$branch" >/dev/null 2>&1 || { echo "!! no branch $branch, skipping"; continue; }
 
     # The commit message body IS the PR body. It was written to explain the defect, the
-    # mechanism and the measurement, which is exactly what the PR has to say.
-    body="$(git log --format=%b -1 "$branch")"
+    # mechanism and the measurement, which is exactly what the PR has to say. The
+    # Co-Authored-By trailer belongs on the commit, not in the prose a maintainer reads, so it
+    # is stripped and the attribution footer added in its place.
+    body="$(git log --format=%b -1 "$branch" | sed '/^Co-Authored-By:/d' | sed -e :a -e '/^\n*$/{$d;N;};/\n$/ba')"
+    body="$body
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)"
     # Each branch is exactly one commit off the pinned upstream revision, so the branch tip's
     # own diffstat is the whole change.
     files="$(git show --stat --format= "$branch")"

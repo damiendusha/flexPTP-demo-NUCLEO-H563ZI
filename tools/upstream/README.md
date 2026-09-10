@@ -12,19 +12,21 @@ touching a disjoint set of lines so they can be reviewed, merged or rejected in 
 combination. Full analysis and evidence in
 [`docs/flexptp_upstream_review.md`](../../docs/flexptp_upstream_review.md).
 
-| | Branch | What it fixes |
-|---|---|---|
-| U1 | `fix/u1-gm-clock-identity-byte-order` | A remote master's clock identity is byte-reversed, and the BMCA compares two byte conventions |
-| U2 | `fix/u2-logid-config-bit` | The `logid` flag is never stored, and storing it would make `ptp_load_config()` discard the whole record |
-| U3 | `fix/u3-locked-log-prefix` | `[LOG-LCKD]` prints every Sync with no message behind it |
-| U4 | `fix/u4-p2p-8023-dest-sticky` | A custom P2P 802.3 destination survives a profile change |
-| U5 | `fix/u5-stale-pbuf-tx-cb` | Recycled pbufs inherit `tx_cb` and get spurious hardware TX timestamps |
-| U6 | `fix/u6-pdelay-pcb-comment` | Comment: the PDelay pcbs are receive-only |
-| U7 | `fix/u7-transport-type-reset` | `ptp transport` does not re-init the driver, so the switch silently does not take effect |
+| | Branch | PR | What it fixes |
+|---|---|---|---|
+| U1 | `fix/u1-gm-clock-identity-byte-order` | [#20](https://github.com/epagris/flexPTP/pull/20) | A remote master's clock identity is byte-reversed, and the BMCA compares two byte conventions |
+| U2 | `fix/u2-logid-config-bit` | [#21](https://github.com/epagris/flexPTP/pull/21) | The `logid` flag is never stored, and storing it would make `ptp_load_config()` discard the whole record |
+| U3 | `fix/u3-locked-log-prefix` | [#25](https://github.com/epagris/flexPTP/pull/25) | `[LOG-LCKD]` prints every Sync with no message behind it |
+| U4 | `fix/u4-p2p-8023-dest-sticky` | [#24](https://github.com/epagris/flexPTP/pull/24) | A custom P2P 802.3 destination survives a profile change |
+| U5 | `fix/u5-stale-pbuf-tx-cb` | [#22](https://github.com/epagris/flexPTP/pull/22) | Recycled pbufs inherit `tx_cb` and get spurious hardware TX timestamps |
+| U6 | `fix/u6-pdelay-pcb-comment` | [#26](https://github.com/epagris/flexPTP/pull/26) | Comment: the PDelay pcbs are receive-only |
+| U7 | `fix/u7-transport-type-reset` | [#23](https://github.com/epagris/flexPTP/pull/23) | `ptp transport` does not re-init the driver, so the switch silently does not take effect |
 
 Every one is verified on a NUCLEO-H563ZI, most with a before/after measurement rather than an
 argument. U7 was found while testing U4 — and is why U4's negative case was untestable, because
 the only way to reach 802.3 without the gPTP preset is the transport switch that U7 repairs.
+
+All seven are filed and open as of 2026-09-10.
 
 ## Filing them
 

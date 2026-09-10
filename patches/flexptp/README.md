@@ -7,7 +7,7 @@ for `@flexptp`, so they are part of fetching the dependency: the patched tree is
 the repository cache, keyed by content. Nothing has to be applied by hand, and there is no
 working tree that can be pristine, patched, or neither.
 
-**Every one of these is filed upstream and should be deleted as its pull request merges.** They
+**Every one of these is filed upstream as [#20](https://github.com/epagris/flexPTP/pull/20)-[#26](https://github.com/epagris/flexPTP/pull/26), and should be deleted as its pull request merges.** They
 are here because the firmware needs them now, not because they belong here. The previous series
 (`0002`–`0004`) was deleted exactly that way when `RC1.0-17` absorbed it.
 
@@ -18,15 +18,15 @@ Found reviewing `RC1.0-11` → `RC1.0-17`. Three are regressions in the maintain
 [`docs/flexptp_upstream_review.md`](../../docs/flexptp_upstream_review.md); the branches and the
 PR-filing script are in [`tools/upstream/`](../../tools/upstream/README.md).
 
-| Patch | File(s) | What it fixes | Verified |
-|---|---|---|---|
-| `0001-u1-gm-clock-identity-byte-order` | `msg_utils.c` | The Announce body is the only place a clock identity is byte-swapped on receive, so a remote master's identity displays reversed and the BMCA compares two byte conventions | Master clock ID `e42126feffc9a000` → `00a0c9fffe2621e4`, both firmwares |
-| `0002-u2-logid-config-bit` | `config.c` | A stray `;` drops the `logid` bit; `CONFIG_LOG_ALL` is a stale literal, so storing that bit makes `ptp_load_config()` discard the **whole** record | Config round trip, three states |
-| `0003-u3-locked-log-prefix` | `stats.c` | `[LOG-LCKD]` prints every Sync with no message behind it | 25 orphan prefixes in 25 s → 0 |
-| `0004-u4-p2p-8023-dest-sticky` | `nsd_lwip.c` | A custom P2P 802.3 destination survives a profile change, so gPTP → anything keeps transmitting to `01:80:C2:00:00:0E` | Frames on the primary group: 0 of 280 → 233 of 280 |
-| `0005-u5-stale-pbuf-tx-cb` | `nsd_lwip.c` | `tx_cb` is left on a freed pbuf, so recycled pbufs get spurious hardware TX timestamps | `ptp.drop_txts` 284 392 → 0 under a 120 s flood |
-| `0006-u6-pdelay-pcb-comment` | `nsd_lwip.c` | Comment only: the PDelay pcbs are receive-only, so the "obvious fix" to the transmit selection is not one | Suite unchanged |
-| `0007-u7-transport-type-reset` | `settings_interface.c` | `ptp_set_transport_type()` skips the `ptp_reset()` its neighbour calls and calls mandatory, so `ptp transport` silently does not take effect | 802.3 frames after a runtime switch: 0 → 280 |
+| Patch | PR | File(s) | What it fixes | Verified |
+|---|---|---|---|---|
+| `0001-u1-gm-clock-identity-byte-order` | [#20](https://github.com/epagris/flexPTP/pull/20) | `msg_utils.c` | The Announce body is the only place a clock identity is byte-swapped on receive, so a remote master's identity displays reversed and the BMCA compares two byte conventions | Master clock ID `e42126feffc9a000` → `00a0c9fffe2621e4`, both firmwares |
+| `0002-u2-logid-config-bit` | [#21](https://github.com/epagris/flexPTP/pull/21) | `config.c` | A stray `;` drops the `logid` bit; `CONFIG_LOG_ALL` is a stale literal, so storing that bit makes `ptp_load_config()` discard the **whole** record | Config round trip, three states |
+| `0003-u3-locked-log-prefix` | [#25](https://github.com/epagris/flexPTP/pull/25) | `stats.c` | `[LOG-LCKD]` prints every Sync with no message behind it | 25 orphan prefixes in 25 s → 0 |
+| `0004-u4-p2p-8023-dest-sticky` | [#24](https://github.com/epagris/flexPTP/pull/24) | `nsd_lwip.c` | A custom P2P 802.3 destination survives a profile change, so gPTP → anything keeps transmitting to `01:80:C2:00:00:0E` | Frames on the primary group: 0 of 280 → 233 of 280 |
+| `0005-u5-stale-pbuf-tx-cb` | [#22](https://github.com/epagris/flexPTP/pull/22) | `nsd_lwip.c` | `tx_cb` is left on a freed pbuf, so recycled pbufs get spurious hardware TX timestamps | `ptp.drop_txts` 284 392 → 0 under a 120 s flood |
+| `0006-u6-pdelay-pcb-comment` | [#26](https://github.com/epagris/flexPTP/pull/26) | `nsd_lwip.c` | Comment only: the PDelay pcbs are receive-only, so the "obvious fix" to the transmit selection is not one | Suite unchanged |
+| `0007-u7-transport-type-reset` | [#23](https://github.com/epagris/flexPTP/pull/23) | `settings_interface.c` | `ptp_set_transport_type()` skips the `ptp_reset()` its neighbour calls and calls mandatory, so `ptp transport` silently does not take effect | 802.3 frames after a runtime switch: 0 → 280 |
 
 **`0002` is two changes on purpose.** Fixing the semicolon alone is worse than leaving the bug:
 the `logid` bit then reaches a record that `ptp_load_config()` rejects wholesale, taking the
