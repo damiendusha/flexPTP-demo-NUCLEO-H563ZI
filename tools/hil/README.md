@@ -199,7 +199,19 @@ link.
 that is the entire content of the fix — so a run that dropped nothing would more likely mean
 the flood never arrived. What must hold after the flood: the CLI answers, ping is 100% clean,
 and PTP returns to SLAVE and produces Sync samples again. The counter deltas are reported
-rather than asserted.
+rather than asserted -- with one exception.
+
+**`ptp.drop_txts` must stay at or below 16** (`FLOOD_MAX_DROP_TXTS`, about one `sTxCbFIFO` depth).
+It is the one counter that cannot legitimately track the flood: it counts transmit timestamps,
+and a PTP slave transmits a handful of frames per second however hard the link is hammered. A
+large value means timestamps are being requested for frames that never asked for one, which
+was finding U5 -- 284 392 of them in 120 s, while this check reported the number and passed. The
+assertion is only made on a counter that was actually read; if it was not, the PASS line says
+`drop_txts NOT asserted` instead of claiming a clean result.
+
+It was proven against the defect itself, on the FreeRTOS + lwIP firmware: with both U5
+protections removed (upstream's #22 clear in `nsd_lwip.c` and the lwIP driver's own clear) the
+check FAILS at 194 237; with only the driver's clear it passes at 0.
 
 Two things it is normal to see, and neither is a failure:
 

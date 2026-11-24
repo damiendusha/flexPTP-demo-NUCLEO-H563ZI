@@ -341,6 +341,21 @@ Five are merged, all re-tested on the board against upstream's own code rather t
 | **U1** | **#20** | **open**, mergeable | carried as `0001`; master clock ID correct on both firmwares |
 | **U6** | **#26** | **open**, mergeable | carried as `0006` |
 
+### U5 now has a regression gate
+
+Upstream's #22 fixed U5 at its source, but nothing here would have noticed it coming back: the
+flood check reported `ptp.drop_txts` and passed whatever it read, which is exactly how U5 hid in
+the first place. Two things are ported from a September branch that was never merged:
+
+- `check_ptp_flood` **fails** if `ptp.drop_txts` moves by more than 16 during the flood, and says
+  so explicitly when the counter could not be read rather than passing as if it were 0.
+- the lwIP driver clears `tx_cb`/`tag` once it has read them, a second line of defence that
+  stops a stale tag propagating through recycled buffers whatever produced it.
+
+Each was proven against the defect rather than assumed, on the FreeRTOS + lwIP firmware with the
+U5 bug put back into `nsd_lwip.c`: driver clear present → `drop_txts` 0, check passes; driver
+clear also removed → `drop_txts` 194 237, check **fails**.
+
 ### U1 is not latent — correction
 
 §2 called U1's BMCA consequence "latent". That understated it. `ptp_select_better_master()` compares

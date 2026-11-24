@@ -124,6 +124,13 @@ PTP_CONVERGE_S = 60.0
 # Selected by run.py --firmware, which sets this along with the interrupt priority table.
 EXPECTED_CMD_COUNT = 26
 
+# The only counter check_ptp_flood asserts rather than reports. One sTxCbFIFO depth (10),
+# rounded up: a saturated link may cost a real transmit timestamp or two, but a PTP slave
+# transmits a handful of frames per second regardless of how hard it is being flooded, so this
+# counter cannot legitimately track the flood. The reasoning, and the 284 392-event defect that
+# made it worth asserting, are at the assertion itself.
+FLOOD_MAX_DROP_TXTS = 16
+
 
 # --------------------------------------------------------------------------
 # Checks valid from S0 (no network required)
@@ -901,6 +908,8 @@ def check_ptp_flood(board: Board, ctx: Context) -> CheckResult:
                                          what died first when this deadlocked)
       * PTP is still SLAVE and syncing  (task_ptp() came back, rather than falling out of
                                          SLAVE and staying there)
+      * `ptp.drop_txts` stayed tiny     (the one counter that CANNOT legitimately track the
+                                         flood -- finding U5, at the assertion below)
 
     The 120 s default is not arbitrary. The queues have to fill before any of it bites; a 30 s
     flood survives even the broken firmware, so a short run proves nothing.
@@ -965,9 +974,10 @@ def check_ptp_flood(board: Board, ctx: Context) -> CheckResult:
                            f"only {len(samples)} sync samples in 20 s after the flood; "
                            "PTP is not running again", data)
 
-    # The counters are REPORTED, not asserted: a drop under saturation is the designed
-    # behaviour. They are the difference between "we survived" and "we survived and here is
-    # what it cost", and a run that shows zero everywhere is worth a second look at the flood.
+    # The counters are REPORTED, not asserted -- with one exception, below. A drop under
+    # saturation is the designed behaviour. They are the difference between "we survived" and
+    # "we survived and here is what it cost", and a run that shows zero everywhere is worth a
+    # second look at the flood.
     after = read_stats(board)
     if before and after:
         data["counter_delta"] = {
@@ -976,10 +986,54 @@ def check_ptp_flood(board: Board, ctx: Context) -> CheckResult:
             if isinstance(after[k], int) and after[k] - before.get(k, 0) != 0
         }
 
+        # 4. The exception: `ptp.drop_txts` must stay tiny, on either firmware.
+        #
+        # Unlike every other counter here, this one does NOT scale with the flood. It counts
+        # transmit timestamps that arrived faster than task_ptp() could take them, and a PTP
+        # slave transmits a handful of frames per second no matter how hard the link is being
+        # hammered -- so a flood cannot legitimately produce many of them, and a large value
+        # means timestamps are being requested for frames that never asked for one.
+        #
+        # That is exactly what finding U5 was: nsd_lwip.c tags a pbuf with `tx_cb`/`tag` and
+        # frees it without clearing them, lwIP does not initialise LWIP_PBUF_CUSTOM_DATA on
+        # allocation, and the taint then rides recycled heap blocks into ICMP and ARP frames.
+        # It measured 284 392 in a 120 s flood on the lwIP firmware against 0 on the ThreadX
+        # one, and it was invisible here because this check only printed the delta. Upstream
+        # fixed the source in RC1.0-26 (flexPTP #22: nsd_lwip.c untags the pbuf before freeing
+        # it), and the lwIP driver also clears both fields once it has read them
+        # (eth_drv_lwip.c, low_level_output) as a second line of defence. This assertion is
+        # what notices if EITHER goes away -- a pin bump, an upstream NSD rework, a new
+        # producer of tx_cb -- because the flood still passes on every other criterion.
+        #
+        # The bound is small but not zero: sTxCbFIFO is TX_CALLBACK_FIFO_LENGTH (10) deep, and
+        # a genuinely saturated link can starve task_ptp() long enough to lose a real
+        # timestamp or two. More than one FIFO's worth is not starvation, it is the defect
+        # coming back. Anything in between is worth looking at, which is what a failure here
+        # asks for.
+        # Asserted only on a counter that was actually READ. A missing key defaults to "moved
+        # by 0" in counter_delta, which would let a firmware that does not expose the counter,
+        # or an ethstat reply that failed to parse, pass as "no spurious timestamps" -- the
+        # same silent pass that hid U5 in the first place. Not asserted is reported as such.
+        if "ptp.drop_txts" not in before or "ptp.drop_txts" not in after:
+            data["drop_txts_asserted"] = False
+        else:
+            data["drop_txts_asserted"] = True
+        drop_txts = data["counter_delta"].get("ptp.drop_txts", 0)
+        if data["drop_txts_asserted"] and drop_txts > FLOOD_MAX_DROP_TXTS:
+            return CheckResult(
+                "ptp_flood", Status.FAIL,
+                f"ptp.drop_txts moved by {drop_txts} during the flood (bound is "
+                f"{FLOOD_MAX_DROP_TXTS}) -- transmit timestamps are being requested for "
+                "frames that did not ask for one; see finding U5", data)
+
+    if data.get("drop_txts_asserted"):
+        txts_note = f", drop_txts {data['counter_delta'].get('ptp.drop_txts', 0)}"
+    else:
+        txts_note = ", drop_txts NOT asserted (counter not read)"
     return CheckResult(
         "ptp_flood", Status.PASS,
         f"survived {sent['seconds']:.0f} s at {sent['pps']} pps "
-        f"({sent['mbit_s']} Mbit/s), 0% loss, {len(samples)} sync samples after",
+        f"({sent['mbit_s']} Mbit/s), 0% loss, {len(samples)} sync samples after{txts_note}",
         data,
     )
 

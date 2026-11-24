@@ -368,6 +368,31 @@ static err_t low_level_output(struct netif *netif, struct pbuf *p) {
         optArg.tag = (uint32_t)p->tag;
     }
 
+    /* Consume the request: this driver is the only reader of these two fields, and once they
+     * are in optArg the pbuf has no further use for them.
+     *
+     * A second line of defence for finding U5, whose source upstream fixed in RC1.0-26
+     * (flexPTP #22). `tx_cb` and `tag` live in LWIP_PBUF_CUSTOM_DATA (lwipopts.h), which lwIP
+     * does NOT initialise in pbuf_alloc() -- it manages only its own fields. nsd_lwip.c used to
+     * set both and pbuf_free() the buffer without clearing them, so the next PBUF_RAM
+     * allocation on that recycled heap block inherited a live `tx_cb`, and the gate above --
+     * the only signal nsd_lwip.c offers -- requested a hardware TX timestamp for an ICMP or ARP
+     * frame that never asked for one and fired ptp_transmit_timestamp_cb() with a stale uid.
+     * Measured on this board under a 120 s flood: 284 392 such events before #22, 0 after.
+     *
+     * Why clear here as well, now that the producer does: this is the choke point every
+     * tainted buffer passes through, so it breaks the propagation loop for ANY producer rather
+     * than relying on each one to tidy up. An uncleared block does not merely mis-timestamp
+     * one frame -- it stays tainted through every later recycle and spreads at transmit rate.
+     * Two stores per frame is the whole cost. Zeroing custom data on allocation instead would
+     * mean patching lwIP's pbuf_alloc(), which offers no hook, and would pay on every
+     * allocation rather than only on frames that carry a request.
+     *
+     * check_ptp_flood in tools/hil/ asserts ptp.drop_txts stays small, so losing both this and
+     * the upstream clear would fail the hardware suite rather than pass it quietly. */
+    p->tx_cb = NULL;
+    p->tag = NULL;
+
     /* Pass the data to the MAC.
      *
      * A drop here used to be reported to lwIP as a successful transmit -- link.xmit bumped,
