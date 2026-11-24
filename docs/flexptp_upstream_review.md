@@ -324,3 +324,103 @@ two that lose data.
 7. **U6** — tidiness; bundle with the minors
 
 All seven are target-independent.
+
+## 6. Update — `RC1.0-26` (`fe4b071`), 2026-11-24
+
+### Our seven
+
+Five are merged, all re-tested on the board against upstream's own code rather than our patches:
+
+| | PR | How it landed | Re-verified on RC1.0-26 |
+|---|---|---|---|
+| U2 | #21 | comments trimmed; both functional halves intact | round trip `0xbf`, accepted, flags restored |
+| U3 | #25 | comment shortened; logic identical | 0 orphan prefixes in 25 s |
+| U4 | #24 | verbatim | gPTP → defp2p: 233 primary / 47 peer-delay, as in September |
+| U5 | #22 | verbatim | `ptp.drop_txts` 0 under a 120 s flood |
+| U7 | #23 | verbatim | exercised by the U4 test |
+| **U1** | **#20** | **open**, mergeable | carried as `0001`; master clock ID correct on both firmwares |
+| **U6** | **#26** | **open**, mergeable | carried as `0006` |
+
+### U1 is not latent — correction
+
+§2 called U1's BMCA consequence "latent". That understated it. `ptp_select_better_master()` compares
+two *parsed* identities, and byte reversal does not preserve numeric order — so whenever two masters
+compete, the tie-break on identity picks the wrong one. That is live, not latent.
+
+It was shown by someone else. In [issue #32](https://github.com/epagris/flexPTP/issues/32), Michael
+(`emb4fun`) ran two flexPTP masters with MACs `06:CA:FE:33:44:55` and `02:CA:FE:33:44:55`. Without
+#20 the device with the *larger* identity stayed master; with it the smaller one correctly won. He
+notes he did not at first see why #20 fixed anything, and tested it to find out.
+
+### PR #33 (emb4fun)
+
+[#33](https://github.com/epagris/flexPTP/pull/33) carries #20's change verbatim, credits it, and adds
+`ptp_slave_reset()` before `ptp_slave_enable()` on the transition into SLAVE. His symptom: after
+SLAVE → MASTER → SLAVE the servo printed `26810515154010112000.0000` and the offset walked away.
+
+Tested on this board, FreeRTOS + lwIP firmware, host master stopped so the board takes over, ~65 s
+as master, host master restarted. Two runs each:
+
+| | First offsets after return | Servo values | Converged (last 15 s) |
+|---|---|---|---|
+| RC1.0-26 as pinned (no reset) | 5.9 µs, −9.4 µs | normal from the first sample | ≤ 132 ns, ≤ 477 ns |
+| with #33 | 63 µs, 59 µs | first correction 0.0, then tens of thousands of ppb | ≤ 308 ns, ≤ 312 ns |
+
+So **Michael's failure does not reproduce here**, and #33 costs this configuration a re-acquisition
+transient roughly ten times larger by discarding servo state that was not stale. It is harmless in
+steady state. The likely difference is configuration: his log has two servo columns, i.e. flexPTP's
+HLT clock interface; this board uses the addend interface with the Kalman servo. Worth telling him
+— a reset scoped to the state that actually goes stale might fix his case without costing ours —
+but that is a hypothesis; nothing here identifies which state that is.
+
+A note on method, because the first attempt at this test was wrong. The host master unit then
+copied system time into the PHC on every start, which stepped the master by the PHC's accumulated
+drift — 17.2 ms on that run, under flexPTP's 20 ms coarse threshold, so the board had to slew it and
+produced servo values above 10⁶ ppb that looked like Michael's bug. The units now reset only the
+PHC's rate on start (see `tools/hil/privileged/`), and the figures above are from step-free runs.
+
+### Issue #30 is still open
+
+ptp4l slaves log `ignore bogus delay request interval 2^127` against a flexPTP master. `9eefd95`
+("Delay_Req logMsgPeriod was set to standard 0x7F value") looks like the fix but is not:
+
+- it changes **Delay_Req**, which IEEE 1588 does set to 0x7F — correct, but not what #30 is about;
+- #30 is about **Delay_Resp**, which must carry the master's `logMinDelayReqInterval`.
+  `ptp_send_delay_resp_message()` copies the incoming Delay_Req header and never sets
+  `logMessagePeriod`, so it echoes whatever the slave sent. ptp4l sends 0x7F; so, since `9eefd95`,
+  does a flexPTP slave.
+
+Measured with the board as master and ptp4l as slave (`flexptp-ptp4l-slave` unit), fresh ptp4l
+process each time (it rate-limits the warning to once per 300 s):
+
+| Board firmware | ptp4l reaches SLAVE | warnings |
+|---|---|---|
+| RC1.0-26 as pinned | yes | **1**, on the first Delay_Resp |
+| + `header.logMessagePeriod = S.profile.logDelayReqPeriod;` | yes, path delay 558 ns | **0** |
+
+ptp4l still uses the Delay_Resp for the path delay either way; what it cannot do is learn the
+master's interval. A real fix must also map `PTP_LOGPER_SYNCMATCHED` — which is **127**, the same bit
+pattern as 0x7F — to something meaningful such as `logSyncPeriod`, rather than copy it through. Not
+filed; the experiment was on a scratch branch.
+
+The board as master, incidentally, holds a ptp4l slave to about ±30 ns.
+
+### New upstream code, tested
+
+| Commit | Change | Test | Result |
+|---|---|---|---|
+| `0800cbf` (#28) | IEC/IEEE 61850-9-3 Power Utility Profile preset | `ptp profile preset PUP` on lwIP | 802.3, P2P, domain 93 |
+| `3b33b89` (#29) | PUP primary MAC typo `01:18:19` → `01:1B:19`; lwIP L2 receive filter uses the profile's destinations | 802.3 destination histogram under PUP, 100 s | 295 → `01:1B:19:00:00:00`, 50 → `01:80:C2:00:00:0E`, none to `01:18:19` |
+| `3b33b89` (#29) | same receive filter, gPTP | gPTP against a ptp4l gPTP grandmaster, lwIP | SLAVE, 240 samples / 30 s, ≤ 96 ns |
+| `9eefd95` | Delay_Req `logMessagePeriod` 0x7F | full S8 against ptp4l, both firmwares | unaffected; see #30 above |
+
+### Full results at RC1.0-26 + `0001` + `0006`
+
+Both firmwares pass the full S8 stage including the 120 s flood (ThreadX 14/14, FreeRTOS 13/14 with
+the long-standing `threads` skip), and gPTP reaches SLAVE on both, 8 Sync/s: steady state 52–85 ns (ThreadX) and 60–96 ns
+(FreeRTOS) across two runs. `ptp_sync` in the final S8 runs: 206 ns (FreeRTOS), 350 ns (ThreadX).
+
+One harness fix came out of this. `ptp_sync` sampled from the moment the board selected a master, so
+its figure depended on which checks ran before it: ~800 ns in S8 order, 7–21 µs as `--checks
+dhcp,ptp_sync`, both PASS because nothing asserts on the offset. It now waits until the board has
+been slaved for 60 s, and reads ~100–150 ns either way.

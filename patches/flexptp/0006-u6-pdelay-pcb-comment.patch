@@ -1,4 +1,4 @@
-From 1b5275435304c2fb146ff55db63647dc225c1cec Mon Sep 17 00:00:00 2001
+From c7e6d77f14ac5cdfdf691f6f0f2ad719f6211fb6 Mon Sep 17 00:00:00 2001
 From: Damien Dusha <Damien Dusha>
 Date: Wed, 9 Sep 2026 23:39:58 +1000
 Subject: [PATCH] lwIP NSD: say that the PDelay pcbs are receive-only
@@ -20,7 +20,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
  1 file changed, 10 insertions(+), 1 deletion(-)
 
 diff --git a/src/flexptp/port/example_netstack_drivers/nsd_lwip.c b/src/flexptp/port/example_netstack_drivers/nsd_lwip.c
-index 2811990..9205ccd 100644
+index 73229a4..d280f2b 100644
 --- a/src/flexptp/port/example_netstack_drivers/nsd_lwip.c
 +++ b/src/flexptp/port/example_netstack_drivers/nsd_lwip.c
 @@ -93,7 +93,14 @@ void ptp_nsd_init(const NsdInitSettings * init) {
@@ -39,7 +39,7 @@ index 2811990..9205ccd 100644
          if (init->dm == PTP_DM_P2P) {
              PTP_L4_PDELAY_EVENT = udp_new();
              udp_bind(PTP_L4_PDELAY_EVENT, &PTP_IGMP_PEER_DELAY, PTP_PORT_EVENT);
-@@ -174,6 +181,8 @@ void ptp_nsd_transmit_msg(RawPtpMessage *pMsg, uint32_t uid) {
+@@ -185,6 +192,8 @@ void ptp_nsd_transmit_msg(RawPtpMessage *pMsg, uint32_t uid) {
  
      // narrow down by transport type
      if (TP == PTP_TP_IPv4) {

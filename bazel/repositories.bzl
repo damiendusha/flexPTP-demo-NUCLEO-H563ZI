@@ -11,9 +11,8 @@ Two properties that the submodule arrangement did not have:
     build.sh's apply_submodule_patches() had to detect and refuse -- neither. That is what
     retired the --check-patches CI gate, which existed because the flexPTP enqueue patch was
     silent: omit it and the firmware builds, links, gets an address and never syncs (F80).
-    Upstream took all three of the original flexPTP patches, so those are gone; the seven
-    that replaced them are a new series from reviewing the release that took them, and each
-    goes away as its pull request merges.
+    Upstream took all three of the original flexPTP patches, then five of the seven that
+    replaced them; each remaining one goes away as its pull request merges.
   - a clone does not need `git submodule update --init --recursive` before it can build.
 
 See docs/bazel_decisions.md for why these come from git rather than from BCR.
@@ -61,33 +60,29 @@ def _vendored_impl(_mctx):
 
     # flexPTP.
     #
-    # The pin moved to RC1.0-17 because upstream took all three patches this repository used to
-    # carry -- the servo NaN latch as 2adbe6a (PR #15), the generic-netstack IGMP addresses as
-    # 2a09cac (PR #18), and the non-blocking enqueues as e873105, which went further than we did
-    # and also fixed the FreeRTOS branch. A fourth, never a working-tree patch here because only
-    # the lwIP project reaches it, landed as 36ae306 (PR #17).
+    # RC1.0-26. Of the seven fixes this repository filed after reviewing RC1.0-17, five are
+    # merged there -- #21 (logid config bit), #22 (stale pbuf tx_cb), #23 (transport-type
+    # reset), #24 (sticky P2P 802.3 destinations) and #25 (orphan [LOG-LCKD] prefix) -- so
+    # their patches are gone. #21 and #25 landed with the comments trimmed; the code is ours.
     #
-    # The seven below are a NEW series, found reviewing that release. Three are regressions in
-    # the maintainer's own 7bc544e. Every one is verified on hardware and filed upstream
-    # separately -- see //tools/upstream and docs/flexptp_upstream_review.md -- and each one
-    # should be deleted from here as its pull request merges, not carried indefinitely.
+    # Two are still open and carried here until they merge:
     #
-    # They are independent and touch disjoint regions, so the order below is the review's order
-    # and not a dependency. //patches/flexptp/README.md has the recovery and regeneration
-    # commands.
+    #   0001  #20  the Announce body is the only place a clock identity is byte-swapped on
+    #              receive. Not cosmetic: it inverts the BMCA tie-break between two masters,
+    #              independently reproduced by another user in issue #32, and folded into
+    #              their PR #33.
+    #   0006  #26  comment only: the PDelay pcbs are receive-only.
+    #
+    # Delete each as its pull request merges. //patches/flexptp/README.md has the commands to
+    # check that a fix really is in a new revision before deleting its patch.
     new_git_repository(
         name = "flexptp",
         build_file = "//bazel:flexptp.BUILD",
-        commit = "494e644a3218c5867ee7397c1e9c019667b664b1",  # RC1.0-17
+        commit = "fe4b071d72c1f6e489f13e350e0e4c8e157de4b8",  # RC1.0-26
         patch_args = ["-p1"],
         patches = [
             "//patches/flexptp:0001-u1-gm-clock-identity-byte-order.patch",
-            "//patches/flexptp:0002-u2-logid-config-bit.patch",
-            "//patches/flexptp:0003-u3-locked-log-prefix.patch",
-            "//patches/flexptp:0004-u4-p2p-8023-dest-sticky.patch",
-            "//patches/flexptp:0005-u5-stale-pbuf-tx-cb.patch",
             "//patches/flexptp:0006-u6-pdelay-pcb-comment.patch",
-            "//patches/flexptp:0007-u7-transport-type-reset.patch",
         ],
         remote = "https://github.com/epagris/flexPTP.git",
     )

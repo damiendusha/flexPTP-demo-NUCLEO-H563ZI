@@ -61,11 +61,58 @@ conflating them is how F42 survived for days. The runner reports incomplete and 
 
 The network checks additionally need the host set up as described below.
 
-## Network checks need a one-time privileged setup
+## Network checks need the host set up once
 
 `boot`, `cli`, `osinfo`, `cpp_ctor`, `threads` and `ptp_start` need nothing but the ST-Link.
-`dhcp`, `ping`, `ptp_ts` and `ptp_sync` need the board to have an IP address — and on a direct
-cable that means **the host must serve DHCP itself**:
+`dhcp`, `ping`, `ptp_ts`, `ptp_sync` and `ptp_flood` need the board to have an address and the host
+to run a PTP master -- both root-only.
+
+### Recommended: install it once, then no sudo
+
+```bash
+sudo tools/hil/privileged/install.sh
+```
+
+After that, as the normal user -- including an agent running as that user:
+
+```bash
+systemctl start flexptp-hil-dhcp            # DHCP for the board, on enp5s0 only
+systemctl start flexptp-ptp4l-default       # grandmaster, default profile (UDP/IPv4, E2E)
+systemctl start flexptp-ptp4l-gptp          # grandmaster, gPTP (802.1AS)
+systemctl start flexptp-ptp4l-slave         # ptp4l as SLAVE, to test the board as master
+journalctl -u flexptp-ptp4l-gptp -f         # readable because the user is in group adm
+```
+
+The three ptp4l units conflict with each other, so starting one stops the others. None of them
+starts at boot.
+
+What the install grants and changes:
+
+- **A polkit rule** lets ONE user `start`, `stop` and `restart` exactly those four units: no
+  `enable`, no other unit, no other user.
+- **The units** each run a fixed command on a fixed interface, from root-owned files in `/etc`. The
+  repository is read once, at install, and never again: a root service that ran a user-writable
+  file would be a privilege escalation.
+- **A NetworkManager profile `flexptp-hil`** pins `192.168.2.1/24` on the interface. That is also
+  the fix for the address that kept vanishing. NetworkManager's auto-created "Wired connection 1"
+  claimed the interface, ran a DHCP client that never got a lease, and flushed the hand-added
+  address on every retry. The new profile outranks it on this interface only; it is not modified.
+
+Undo with `sudo tools/hil/privileged/install.sh --uninstall`. Re-run the install after editing
+anything under `tools/hil/privileged/`, since the installed copies are what run.
+
+**The PHC is reset between roles.** `flexptp-ptp4l-slave` steers `/dev/ptp0` to the board and
+steps it onto the board's timescale (1970-ish), so on stop it hands the PHC back at system time and
+0 ppb. The master units reset only the PHC's *rate* on start, never its *time*. Copying system time
+in on every start stepped the master by the PHC's accumulated drift: 17.2 ms on one run, which was
+just under flexPTP's 20 ms coarse threshold, so a slaved board slewed it for minutes. That is a
+disturbance no test of the board's return to SLAVE can have.
+
+### Alternative: by hand, each session
+
+On a direct cable the host must serve DHCP itself. `setup_host_net.sh` does it per session, as
+root -- and the address it adds is the one NetworkManager flushes, unless the profile above is
+installed:
 
 ```bash
 sudo tools/hil/setup_host_net.sh
@@ -82,7 +129,7 @@ sudo HIL_IFACE=eth1 tools/hil/setup_host_net.sh
 tools/hil/run.py --stage S0 --iface eth1
 ```
 
-### For `ptp_sync` and `ptp_ts`, also run a master
+### For `ptp_sync` and `ptp_ts`, also run a master (by-hand route)
 
 The harness does **not** start `ptp4l` — it needs root and has to outlive a single check. Run
 it in another terminal:
@@ -202,3 +249,17 @@ missing `t3` can still *look* like it is converging. See
 [`docs/threadx_netxduo_feasibility.md`](../../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/threadx_netxduo_feasibility.md).
 
 Check the timestamps are flowing before you believe the offset.
+
+## `ptp_sync` measures the servo settled
+
+"Slaved" only means a master was selected; the servo starts converging there. From a cold reset on
+this bench the offset overshoots to about +7.5 µs some 20 s after slaving, and is inside 1 µs after
+about 40 s. `ptp_sync` used to sample straight away, so its figure depended on which checks ran
+before it: about 800 ns in S8 order, where `ping` and `ptp_ts` give the servo about 25 s, against
+7–21 µs as `--checks dhcp,ptp_sync`. Both PASSED, because nothing asserts on the offset, and the
+second was misdiagnosed as a bench fault before the cause was found.
+
+It now waits until the board has been slaved for `PTP_CONVERGE_S` (60 s) and reads about 100–150 ns
+whatever runs first. The check still does not assert a bound on the offset: it is a regression
+gate for "the servo locks", and the characterisation lives in
+[`docs/l4_performance.md`](../../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/l4_performance.md).

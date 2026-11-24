@@ -1,0 +1,23 @@
+# DHCP for the board on the bench link, and nothing else. Installed by install.sh.
+#
+# Every argument is fixed here, in a root-owned file. The bench user may start and stop this
+# unit (see 50-flexptp-hil.rules) but cannot change what it runs or where it listens.
+[Unit]
+Description=flexPTP HIL: DHCP for the board on @IFACE@
+After=network.target
+
+[Service]
+Type=simple
+# --bind-dynamic, not --bind-interfaces: it tolerates @HOST_ADDR@ appearing after start, so
+# the unit does not race NetworkManager bringing the bench profile up.
+# --leasefile-ro: no lease file, so nothing to write; the bench does not need lease history.
+# --conf-file=/dev/null: ignore /etc/dnsmasq.conf, so a system dnsmasq config cannot widen it.
+ExecStart=/usr/sbin/dnsmasq --keep-in-foreground --conf-file=/dev/null \
+    --interface=@IFACE@ --bind-dynamic --except-interface=lo \
+    --no-resolv --port=0 --leasefile-ro \
+    --dhcp-range=@DHCP_RANGE@ --log-dhcp
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes

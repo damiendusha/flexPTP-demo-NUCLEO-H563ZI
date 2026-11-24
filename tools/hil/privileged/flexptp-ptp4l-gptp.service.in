@@ -1,0 +1,29 @@
+# PTP grandmaster, gPTP profile (802.1AS: L2, P2P). Installed by install.sh.
+# Board-side: `ptp profile preset gPTP` at the VCP, re-issued after every reset.
+#
+# Fixed arguments in a root-owned file; the bench user may start and stop it but not change it.
+# The ptp4l units conflict with each other: only one may own @IFACE@ at a time.
+[Unit]
+Description=flexPTP HIL: PTP grandmaster, gPTP profile (802.1AS: L2, P2P) on @IFACE@
+After=network.target
+Conflicts=flexptp-ptp4l-default.service flexptp-ptp4l-slave.service 
+
+[Service]
+Type=simple
+# Reset the PHC's RATE, never its TIME. A ptp4l master does not adjust its clock, but it
+# inherits whatever rate it finds, and flexptp-ptp4l-slave steers /dev/ptp0 (~-26.7 ppm here).
+# That unit hands the PHC back at system time and 0 ppb when it stops, so this is defence in
+# depth, and `freq 0` costs nothing when the rate is already 0.
+#
+# Deliberately NOT `set`. Copying system time in on every start steps the master by whatever
+# the PHC has drifted since -- measured at 17.2 ms after ~50 min, just under flexPTP's 20 ms
+# coarse threshold, so a slaved board had to slew the whole step and took minutes to recover.
+# That makes a master restart a disturbance in its own right, and it is exactly what a test of
+# the board's MASTER -> SLAVE return must not have.
+ExecStartPre=/usr/sbin/phc_ctl @IFACE@ freq 0
+ExecStart=/usr/sbin/ptp4l -f /etc/linuxptp/flexptp-gm.cfg -i @IFACE@ -H -m
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes

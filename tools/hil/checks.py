@@ -47,6 +47,8 @@ class Context:
     host_iface: str = "enp5s0"
     ptp_settle_s: float = 90.0
     ptp_locked: bool = False
+    # When the board was first seen slaved in this run, so ptp_sync can wait out convergence.
+    slaved_at: "float | None" = None
 
     # Two separate things, because between S3 and S5a they differ and conflating them makes
     # one of the checks lie. Set from run.py.
@@ -100,6 +102,10 @@ NOMINAL_ADDEND = 3435973836
 # observed range on this bench during a normal lock is 3435585115 - 3436216126, roughly
 # +/-0.02%; 1% is generous around that while remaining nowhere near zero.
 ADDEND_TOLERANCE = 0.01
+
+# How long after the board is first slaved before ptp_sync samples the offset. See
+# check_ptp_sync: ~40 s to come inside 1 us from a cold reset on this bench, plus margin.
+PTP_CONVERGE_S = 60.0
 
 # The CLI's registered command count once flexPTP has registered its own.
 #
@@ -726,6 +732,9 @@ def _ensure_ptp_slaved(board: Board, ctx: Context) -> str | None:
     while time.time() < deadline:
         if _ptp_is_slaved(board):
             ctx.ptp_locked = True
+            # Reaching this loop means the board was NOT slaved on entry, so this is a fresh
+            # selection and the servo has only just started converging. Record when.
+            ctx.slaved_at = time.time()
             return None
         time.sleep(2.0)
 
@@ -815,6 +824,20 @@ def check_ptp_sync(board: Board, ctx: Context) -> CheckResult:
     if reason:
         return CheckResult("ptp_sync", Status.FAIL, reason)
 
+    # Measure the servo SETTLED, however soon after slaving this check happens to run.
+    #
+    # "Slaved" only means a master was selected; the servo starts converging there. Traced from a
+    # cold reset on this bench: the offset overshoots to ~+7.5 us about 20 s after slaving and is
+    # inside 1 us after ~40 s. Without this wait the figure depended on which checks ran first --
+    # in S8 order ping and ptp_ts give the servo ~25 s and it read ~800 ns, while `--checks
+    # dhcp,ptp_sync` sampled the overshoot and read 7-21 us. And since nothing asserts on the
+    # offset, both PASSED, which is how a measurement artefact got diagnosed as a bench fault.
+    settled_after = 0.0
+    if ctx.slaved_at is not None:
+        settled_after = PTP_CONVERGE_S - (time.time() - ctx.slaved_at)
+        if settled_after > 0:
+            board.read_for(settled_after)
+
     board.cmd("ptp log def on")
     text = board.read_for(30.0)
     board.cmd("ptp log def off")
@@ -844,6 +867,7 @@ def check_ptp_sync(board: Board, ctx: Context) -> CheckResult:
     # including it would make the figure depend on when the check happened to start.
     tail = offsets_ns[len(offsets_ns) // 2 :]
     data = {
+        "waited_for_convergence_s": round(max(settled_after, 0.0), 1),
         "samples": len(offsets_ns),
         "offset_ns_mean": sum(tail) / len(tail),
         "offset_ns_absmax": max(abs(v) for v in tail),

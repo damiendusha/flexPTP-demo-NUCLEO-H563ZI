@@ -1,0 +1,25 @@
+// Let ONE user start, stop and restart exactly the flexPTP HIL units -- nothing else.
+//
+// No session check (subject.active / subject.local) on purpose: an agent's shell is not a
+// logind session, and the unit list plus the verb list are what bound this, not where the
+// request came from. Installed by tools/hil/privileged/install.sh.
+polkit.addRule(function(action, subject) {
+    if (action.id !== "org.freedesktop.systemd1.manage-units") {
+        return polkit.Result.NOT_HANDLED;
+    }
+    if (subject.user !== "@USER@") {
+        return polkit.Result.NOT_HANDLED;
+    }
+    var units = [
+        "flexptp-hil-dhcp.service",
+        "flexptp-ptp4l-default.service",
+        "flexptp-ptp4l-gptp.service",
+        "flexptp-ptp4l-slave.service"
+    ];
+    var verb = action.lookup("verb");
+    if (units.indexOf(action.lookup("unit")) >= 0 &&
+        (verb === "start" || verb === "stop" || verb === "restart")) {
+        return polkit.Result.YES;
+    }
+    return polkit.Result.NOT_HANDLED;
+});

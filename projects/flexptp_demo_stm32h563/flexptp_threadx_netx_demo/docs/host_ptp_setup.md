@@ -186,6 +186,26 @@ sudo tools/hil/setup_host_net.sh --gptp -- --neighborPropDelayThresh 100000
 
 ## Alternative: the gPTP profile
 
+> **The tested route** (2026-11-24, RC1.0-26, both firmwares). With
+> [`tools/hil/privileged/install.sh`](../../../../tools/hil/privileged/install.sh) installed once:
+>
+> ```bash
+> systemctl start flexptp-ptp4l-gptp          # host: gPTP grandmaster on enp5s0; stops the default one
+> ```
+>
+> then at the board's VCP, after every reset:
+>
+> ```
+> ptp profile preset gPTP
+> ```
+>
+> ptp4l logs `assuming the grand master role` within ~5 s. The board selects
+> `00a0c9fffe2621e4` as master within seconds and runs 8 Sync/s; steady-state offset measured
+> **52–85 ns** (ThreadX) and **60–96 ns** (FreeRTOS) across two runs, the second with the units as
+> installed. Return to the default profile with
+> `systemctl start flexptp-ptp4l-default` and `ptp profile preset default`. Without the install,
+> `sudo tools/hil/setup_host_net.sh --gptp` does the same in the foreground.
+
 The host **must** match these:
 
 | Parameter | Value | Why it matters |

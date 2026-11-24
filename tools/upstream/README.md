@@ -12,21 +12,32 @@ touching a disjoint set of lines so they can be reviewed, merged or rejected in 
 combination. Full analysis and evidence in
 [`docs/flexptp_upstream_review.md`](../../docs/flexptp_upstream_review.md).
 
-| | Branch | PR | What it fixes |
-|---|---|---|---|
-| U1 | `fix/u1-gm-clock-identity-byte-order` | [#20](https://github.com/epagris/flexPTP/pull/20) | A remote master's clock identity is byte-reversed, and the BMCA compares two byte conventions |
-| U2 | `fix/u2-logid-config-bit` | [#21](https://github.com/epagris/flexPTP/pull/21) | The `logid` flag is never stored, and storing it would make `ptp_load_config()` discard the whole record |
-| U3 | `fix/u3-locked-log-prefix` | [#25](https://github.com/epagris/flexPTP/pull/25) | `[LOG-LCKD]` prints every Sync with no message behind it |
-| U4 | `fix/u4-p2p-8023-dest-sticky` | [#24](https://github.com/epagris/flexPTP/pull/24) | A custom P2P 802.3 destination survives a profile change |
-| U5 | `fix/u5-stale-pbuf-tx-cb` | [#22](https://github.com/epagris/flexPTP/pull/22) | Recycled pbufs inherit `tx_cb` and get spurious hardware TX timestamps |
-| U6 | `fix/u6-pdelay-pcb-comment` | [#26](https://github.com/epagris/flexPTP/pull/26) | Comment: the PDelay pcbs are receive-only |
-| U7 | `fix/u7-transport-type-reset` | [#23](https://github.com/epagris/flexPTP/pull/23) | `ptp transport` does not re-init the driver, so the switch silently does not take effect |
+| | Branch | PR | Status (2026-11-24) | What it fixes |
+|---|---|---|---|---|
+| U1 | `fix/u1-gm-clock-identity-byte-order` | [#20](https://github.com/epagris/flexPTP/pull/20) | **open** | A remote master's clock identity is byte-reversed, and the BMCA compares two byte conventions |
+| U2 | `fix/u2-logid-config-bit` | [#21](https://github.com/epagris/flexPTP/pull/21) | merged, comments trimmed | The `logid` flag is never stored, and storing it would make `ptp_load_config()` discard the whole record |
+| U3 | `fix/u3-locked-log-prefix` | [#25](https://github.com/epagris/flexPTP/pull/25) | merged, comments trimmed | `[LOG-LCKD]` prints every Sync with no message behind it |
+| U4 | `fix/u4-p2p-8023-dest-sticky` | [#24](https://github.com/epagris/flexPTP/pull/24) | merged | A custom P2P 802.3 destination survives a profile change |
+| U5 | `fix/u5-stale-pbuf-tx-cb` | [#22](https://github.com/epagris/flexPTP/pull/22) | merged | Recycled pbufs inherit `tx_cb` and get spurious hardware TX timestamps |
+| U6 | `fix/u6-pdelay-pcb-comment` | [#26](https://github.com/epagris/flexPTP/pull/26) | **open** | Comment: the PDelay pcbs are receive-only |
+| U7 | `fix/u7-transport-type-reset` | [#23](https://github.com/epagris/flexPTP/pull/23) | merged | `ptp transport` does not re-init the driver, so the switch silently does not take effect |
 
 Every one is verified on a NUCLEO-H563ZI, most with a before/after measurement rather than an
 argument. U7 was found while testing U4 — and is why U4's negative case was untestable, because
 the only way to reach 802.3 without the gPTP preset is the transport switch that U7 repairs.
 
-All seven are filed and open as of 2026-09-10.
+All seven were filed on 2026-09-10. Five are merged in `RC1.0-26` (`fe4b071`); #20 and #26 are
+open, mergeable, and carried as `//patches/flexptp` until they land.
+
+#20 has outside support. Another flexPTP user, Michael (`emb4fun`), reproduced it independently in
+[issue #32](https://github.com/epagris/flexPTP/issues/32): with two flexPTP masters the one with
+the *larger* clock identity won the election, and with #20 the smaller one correctly does. His
+[PR #33](https://github.com/epagris/flexPTP/pull/33) carries #20's change verbatim, credits it, and
+adds a separate fix (`ptp_slave_reset()` before `ptp_slave_enable()`).
+
+The PR branches on the fork are left at their original `494e644` base -- GitHub reports both as
+mergeable, so force-pushing would only churn the review. The patches are generated instead from
+local `rebase/` branches on top of `RC1.0-26`, so their context matches the pin exactly.
 
 ## Filing them
 

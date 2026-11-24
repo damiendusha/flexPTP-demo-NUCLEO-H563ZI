@@ -1,0 +1,22 @@
+# PTP slave, default profile -- for testing the BOARD as master. Installed by install.sh.
+# Steers @IFACE@'s own hardware clock (/dev/ptp0) to the board. It does NOT touch the
+# system clock -- that would need phc2sys, which is deliberately not installed as a unit.
+#
+# Fixed arguments in a root-owned file; the bench user may start and stop it but not change it.
+# The ptp4l units conflict with each other: only one may own @IFACE@ at a time.
+[Unit]
+Description=flexPTP HIL: PTP slave, default profile -- for testing the BOARD as master on @IFACE@
+After=network.target
+Conflicts=flexptp-ptp4l-default.service flexptp-ptp4l-gptp.service 
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/ptp4l -i @IFACE@ -H -m --slaveOnly=1
+# Hand the PHC back in its boot state (system time, 0 ppb), so the next master does not
+# inherit the board's timescale or rate.
+ExecStopPost=/usr/sbin/phc_ctl @IFACE@ set freq 0
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
