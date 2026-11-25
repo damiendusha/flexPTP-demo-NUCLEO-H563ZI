@@ -47,7 +47,7 @@ def _vendored_impl(_mctx):
     new_git_repository(
         name = "netxduo",
         build_file = "//bazel:netxduo.BUILD",
-        commit = "473d192822babbd831dc5907b9e279b340a3925b",  # v6.5.0.202601_pre-28
+        commit = "c690f59f9a5195c465153e90ef56b865337a8a62",  # v6.5.2.202603b_rel = master head
         remote = "https://github.com/eclipse-threadx/netxduo.git",
     )
 
