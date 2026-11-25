@@ -99,12 +99,14 @@ def _vendored_impl(_mctx):
     )
 
     # FreeRTOS, for the second project (D14). git rather than BCR: the registry tops out at
-    # 11.1.0 and this firmware was validated against V11.3.0, whose pin master carries as
-    # "the CM33 port API is load-bearing for this project".
+    # 11.1.0. Was V11.3.0 (9b777ae), a release-branch commit that is not on main; now main head.
+    # The CM33 port changed substantially on the way (#1385 adds SMP to the Armv8-M ports, behind
+    # configNUMBER_OF_CORES > 1, so inert here) and the port API is load-bearing for this project,
+    # so this bump was validated on the board: full S8 with the flood, and gPTP.
     new_git_repository(
         name = "freertos",
         build_file = "//bazel:freertos.BUILD",
-        commit = "9b777ae5c5b8e9e456065a00294d1e5f5f9facf5",  # V11.3.0
+        commit = "83a45bf290024de16ca94df1f7262bcde6c82ffe",  # main head (2026-11-17); V11.3.0 was 9b777ae
         remote = "https://github.com/FreeRTOS/FreeRTOS-Kernel.git",
     )
 
