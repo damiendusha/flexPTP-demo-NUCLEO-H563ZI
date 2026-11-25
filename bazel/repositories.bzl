@@ -110,14 +110,15 @@ def _vendored_impl(_mctx):
         remote = "https://github.com/FreeRTOS/FreeRTOS-Kernel.git",
     )
 
-    # lwIP, built from phase 8 for the FreeRTOS project. The pin is 34 commits past
-    # STABLE-2_2_1_RELEASE and its tip is "tcp_in: Add bounds check for next option byte" --
-    # ahead of the newest release on purpose, which is also why a registry module would be the
-    # wrong source for it even if one existed. It does not; lwIP is not on BCR.
+    # lwIP, built from phase 8 for the FreeRTOS project. master head, 104 commits past
+    # STABLE-2_2_1_RELEASE -- ahead of the newest release on purpose, for the bounds checks that
+    # land on master first (the previous pin's tip was "tcp_in: Add bounds check for next option
+    # byte"), which is also why a registry module would be the wrong source even if one existed.
+    # It does not; lwIP is not on BCR.
     new_git_repository(
         name = "lwip",
         build_file = "//bazel:lwip.BUILD",
-        commit = "3d896ba0a37ff3ce73270ca5e230707fe47f60e3",  # STABLE-2_2_1_RELEASE-34
+        commit = "3aa95579e578b97b42d7871fe480f2601313066e",  # master head (2026-11-24), STABLE-2_2_1_RELEASE-104
         remote = "https://github.com/lwip-tcpip/lwip.git",
     )
 
