@@ -22,11 +22,13 @@ load("@bazel_tools//tools/build_defs/repo:git.bzl", "new_git_repository")
 
 def _vendored_impl(_mctx):
     # ST's HAL for the STM32H5. Configured by the project's stm32h5xx_hal_conf.h, reached
-    # through a label_flag so a second project can supply its own.
+    # through a label_flag so a second project can supply its own. At main head: the five
+    # commits since v1.7.0-8 (two ETH, GPIO, RTC, I3C) are all in code this firmware does not
+    # link -- the images are byte-identical across the bump (same build_id on both).
     new_git_repository(
         name = "stm32h5_hal",
         build_file = "//bazel:stm32h5_hal.BUILD",
-        commit = "0fff6e2a2e2fa40ba335ee739dd0cb64c509f521",  # v1.7.0-8-g0fff6e2
+        commit = "deaf9d1da8a7b2958b5e0f0937bf6676ca0cd307",  # v1.7.0-13-gdeaf9d1, upstream main head (2026-10-23)
         remote = "https://github.com/STMicroelectronics/stm32h5xx-hal-driver.git",
     )
 

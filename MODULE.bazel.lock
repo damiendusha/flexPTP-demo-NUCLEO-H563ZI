@@ -247,7 +247,7 @@
     },
     "//bazel:repositories.bzl%vendored": {
       "general": {
-        "bzlTransitiveDigest": "vlSBBYSfzNYao2y6p1ajPjVMqnT2rv0DvJ95UN/Tkvw=",
+        "bzlTransitiveDigest": "N/T/VaJNtlJtfiGcsWaL/hgn2xFCN0w2v/Wla98DS+w=",
         "usagesDigest": "TXFRr/ekOJ4WkENAUY1PQ7JCVxHUmRqoFm+HcCVY/SY=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"
@@ -257,7 +257,7 @@
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:git.bzl%git_repository",
             "attributes": {
               "build_file": "@@//bazel:stm32h5_hal.BUILD",
-              "commit": "0fff6e2a2e2fa40ba335ee739dd0cb64c509f521",
+              "commit": "deaf9d1da8a7b2958b5e0f0937bf6676ca0cd307",
               "remote": "https://github.com/STMicroelectronics/stm32h5xx-hal-driver.git"
             }
           },
