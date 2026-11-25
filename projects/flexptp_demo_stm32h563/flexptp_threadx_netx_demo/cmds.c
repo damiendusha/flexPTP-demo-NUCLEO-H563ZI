@@ -364,6 +364,22 @@ CMD_FUNCTION(ptp_cfg) {
 }
 
 CMD_FUNCTION(start_flexptp) {
+    /* `flexptp stop` -- tear flexPTP down through unreg_task_ptp(), the public way an application
+     * stops PTP, which nothing in this firmware otherwise calls. It exists because that path had
+     * a defect nobody here could reach: flexPTP's lwIP driver returned from its teardown with
+     * lwIP's core lock still held, which stops the whole network stack, not just PTP (upstream
+     * finding U9). `flexptp` with no argument starts it again, so stop/start/stop is a test. */
+    if ((argc >= 1) && !strcmp(ppArgs[0], "stop")) {
+        if (!is_flexPTP_operating()) {
+            MSG("flexPTP is not running\n");
+            return 0;
+        }
+        MSG("Stopping flexPTP...\n");
+        unreg_task_ptp();
+        MSG("flexPTP stopped\n");
+        return 0;
+    }
+
     // flexPTP renamed task_ptp_is_operating() -> is_flexPTP_operating() at a60190f
     if (!is_flexPTP_operating()) {
         MSG("Starting flexPTP...\n\n");
@@ -380,7 +396,7 @@ CMD_FUNCTION(start_flexptp) {
 
 void cmd_init() {
     cli_register_command("osinfo \t\t\tPrint OS-related information", 1, 0, os_info);
-    cli_register_command("flexptp \t\t\tStart flexPTP daemon", 1, 0, start_flexptp);
+    cli_register_command("flexptp [stop] \t\t\tStart flexPTP, or stop it with `stop`", 1, 0, start_flexptp);
     cli_register_command("ethinfo \t\t\tPrint Ethernet driver state and counters", 1, 0, eth_info);
     cli_register_command("ethstat \t\t\tPrint the same counters as key=value, for tooling", 1, 0, eth_stats);
     cli_register_command("ptpcfg {store|show|load} \t\t\tExercise flexPTP's retained-config round trip", 1, 1, ptp_cfg);

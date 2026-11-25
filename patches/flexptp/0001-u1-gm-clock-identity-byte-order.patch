@@ -1,4 +1,4 @@
-From bb16cc2d1e964759a677688618d692d21e3f7051 Mon Sep 17 00:00:00 2001
+From 364537b3e788b4307fdb70516d10f2c2ba2e1881 Mon Sep 17 00:00:00 2001
 From: Damien Dusha <Damien Dusha>
 Date: Wed, 9 Sep 2026 22:01:33 +1000
 Subject: [PATCH] Announce: stop byte-swapping the grandmaster clock identity

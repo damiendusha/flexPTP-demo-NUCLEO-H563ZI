@@ -407,9 +407,17 @@ void ptp_nsd_init(const NsdInitSettings *init) {
     }
 
     /* Either parameter as -1 means "shut down" -- flexPTP calls it that way from
-       unreg_task_ptp(). So does a missing IP instance: there is nothing to configure against. */
+       unreg_task_ptp(). So does a missing IP instance: there is nothing to configure against.
+
+       Compared as the ENUM's -1. Both enums are non-negative, and arm-none-eabi GCC uses short
+       enums (Tag_ABI_enum_size: small), so the fields are unsigned bytes holding 255 and
+       `tp != -1` is always true -- GCC drops the test. This driver still reached the right
+       answer, because 255 matches neither transport below and ep_tp stays NONE, but by
+       accident; upstream's lwIP driver had the same comparison and lost its shutdown branch
+       entirely (finding U9). */
     PtpEndpointTransport ep_tp = PTP_EP_TRANSPORT_NONE;
-    if ((tp != -1) && (dm != -1) && (ethernet_ip() != NX_NULL)) {
+    if ((tp != (PtpTransportType)-1) && (dm != (PtpDelayMechanism)-1) &&
+        (ethernet_ip() != NX_NULL)) {
         if (tp == PTP_TP_IPv4) {
             ep_tp = PTP_EP_TRANSPORT_IPV4;
         } else if (tp == PTP_TP_802_3) {

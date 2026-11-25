@@ -1,0 +1,75 @@
+From 998a91f7d277b939f8c8aa2970092265e5570a9a Mon Sep 17 00:00:00 2001
+From: Damien Dusha <Damien Dusha>
+Date: Wed, 25 Nov 2026 20:52:49 +1000
+Subject: [PATCH] master: Delay_Resp carries logMinDelayReqInterval, not the
+ Delay_Req's 0x7F
+
+Fixes #30. A ptp4l slave of a flexPTP master logs
+
+    ignore bogus delay request interval 2^127
+
+because ptp_send_delay_resp_message() builds the Delay_Resp header as a copy
+of the incoming Delay_Req header and never sets logMessagePeriod. A Delay_Req
+carries 0x7F there (IEEE 1588-2019 Table 42, 1588-2008 Table 24, and what
+ptp4l sends), so the master echoes 0x7F back. The same table says a
+Delay_Resp carries the master's logMinDelayReqInterval -- the interval the
+slave should space its Delay_Reqs at -- which is this profile's
+logDelayReqPeriod.
+
+9eefd95 set flexPTP's own Delay_Req to 0x7F, which is correct for a Delay_Req
+but does not touch the Delay_Resp; since it, a flexPTP master echoes 0x7F to a
+flexPTP slave as well as to ptp4l.
+
+PTP_LOGPER_SYNCMATCHED -- "send a Delay_Req after every Sync" -- is 127, the
+same bit pattern as 0x7F, so copying logDelayReqPeriod through unexamined
+reintroduces the bug for exactly that setting. It is mapped to the Sync
+interval it means.
+
+Measured on a NUCLEO-H563ZI as master, ptp4l 4.4 as slave on an Intel i226,
+a fresh ptp4l process per case (it rate-limits the warning to once per
+300 s), counting the warning:
+
+                                  delreq period 0    delreq SYNCMATCHED
+    before                               1                   1
+    naive fix (copy the period)          0                   1
+    this fix                             0                   0
+
+ptp4l reaches SLAVE in every case and holds the board within about +/-20 ns;
+it uses the Delay_Resp for the path delay either way. What the bogus value
+costs is the slave learning the master's interval.
+
+Separately: the `ptp period` CLI help advertises `matched`, but the parser
+compares against "match"; `matched` falls through to atoi() and silently sets
+the period to 0. Not changed here.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/flexptp/master.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/src/flexptp/master.c b/src/flexptp/master.c
+index e8515d0..f6c5131 100644
+--- a/src/flexptp/master.c
++++ b/src/flexptp/master.c
+@@ -193,6 +193,21 @@ static void ptp_send_delay_resp_message(const RawPtpMessage *pRawMsg, const PtpH
+     header.clockIdentity = S.hwoptions.clockIdentity; // set our clock identity
+     header.control = PTP_CON_Delay_Resp;
+ 
++    // logMessageInterval of a Delay_Resp is the master's logMinDelayReqInterval (IEEE 1588-2019
++    // Table 42; 1588-2008 Table 24) -- the interval the slave should space its Delay_Reqs at.
++    // The header above is a copy of the incoming Delay_Req, whose logMessageInterval is 0x7F
++    // by the same table, so without this the master echoes 0x7F back and a ptp4l slave logs
++    // "ignore bogus delay request interval 2^127".
++    //
++    // PTP_LOGPER_SYNCMATCHED is flexPTP's own "send a Delay_Req after every Sync", and it is 127
++    // -- the same bit pattern as 0x7F -- so copying logDelayReqPeriod through unexamined would
++    // reintroduce the bug for exactly that profile. The interval it means is the Sync interval.
++    int8_t logMinDelayReqInterval = S.profile.logDelayReqPeriod;
++    if (logMinDelayReqInterval == PTP_LOGPER_SYNCMATCHED) {
++        logMinDelayReqInterval = S.profile.logSyncPeriod;
++    }
++    header.logMessagePeriod = logMinDelayReqInterval;
++
+     // write fields
+     ptp_construct_binary_header(delRespMsg.data, &header);        // HEADER
+     ptp_write_binary_timestamps(delRespMsg.data, &t4, 1);         // t4 TIMESTAMP

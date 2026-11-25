@@ -12,4 +12,7 @@
 exports_files([
     "0001-u1-gm-clock-identity-byte-order.patch",
     "0006-u6-pdelay-pcb-comment.patch",
+    "0008-u8-delay-resp-interval.patch",
+    "0009-u9-teardown-unlock.patch",
+    "0010-u10-chained-pbufs.patch",
 ])

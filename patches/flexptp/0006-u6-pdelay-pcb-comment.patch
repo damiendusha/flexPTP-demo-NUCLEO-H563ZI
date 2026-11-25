@@ -1,4 +1,4 @@
-From c7e6d77f14ac5cdfdf691f6f0f2ad719f6211fb6 Mon Sep 17 00:00:00 2001
+From a8731de7b5484329aa6288c8f709f69ee308e63c Mon Sep 17 00:00:00 2001
 From: Damien Dusha <Damien Dusha>
 Date: Wed, 9 Sep 2026 23:39:58 +1000
 Subject: [PATCH] lwIP NSD: say that the PDelay pcbs are receive-only

@@ -1,0 +1,60 @@
+From 822b017d2bf31f72f85981ae6680d3b79e0f532d Mon Sep 17 00:00:00 2001
+From: Damien Dusha <Damien Dusha>
+Date: Wed, 25 Nov 2026 20:52:49 +1000
+Subject: [PATCH] lwIP NSD: make the shutdown branch reachable, and release the
+ core lock in it
+
+unreg_task_ptp() asks the NSD to shut down with {-1, -1} in two enum fields.
+Both enums are non-negative, so on a short-enum ABI (arm-none-eabi GCC's
+default, Tag_ABI_enum_size: small) they are unsigned bytes holding 255 and
+`init->tp == -1` is always false: GCC deletes the branch. Where enums are
+int-sized the branch is live, and it returns with LOCK_TCPIP_CORE() still
+held, which stops the whole lwIP stack.
+
+Compare against the enum's own -1, and unlock before returning.
+
+Measured on a NUCLEO-H563ZI (FreeRTOS + lwIP, core locking on), stopping PTP
+via unreg_task_ptp() and pinging the board:
+
+    upstream                 branch compiled out; stack survives by accident
+    comparison fixed only    branch live; stack dead after stop (100% loss)
+    this fix                 two stop/start cycles, 0% loss, PTP resyncs
+
+nsd_etherlib.c and nsd_linux.c compare the same sentinel the same way; not
+changed here because they cannot be tested from this project.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../port/example_netstack_drivers/nsd_lwip.c     | 16 +++++++++++++++-
+ 1 file changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/src/flexptp/port/example_netstack_drivers/nsd_lwip.c b/src/flexptp/port/example_netstack_drivers/nsd_lwip.c
+index d280f2b..a06e43c 100644
+--- a/src/flexptp/port/example_netstack_drivers/nsd_lwip.c
++++ b/src/flexptp/port/example_netstack_drivers/nsd_lwip.c
+@@ -75,10 +75,24 @@ void ptp_nsd_init(const NsdInitSettings * init) {
+     }
+ 
+     // calling either parameter with -1 just closes connections
+-    if ((init->tp == -1) || (init->dm == -1)) {
++    //
++    // Compared as the ENUM's -1, not the int's. unreg_task_ptp() passes {-1, -1}, which is
++    // stored into PtpTransportType/PtpDelayMechanism fields; both enums are non-negative, so on a
++    // short-enum ABI -- arm-none-eabi GCC's default -- they are unsigned bytes, the -1 is stored
++    // as 255, and `init->tp == -1` is always false. GCC then deletes this branch outright and a
++    // shutdown request falls through as a "transport 255" reconfiguration instead. Casting the
++    // constant to the field's type makes the comparison mean the same thing on every ABI.
++    if ((init->tp == (PtpTransportType)-1) || (init->dm == (PtpDelayMechanism)-1)) {
+         // message transmission and reception is turned off
+         TP = -1;
+         DM = -1;
++
++        // Release the core lock taken above. This early return used to leave it held: with
++        // LWIP_TCPIP_CORE_LOCKING the core mutex then stays owned by a thread that has moved on,
++        // and the whole stack stops, not just PTP -- ARP, ICMP and every other UDP/TCP user block
++        // on the next LOCK_TCPIP_CORE() for ever. Wherever the branch above is live (int-sized
++        // enums, or short ones once the comparison is fixed), unreg_task_ptp() comes through here.
++        UNLOCK_TCPIP_CORE();
+         return;
+     }
+ 

@@ -85,6 +85,9 @@ def _vendored_impl(_mctx):
         patches = [
             "//patches/flexptp:0001-u1-gm-clock-identity-byte-order.patch",
             "//patches/flexptp:0006-u6-pdelay-pcb-comment.patch",
+            "//patches/flexptp:0008-u8-delay-resp-interval.patch",
+            "//patches/flexptp:0009-u9-teardown-unlock.patch",
+            "//patches/flexptp:0010-u10-chained-pbufs.patch",
         ],
         remote = "https://github.com/epagris/flexPTP.git",
     )

@@ -247,7 +247,7 @@
     },
     "//bazel:repositories.bzl%vendored": {
       "general": {
-        "bzlTransitiveDigest": "DcWzNum2EJ65mh1uTW5+8Qb0XNufjfFT8TPIvh4+QFc=",
+        "bzlTransitiveDigest": "Xy36OWRK8eRCh+1a53u/3LrfBABS0AG4xyrRYgDQZU4=",
         "usagesDigest": "TXFRr/ekOJ4WkENAUY1PQ7JCVxHUmRqoFm+HcCVY/SY=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"
@@ -295,7 +295,10 @@
               ],
               "patches": [
                 "@@//patches/flexptp:0001-u1-gm-clock-identity-byte-order.patch",
-                "@@//patches/flexptp:0006-u6-pdelay-pcb-comment.patch"
+                "@@//patches/flexptp:0006-u6-pdelay-pcb-comment.patch",
+                "@@//patches/flexptp:0008-u8-delay-resp-interval.patch",
+                "@@//patches/flexptp:0009-u9-teardown-unlock.patch",
+                "@@//patches/flexptp:0010-u10-chained-pbufs.patch"
               ],
               "remote": "https://github.com/epagris/flexPTP.git"
             }
