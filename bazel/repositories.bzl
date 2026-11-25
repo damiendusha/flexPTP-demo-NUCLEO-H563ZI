@@ -37,7 +37,7 @@ def _vendored_impl(_mctx):
     new_git_repository(
         name = "threadx",
         build_file = "//bazel:threadx.BUILD",
-        commit = "44d7c95c582d415c4ad84527180b29c93c3bf664",  # v6.5.0.202601_pre-48
+        commit = "b2868c3d2849aab95d04cedcf8885d3f81798c86",  # v6.5.2.202603b_rel = master head
         remote = "https://github.com/eclipse-threadx/threadx.git",
     )
 

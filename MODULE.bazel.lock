@@ -247,7 +247,7 @@
     },
     "//bazel:repositories.bzl%vendored": {
       "general": {
-        "bzlTransitiveDigest": "WrqAvj0puB2Kz7BOp+MGNZX869api3EzVUHFHPcCV3c=",
+        "bzlTransitiveDigest": "RxTk3YFeOT2QYtK/lEXjgzc6Ler8Od+e8RH39jhRwnA=",
         "usagesDigest": "TXFRr/ekOJ4WkENAUY1PQ7JCVxHUmRqoFm+HcCVY/SY=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"
@@ -265,7 +265,7 @@
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:git.bzl%git_repository",
             "attributes": {
               "build_file": "@@//bazel:threadx.BUILD",
-              "commit": "44d7c95c582d415c4ad84527180b29c93c3bf664",
+              "commit": "b2868c3d2849aab95d04cedcf8885d3f81798c86",
               "remote": "https://github.com/eclipse-threadx/threadx.git"
             }
           },
