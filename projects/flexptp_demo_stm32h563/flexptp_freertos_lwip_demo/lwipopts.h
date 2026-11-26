@@ -105,6 +105,14 @@ a lot of data that needs to be copied, this should be set high. */
    /** Custom tag */ \
    void * tag;
 
+/* lwIP initialises only its own pbuf fields, so without this every pbuf it allocates for itself
+   -- an ICMP reply, ARP, IGMP -- starts with whatever bytes were left in that memory, and
+   tx_cb is a function pointer the driver calls. Seen on the board: after a flood, a stale
+   0xfffffe00 in tx_cb reached ETHHW_ProcessTx(), which called it from the ETH interrupt and
+   took a HardFault (IACCVIOL). pbuf_init_alloced_pbuf() runs this on every allocation. */
+#define LWIP_PBUF_CUSTOM_DATA_INIT(p) \
+   do { (p)->time_s = 0; (p)->time_ns = 0; (p)->tx_cb = NULL; (p)->tag = NULL; } while (0)
+
 /* ---------- Pbuf options ---------- */
 /* PBUF_POOL_SIZE: the number of buffers in the pbuf pool.
    @ note: used to allocate Tx pbufs only */

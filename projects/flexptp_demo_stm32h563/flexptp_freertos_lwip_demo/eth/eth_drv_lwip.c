@@ -384,9 +384,15 @@ static err_t low_level_output(struct netif *netif, struct pbuf *p) {
      * tainted buffer passes through, so it breaks the propagation loop for ANY producer rather
      * than relying on each one to tidy up. An uncleared block does not merely mis-timestamp
      * one frame -- it stays tainted through every later recycle and spreads at transmit rate.
-     * Two stores per frame is the whole cost. Zeroing custom data on allocation instead would
-     * mean patching lwIP's pbuf_alloc(), which offers no hook, and would pay on every
-     * allocation rather than only on frames that carry a request.
+     * Two stores per frame is the whole cost.
+     *
+     * That was not the whole of it. This comment used to say lwIP offers no hook for zeroing
+     * custom data on allocation; it does -- LWIP_PBUF_CUSTOM_DATA_INIT, called from
+     * pbuf_init_alloced_pbuf() -- and lwipopts.h never defined it, so a pbuf lwIP allocated
+     * for itself could carry stale bytes in tx_cb that no PTP code had ever written. Clearing
+     * here only after the read cannot catch that: the gate above trusts the field. A stale
+     * 0xfffffe00 was called from the ETH interrupt after a flood and took a HardFault.
+     * lwipopts.h now defines the hook; this clear stays as the second line.
      *
      * check_ptp_flood in tools/hil/ asserts ptp.drop_txts stays small, so losing both this and
      * the upstream clear would fail the hardware suite rather than pass it quietly. */
