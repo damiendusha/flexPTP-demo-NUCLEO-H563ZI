@@ -1,6 +1,8 @@
-# FreeRTOS-Kernel V11.3.0.
+# FreeRTOS-Kernel, `main` head (83a45bf). The previous pin was V11.3.0 (9b777ae), which sits on a
+# release branch; main does not carry the release-bump commits, so the kernel built from this
+# pin reports itself as "V11.1.0+" even though it is newer than V11.3.0.
 #
-# From git rather than BCR (D14): the registry's newest is 11.1.0, and master pins V11.3.0 with
+# From git rather than BCR (D14): the registry's newest is 11.1.0, and master pinned V11.3.0 with
 # "the CM33 port API is load-bearing for this project" -- so the downgrade a registry module
 # would force lands exactly on the sensitive part.
 #

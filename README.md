@@ -270,7 +270,7 @@ stack, and both are built and flashed the same way.
 
 | | `projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo` | `projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo` |
 |---|---|---|
-| RTOS | [Eclipse ThreadX](https://github.com/eclipse-threadx/threadx) | [FreeRTOS](https://github.com/FreeRTOS/FreeRTOS-Kernel) V11.3.0 |
+| RTOS | [Eclipse ThreadX](https://github.com/eclipse-threadx/threadx) | [FreeRTOS](https://github.com/FreeRTOS/FreeRTOS-Kernel), `main` head (`83a45bf`) |
 | Network stack | [Eclipse NetX Duo](https://github.com/eclipse-threadx/netxduo), whose link layer carries PTP hardware timestamps natively | [lwIP](https://github.com/lwip-tcpip/lwip) |
 | CMSIS-RTOS2 wrapper | [ST's, over ThreadX](https://github.com/STMicroelectronics/stm32-mw-cmsis-rtos-tx) | ST's, over FreeRTOS |
 | Bazel target | `//projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:flexptp-demo` | `//projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo:flexptp-demo-freertos` |

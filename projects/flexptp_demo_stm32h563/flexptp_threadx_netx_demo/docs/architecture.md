@@ -36,9 +36,9 @@ needs access to the DMA descriptors that the HAL driver abstracts away.
 | | |
 |---|---|
 | MCU | STM32H563ZI, Cortex-M33, 250 MHz, TrustZone disabled (TZEN=0) |
-| RTOS | Eclipse ThreadX 6.5.1, `cortex_m33/gnu` port, `TX_SINGLE_MODE_NON_SECURE`, 1 kHz tick |
+| RTOS | Eclipse ThreadX 6.5.2, `cortex_m33/gnu` port, `TX_SINGLE_MODE_NON_SECURE`, 1 kHz tick |
 | RTOS API | CMSIS-RTOS2 throughout — application **and** flexPTP, over ST's `cmsis_rtos_threadx` wrapper. Memory comes from two ThreadX byte pools, not a heap |
-| Network stack | Eclipse NetX Duo 6.5.1, IPv4 only, TCP and IPv6 compiled out |
+| Network stack | Eclipse NetX Duo 6.5.2, IPv4 only, TCP and IPv6 compiled out |
 | PTP | flexPTP, Kalman servo, ADDEND clock interface; timestamp clock is `pll1_q_ck` at 250 MHz |
 | Console | USART3 → ST-Link VCP, 115200 8N1, TX via GPDMA |
 | PHY | LAN8742A over RMII |
@@ -95,13 +95,13 @@ source. Two submodules are the exception, and both changes are **permanent bug f
 
 | Component | Version | How it is vendored | Modified? |
 |---|---|---|---|
-| **stm32h5xx-hal-driver** | `v1.7.0-8-g0fff6e2` | git submodule | **As-is.** Configured by `Inc/stm32h5xx_hal_conf.h`; 12 of 61 modules enabled |
+| **stm32h5xx-hal-driver** | `v1.7.0-13-gdeaf9d1`, upstream `main` head | git submodule | **As-is.** Configured by `Inc/stm32h5xx_hal_conf.h`; 12 of 61 modules enabled |
 | **CMSIS Core (M)** | 5.6 (= CMSIS 5.9.0 content) | in-tree, `Drivers/CMSIS/Include` | **As-is, and already current for CMSIS 5.** Inherited from the H743 project, but verified byte-identical to the final CMSIS 5 release — see the note below. Not a submodule |
 | **CMSIS Device STM32H5xx** | 1.7.0 | in-tree, `Drivers/CMSIS/Device` | **As-is.** From `STMicroelectronics/cmsis_device_h5` |
 | **CMSIS-RTOS2 API header** | ARM | in-tree, `Drivers/CMSIS/CMSIS_RTOS_V2/cmsis_os2.h` | **As-is.** The header is RTOS-agnostic and survived the kernel swap unchanged. ST's FreeRTOS-backed `cmsis_os2.c`, `freertos_os2.h` and `freertos_mpool.h` were removed with FreeRTOS in S3 |
 | **CMSIS-RTOS2 implementation** | [`stm32-mw-cmsis-rtos-tx`](https://github.com/STMicroelectronics/stm32-mw-cmsis-rtos-tx) `v1.4.1` | git submodule | **As-is**, and the one non-MIT component in the tree (SLA0044). No MIT equivalent exists — Eclipse ThreadX ships FreeRTOS, OSEK and POSIX layers but not CMSIS-RTOS2 |
-| **ThreadX** | [`eclipse-threadx/threadx`](https://github.com/eclipse-threadx/threadx) `44d7c95`, one commit past `v6.5.1.202602a_rel` (that commit is `SECURITY.md` only) | git submodule | **As-is** (MIT). Configured by `Inc/tx_user.h`. `tx_initialize_low_level.S` is **ours** — Eclipse keeps it in `example_build/` because it is board-specific; see `Startup/tx_initialize_low_level.S` for what changed and what was deliberately left out |
-| **NetX Duo** | [`eclipse-threadx/netxduo`](https://github.com/eclipse-threadx/netxduo) `473d192`, two commits past `v6.5.1.202602_rel` (both security-policy docs) | git submodule | **As-is** (MIT). Configured by `Inc/nx_user.h`. Eclipse upstream rather than ST's fork, which is pinned at 6.4.0 and missing published CVE fixes on the IPv4/DHCP receive path this firmware runs — see [threadx_netxduo_feasibility.md](threadx_netxduo_feasibility.md#choosing-the-supply-chain). **`NX_ENABLE_VLAN` is mandatory**: the whole `nx_link` layer, which is the PTP timestamp path, is behind it |
+| **ThreadX** | [`eclipse-threadx/threadx`](https://github.com/eclipse-threadx/threadx) `b2868c3` = `v6.5.2.202603b_rel`, upstream `master` head | git submodule | **As-is** (MIT). Configured by `Inc/tx_user.h`. `tx_initialize_low_level.S` is **ours** — Eclipse keeps it in `example_build/` because it is board-specific; see `Startup/tx_initialize_low_level.S` for what changed and what was deliberately left out |
+| **NetX Duo** | [`eclipse-threadx/netxduo`](https://github.com/eclipse-threadx/netxduo) `c690f59` = `v6.5.2.202603b_rel`, upstream `master` head | git submodule | **As-is** (MIT). Configured by `Inc/nx_user.h`. Eclipse upstream rather than ST's fork, which is pinned at 6.4.0 and missing published CVE fixes on the IPv4/DHCP receive path this firmware runs — see [threadx_netxduo_feasibility.md](threadx_netxduo_feasibility.md#choosing-the-supply-chain). **`NX_ENABLE_VLAN` is mandatory**: the whole `nx_link` layer, which is the PTP timestamp path, is behind it |
 | **lwIP** | — | **removed in S3** | Replaced by NetX Duo. The `LWIP_PBUF_CUSTOM_DATA` injection it needed is gone with it: NetX Duo carries timestamps in its own API |
 | **flexPTP** | `76aaf67` (`RC1.0-11`) | git submodule | **Patched — three files now.** A servo fix (F59, `0002-…`), a generic network-stack extension point (`0003-…`), and a non-blocking heartbeat enqueue ([F80](port_review.md#f80--flexptps-heartbeat-cannot-be-enqueued-from-threadxs-timer-thread-resolved), `0004-…`). Plus two external workarounds. (1) `__PRI64_PREFIX=__INT64` compile definition, because flexPTP uses a glibc-internal macro newlib lacks (F47). (2) The STM32H5 hardware port is supplied by this project, since flexPTP ships none |
 | **embfmt** | `670a349` | git submodule | **Patched.** Formatted-print backend for `MSG()`. `%ll` conversions were dropped entirely and NaN printed as `0.0000`; see [F60](port_review.md#f60--embfmt-drops-ll-conversions-and-renders-nan-as-00000-resolved) and `patches/embfmt/` |
