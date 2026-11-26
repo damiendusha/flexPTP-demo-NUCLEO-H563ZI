@@ -258,7 +258,16 @@ static void serial_io_thread(void * arg) {
          * F51 presented as: output stopping mid-banner with the board otherwise alive.
          *
          * On failure the data is already popped and is lost; that is the right trade. The
-         * alternative is to stop draining the FIFO, which loses everything after it too. */
+         * alternative is to stop draining the FIFO, which loses everything after it too.
+         *
+         * The flag is cleared before each transfer, so the wait below can only be satisfied by
+         * THIS transfer's completion. A completion that arrives after its wait has timed out
+         * -- seen under a saturation flood -- used to stay set with nobody waiting for it. The
+         * next wait then returned at once, the next chunk was read into lineBuf while the DMA
+         * was still sending it, and Transmit_DMA() failed busy and dropped the chunk after;
+         * one flag ahead, the thread stayed that way. Measured on the FreeRTOS board after a
+         * flood: FIFO empty, DMA idle, flag set, and every reply garbled and out of order. */
+        osEventFlagsClear(flags, SERIAL_IO_TX_CPLT_FLAG);
         if (HAL_UART_Transmit_DMA(&uart, lineBuf, size) == HAL_OK) {
             /* Bounded, not osWaitForever. The flag is set by exactly one callback, so any
              * event that costs us that callback -- a UART error, or anything that consumes
