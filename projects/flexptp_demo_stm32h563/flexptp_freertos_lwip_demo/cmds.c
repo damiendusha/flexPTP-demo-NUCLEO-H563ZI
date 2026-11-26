@@ -61,12 +61,18 @@ CMD_FUNCTION(os_info) {
      * counts UP for more urgent (configMAX_PRIORITIES-1 is the most urgent), and the CMSIS
      * wrapper maps cmsis = freertos + 1 over most of the range.
      *
-     * The array is a stack allocation sized by configMAX_PRIORITIES rather than a
-     * pvPortMalloc(), because osinfo is a diagnostic and a diagnostic that can fail on a full
-     * heap is not much of a diagnostic. */
+     * The array is static, not a pvPortMalloc(), because osinfo is a diagnostic and a
+     * diagnostic that can fail on a full heap is not much of a diagnostic -- and not on the
+     * stack either, which is where it was. 16 entries are 704 bytes, most of os_info()'s
+     * 776-byte frame, on the CLI task's 2048-byte stack; with embfmt's formatting underneath,
+     * osinfo left 80-136 bytes of it untouched. That is not enough for the context FreeRTOS
+     * saves on the task's own stack when the CLI is preempted there, which under network load
+     * it is: on the board it overflowed after a 600 s flood, wrote over the heap_4 header of the
+     * stack's own allocation, and stopped the board (vApplicationStackOverflowHook from
+     * PendSV, ping dead). Static is safe because only the CLI thread ever runs this. */
     MSG("Tasks:\n");
     {
-        TaskStatus_t task_status[16];
+        static TaskStatus_t task_status[16];
         const UBaseType_t count = uxTaskGetNumberOfTasks();
         const UBaseType_t capacity = (UBaseType_t)(sizeof(task_status) / sizeof(task_status[0]));
 
