@@ -12,3 +12,32 @@ sh_test(
         "test_find_openocd.py",
     ],
 )
+
+# The SWD inspection tool's parsers (heap_4 walk, FreeRTOS task lists, ThreadX thread blocks,
+# exception frames), on synthetic target memory. See swd.py.
+sh_test(
+    name = "swd_test",
+    srcs = ["run_unittest.sh"],
+    args = ["test_swd"],
+    data = [
+        "hil.py",
+        "swd.py",
+        "test_swd.py",
+    ],
+)
+
+# The scenario helpers that decide PASS/FAIL on the board, and the malformed-PTP packet builders.
+sh_test(
+    name = "scenarios_test",
+    srcs = ["run_unittest.sh"],
+    args = ["test_scenarios"],
+    data = [
+        "checks.py",
+        "flood.py",
+        "hil.py",
+        "ptp_fuzz.py",
+        "scenario.py",
+        "scenarios.py",
+        "test_scenarios.py",
+    ],
+)

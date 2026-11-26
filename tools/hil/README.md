@@ -8,6 +8,17 @@ to it — it is a regression suite for this firmware.
 ```
 hil.py               Board: serial session, cmd(), expect(), reset() over SWD
 checks.py            the named checks, and which are valid at each porting stage
+run.py               the runner for the checks
+scenarios.py         long-running scenarios: fix regressions, floods, robustness, health
+scenario.py          the runner for the scenarios
+ptp_fuzz.py          malformed and foreign PTP traffic classes, used by the `fuzz` scenario
+swd.py               look inside a running or dead board over SWD: snapshot, heap, stacks, fault, console
+flood.py             the saturation flooder (no root)
+setup_host_net.sh    privileged host-side network setup (direct cable)
+privileged/          the systemd units and polkit rule that make the above sudo-free
+baseline.json        golden values captured from the pre-port firmware
+test_*.py            host unit tests: bazel test //tools/hil/...
+```
 
 The first check in every stage is `build_id`: the linker stamps a SHA-1 over each image,
 `osinfo` prints it, and the check compares it against the ELF given by `--flash` or `--elf`.
@@ -15,10 +26,6 @@ A mismatch fails the run. Without it -- and it was without it for the whole Thre
 runner happily tested whatever firmware happened to be on the board and reported a confident
 pass for code that was never loaded (finding GI-01). With no ELF given it SKIPs, which the
 runner reports as incomplete: no claim was made, so none is checked.
-run.py               the runner
-setup_host_net.sh    privileged host-side network setup (direct cable)
-baseline.json        golden values captured from the pre-port firmware
-```
 
 ## Quick start
 
@@ -275,3 +282,164 @@ It now waits until the board has been slaved for `PTP_CONVERGE_S` (60 s) and rea
 whatever runs first. The check still does not assert a bound on the offset: it is a regression
 gate for "the servo locks", and the characterisation lives in
 [`docs/l4_performance.md`](../../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/l4_performance.md).
+
+## Scenarios: the long tests
+
+`run.py`'s checks are small and stage-gated. The scenarios are the opposite: each takes minutes,
+drives the host's ptp4l units, floods the link or speaks PTP at the board, and asserts what the
+firmware must do under that load. They are the final-test campaigns of November 2026
+([`docs/flexptp_upstream_review.md`](../../docs/flexptp_upstream_review.md), sections 6 and 7)
+made permanent, and they are what found the three FreeRTOS bugs described there.
+
+```bash
+tools/hil/scenario.py --list
+tools/hil/scenario.py --firmware freertos --elf <elf> fixes          # one preset
+tools/hil/scenario.py --firmware threadx  --elf <elf> gptp stopstart  # named scenarios
+tools/hil/scenario.py --firmware freertos --elf <elf> --flash all --save run.json
+```
+
+`all` takes about 75 minutes per firmware. With `--elf` the board's build ID is compared with the
+image first, and **the run refuses to start on a mismatch** -- an hour against the wrong firmware
+is the most expensive way there is to learn nothing. `--elf` also enables the SWD parts of
+`console_flood`, `stacks` and `health`. Exit status is 0 only if no assertion failed.
+
+### PASS, FAIL and OBSERVED
+
+Two kinds of result, and the distinction is the point:
+
+- **PASS / FAIL** -- something the firmware must do. A FAIL is a regression.
+- **OBSERVED** -- worth recording, but not a defect of this firmware: how long the CLI is
+  starved during a saturation flood, whether ptp4l kept the board during one. These were
+  measured on every image including the pre-session one, so asserting them would make the suite
+  permanently red on healthy firmware.
+
+What *is* asserted under load is what must hold **afterwards**: the CLI answers within 30 s of a
+flood ending, the console is intact (a complete `osinfo`), ping is clean, and PTP resyncs. Every
+one of the November FreeRTOS bugs failed exactly those.
+
+The one firmware-specific expectation is whether the CLI is served at 20 kpps
+(`CLI_SERVED_AT_20KPPS` in `scenarios.py`): ThreadX answers in 0.2 s, so it is asserted there;
+FreeRTOS + lwIP gives the CLI no CPU at that rate on every image tested, including with FreeRTOS
+and lwIP put back to their old pins, so there it is observed.
+
+### The scenarios
+
+| Scenario | Proves | Host unit |
+|---|---|---|
+| `u1` | a remote master's clock identity is not byte-reversed (U1, #20) | default |
+| `u2` | the logid flag survives `ptpcfg store`/`load`, and the record is accepted (U2, #21) | default |
+| `u3` | no orphan `[LOG-LCKD]` prefixes (U3, #25) | default |
+| `u4` | 802.3 destinations follow the profile, gPTP → defp2p (U4 #24, U7 #23). lwIP only | default |
+| `pup` | the IEC/IEEE 61850-9-3 preset sends to `01:1B:19` and `01:80:C2:00:00:0E`, never the old typo (#28, #29). lwIP only | default |
+| `gptp` | the gPTP preset selects a ptp4l gPTP grandmaster and **converges**: 8 Sync/s, max offset < 1 µs over 60–120 s after slaving | gptp |
+| `smss` | SLAVE → MASTER → SLAVE: the servo recovers with no non-finite output (#33's scenario) | default |
+| `stopstart` | `flexptp stop`/start twice: the network stack survives the teardown and PTP resyncs (U9 #34, U11) | default |
+| `master_delresp` | as master, Delay_Resp carries `logMinDelayReqInterval`, for delreq 0 and SYNCMATCHED (U8 #36, issue #30) | slave |
+| `gptp_flood` | a gPTP slave through a 120 s saturation flood is still the host's slave afterwards, at full rate | gptp |
+| `master_flood` | the board as master through a flood: ptp4l back in SLAVE after, last 10 offsets < 1 µs | slave |
+| `stopstart_flood` | two stop/start cycles during a saturation flood complete, the stack lives, PTP resyncs | default |
+| `stopstart_load` | the same at 20 kpps; answered within 5 s where the CLI is served | default |
+| `cli_flood` | `osinfo` every 15 s through a saturation flood: the CLI comes back and the console is intact | default |
+| `cli_load` | the same at 20 kpps; answered within 5 s where the CLI is served | default |
+| `console_flood` | a flood with **nothing** sent to the console, then three complete `osinfo`s and a ping; with `--elf`, the console thread checked over SWD for a stale completion flag | default |
+| `fuzz` | malformed and foreign PTP traffic is ignored (below) | default |
+| `stacks` | over SWD, after the deepest CLI commands: every task keeps ≥ 256 B of untouched stack | default |
+| `health` | the end-of-run gate: ping, a complete `osinfo`, fresh Sync samples; with `--elf`, a FreeRTOS heap walk, and a snapshot and fault decode if the board is dead | default |
+
+The units are `flexptp-ptp4l-{default,gptp,slave}` from `privileged/`; a scenario starts the one
+it needs and restores the default master when it is done, in a `finally`, so one failure does not
+poison the next. `u4` and `pup` read the 802.3 destination histogram only the lwIP driver keeps.
+
+`stacks`' 256-byte floor is from measurement: the FreeRTOS CLI held **56 bytes** under load before
+its `osinfo` table moved off the stack, and overflowed; it holds 640 and more now.
+
+## Malformed and foreign PTP (`fuzz`)
+
+Nine classes, 30 s each at 10 packets/s to 224.0.1.129, with the board slaved to the host's ptp4l
+in the default profile; each is judged by the board's Sync cycles against a quiet reference
+window. A slave must ignore all of them:
+
+| Class | Packet | Why it must be ignored |
+|---|---|---|
+| `trunc1` | 1 byte, value 0x00, to 319 | shorter than a PTP header |
+| `trunc33` | a foreign two-step Sync cut to 33 bytes | shorter than a PTP header |
+| `badver` | a foreign two-step Sync, `versionPTP` 1 | not PTPv2 |
+| `badtype` | messageType 0x5 | reserved |
+| `garbage` | 1–200 random bytes to 319 and 320 | |
+| `oversize` | a foreign two-step Sync padded to 1400 bytes | not from the selected master |
+| `domain1` | a foreign Sync in domain 1 | not this domain |
+| `foreign` | a well-formed foreign two-step Sync, domain 0 | not from the selected master |
+| `announce` | a foreign Announce, priority1 255 | worse than the host: BMCA keeps the host |
+
+Asserted per class: the Sync rate holds (≥ 80% of the reference) with no offset over 10 µs, and
+the host stays master. Asserted at the end: the stack is up and PTP has resynced.
+
+flexPTP `RC1.0-26` ignores only `badtype`, `garbage`, `domain1` and `announce`. The first four
+classes stop synchronisation outright, 0 of 30 cycles on both firmwares, because nothing compares
+the received length or `versionPTP` with the header (finding U12); `oversize` and `foreign`
+because the slave takes Sync and Follow_Up from any sender (U13). This scenario is the hardware
+regression test for both fixes: with them, every class passes. Multicast loopback is off, so the
+host's own ptp4l never sees any of it.
+
+## Looking inside the board: `swd.py`
+
+The firmware's only diagnostic channel is its console, and the failures that matter most take the
+console down with them. `swd.py` reads the target over SWD instead, from symbols alone -- the
+images carry no debug info:
+
+```bash
+tools/hil/swd.py --elf <elf> snapshot   # PC, exception, task sampled 40x; tick; scheduler state
+tools/hil/swd.py --elf <elf> heap       # FreeRTOS heap_4: every block, the free list, cross-checked
+tools/hil/swd.py --elf <elf> stacks     # every task's (thread's) untouched stack bytes
+tools/hil/swd.py --elf <elf> fault      # CFSR/HFSR decoded, exception frames found and symbolised
+tools/hil/swd.py --elf <elf> console    # the console thread: FIFO, TX-complete flag, USART3, GPDMA
+tools/hil/swd.py --elf <elf> all        # snapshot, heap, stacks, console
+```
+
+It never leaves the core halted: everything runs inside one Tcl `catch` that resumes the core
+whatever happens. An earlier ad-hoc script did not, exited with the core halted after an error,
+and produced a perfect imitation of a wedged board -- frozen tick, no ping, no console. A heap or
+stack read halts the core once, for the time it takes to dump about 30 KB; `snapshot` halts it 40
+times for well under a millisecond each. Use them on a running board sparingly -- PTP will see a
+gap -- and freely on a dead one.
+
+### Reading a wedged board
+
+Run `snapshot` first, then follow what it says:
+
+| Snapshot shows | Next | What it was in November 2026 |
+|---|---|---|
+| tick not advancing, PC in `vApplicationStackOverflowHook`, entered from PendSV | `heap`, `stacks` | **CLI stack overflow** in `osinfo`: the heap walk stops at the overflowing stack's own allocation header |
+| exception `HardFault`, PC in `fault_report` | `fault` | **stale `pbuf->tx_cb` called from the ETH ISR**: IACCVIOL, stacked PC `0xfffffe00`, LR in `ETHHW_ProcessTx` |
+| idle, tick advancing, ping fine, but replies garbled | `console` | **console thread a completion flag ahead**: FIFO empty, DMA idle, flag set |
+| idle, everything fine | `health` scenario | the problem is on the host side, or already gone |
+
+`fault` finds the frame by its shape -- an xPSR with sane reserved bits and a Thumb return address
+in flash -- because a handler that has called into C no longer has the frame pointer in a
+register. It does **not** require the stacked PC, or even the xPSR's Thumb bit, to be sane: the
+HardFault above stacked T clear, because a `blx` to an even address clears it.
+
+### What it assumes
+
+- Symbols from `arm-none-eabi-nm`, found via `$ARM_TOOLCHAIN_BIN`, `PATH`, or the toolchain Bazel
+  downloaded (`~/.cache/bazel/.../external/*arm_gnu_toolchain`): a machine that can build can
+  inspect.
+- Structure layouts as configured here: FreeRTOS `TCB_t` with no MPU wrappers or list-integrity
+  bytes, `heap_4`; ThreadX `TX_THREAD` with an empty `TX_THREAD_EXTENSION_0`, stacks filled with
+  `TX_STACK_FILL`. The offsets are named constants at the top of `swd.py`; a kernel bump that
+  moves them shows up as nonsense names in `stacks` and in `test_swd.py`'s fixtures, which are
+  laid out the same way.
+- Some statics share a name across files (`flags`, `fifo`, `lineBuf`); `console` uses the ones
+  that sit beside `serial_io.c`'s `uart`.
+
+## Unit tests
+
+```bash
+bazel test //tools/hil/...
+```
+
+`test_find_openocd.py` pins the OpenOCD search order; `test_swd.py` drives the SWD parsers over
+synthetic target memory, including the corruptions actually found -- a stack overflowed into its
+own heap header, a looping free list, a stacked PC of `0xfffffe00` with T clear;
+`test_scenarios.py` pins the parsers that decide PASS or FAIL on the board (a `ptp info` reply
+cut off mid-line once read `00a0c9` as a clock identity) and the malformed-PTP packet builders.
