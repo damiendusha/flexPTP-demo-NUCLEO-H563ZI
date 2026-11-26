@@ -12,7 +12,7 @@ run.py               the runner for the checks
 scenarios.py         long-running scenarios: fix regressions, floods, robustness, health
 scenario.py          the runner for the scenarios
 ptp_fuzz.py          malformed and foreign PTP traffic classes, used by the `fuzz` scenario
-swd.py               look inside a running or dead board over SWD: snapshot, heap, stacks, fault, console
+swd.py               look inside a running or dead board over SWD: snapshot, heap, stacks, fault, console, ptpq
 flood.py             the saturation flooder (no root)
 setup_host_net.sh    privileged host-side network setup (direct cable)
 privileged/          the systemd units and polkit rule that make the above sudo-free
@@ -336,8 +336,8 @@ and lwIP put back to their old pins, so there it is observed.
 | `stopstart` | `flexptp stop`/start twice: the network stack survives the teardown and PTP resyncs (U9 #34, U11) | default |
 | `stopstart_busy` | ten stops while the PTP task is busy logging: each answered within 3 s, and afterwards the console intact, the stack up, PTP back. U11 waits for the task to stop where it holds nothing; this proves the wait is short and strands nothing | default |
 | `master_delresp` | as master, Delay_Resp carries `logMinDelayReqInterval`, for delreq 0 and SYNCMATCHED (U8 #36, issue #30) | slave |
-| `gptp_flood` | a gPTP slave through a 120 s saturation flood is still the host's slave afterwards, at full rate | gptp |
-| `master_flood` | the board as master through a flood: ptp4l back in SLAVE after, last 10 offsets < 1 µs | slave |
+| `gptp_flood` | a gPTP slave through a 120 s saturation flood is still the host's slave afterwards, at full rate; with `--elf`, flexPTP's queues checked over SWD for items stranded without notifications (U14) | gptp |
+| `master_flood` | the board as master through a flood: ptp4l back in SLAVE after, last 10 offsets < 1 µs; with `--elf`, the same queue check (U14) | slave |
 | `stopstart_flood` | two stop/start cycles during a saturation flood complete, the stack lives, PTP resyncs | default |
 | `stopstart_load` | the same at 20 kpps; answered within 5 s where the CLI is served | default |
 | `cli_flood` | `osinfo` every 15 s through a saturation flood: the CLI comes back and the console is intact | default |
@@ -394,7 +394,8 @@ tools/hil/swd.py --elf <elf> heap       # FreeRTOS heap_4: every block, the free
 tools/hil/swd.py --elf <elf> stacks     # every task's (thread's) untouched stack bytes
 tools/hil/swd.py --elf <elf> fault      # CFSR/HFSR decoded, exception frames found and symbolised
 tools/hil/swd.py --elf <elf> console    # the console thread: FIFO, TX-complete flag, USART3, GPDMA
-tools/hil/swd.py --elf <elf> all        # snapshot, heap, stacks, console
+tools/hil/swd.py --elf <elf> ptpq       # flexPTP's five queues, read 3x: are items and wakeups in step?
+tools/hil/swd.py --elf <elf> all        # snapshot, heap, stacks, console, ptpq
 ```
 
 It never leaves the core halted: everything runs inside one Tcl `catch` that resumes the core
@@ -413,6 +414,7 @@ Run `snapshot` first, then follow what it says:
 | tick not advancing, PC in `vApplicationStackOverflowHook`, entered from PendSV | `heap`, `stacks` | **CLI stack overflow** in `osinfo`: the heap walk stops at the overflowing stack's own allocation header |
 | exception `HardFault`, PC in `fault_report` | `fault` | **stale `pbuf->tx_cb` called from the ETH ISR**: IACCVIOL, stacked PC `0xfffffe00`, LR in `ETHHW_ProcessTx` |
 | idle, tick advancing, ping fine, but replies garbled | `console` | **console thread a completion flag ahead**: FIFO empty, DMA idle, flag set |
+| idle, tick advancing, ping fine, console fine, but PTP deaf: no Pdelay_Req answered, own master for good | `ptpq` | **items queued without notifications** (U14): PTP thread waiting on an empty notification FIFO, 12 frames in `sRxPacketFIFO`, 3 heartbeats in `sEventFIFO` (ThreadX, after a gPTP flood) |
 | idle, everything fine | `health` scenario | the problem is on the host side, or already gone |
 
 `fault` finds the frame by its shape -- an xPSR with sane reserved bits and a Thumb return address
@@ -432,6 +434,12 @@ HardFault above stacked T clear, because a `blx` to an even address clears it.
   laid out the same way.
 - Some statics share a name across files (`flags`, `fifo`, `lineBuf`); `console` uses the ones
   that sit beside `serial_io.c`'s `uart`.
+- `ptpq` reads `task_ptp.c`'s five queue handles and then the queues they point at, as FreeRTOS
+  `Queue_t` (`uxMessagesWaiting`, `uxLength`, the waiting-to-receive list) or ThreadX `TX_QUEUE`
+  (`tx_queue_enqueued`, `tx_queue_capacity`, the suspended count), whichever kernel the image has.
+  flexPTP pushes an item, then its notification, and the task takes one item per notification, so
+  the items queued may exceed the notifications by at most a producer or the task caught between
+  its two steps. `ptpq` flags more than that in all three of its reads, a second apart.
 
 ## Unit tests
 
@@ -441,6 +449,7 @@ bazel test //tools/hil/...
 
 `test_find_openocd.py` pins the OpenOCD search order; `test_swd.py` drives the SWD parsers over
 synthetic target memory, including the corruptions actually found -- a stack overflowed into its
-own heap header, a looping free list, a stacked PC of `0xfffffe00` with T clear;
+own heap header, a looping free list, a stacked PC of `0xfffffe00` with T clear, and flexPTP's
+queues as the stuck ThreadX board had them;
 `test_scenarios.py` pins the parsers that decide PASS or FAIL on the board (a `ptp info` reply
 cut off mid-line once read `00a0c9` as a clock identity) and the malformed-PTP packet builders.

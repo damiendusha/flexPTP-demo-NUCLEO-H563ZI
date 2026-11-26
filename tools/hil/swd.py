@@ -6,6 +6,7 @@
     tools/hil/swd.py --elf IMAGE.elf stacks        untouched bytes on every task/thread stack
     tools/hil/swd.py --elf IMAGE.elf fault         decode a HardFault the board is parked in
     tools/hil/swd.py --elf IMAGE.elf console       state of the console's FIFO, flag, UART, DMA
+    tools/hil/swd.py --elf IMAGE.elf ptpq          flexPTP's five queues: are items and wakeups in step?
     tools/hil/swd.py --elf IMAGE.elf all
 
 WHY THIS EXISTS
@@ -43,6 +44,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -349,6 +351,45 @@ def threadx_threads(mem: Mem, flash_str) -> "list[Thread]":
 
 
 # --------------------------------------------------------------------------------------------
+# flexPTP's queues: one FIFO per kind of work, and one notification FIFO for all of them
+# --------------------------------------------------------------------------------------------
+
+# task_ptp.c's queue handles. Every producer pushes an item onto its FIFO and then a notification;
+# the PTP task takes a notification, then one item. So the items queued never exceed the
+# notifications queued by more than a producer caught between its two pushes. Beyond that, items
+# went in without their notifications (U14) and the task takes every later one late, for good --
+# a received message past its TTL, so never: how a ThreadX board stopped answering Pdelay_Req
+# after a flood, with the PTP thread idle and twelve frames in its receive FIFO.
+PTP_ITEM_QUEUES = ("sRxPacketFIFO", "sTxPacketFIFO", "sTxCbFIFO", "sEventFIFO")
+PTP_NOTIFY_QUEUE = "sNotificationFIFO"
+# FreeRTOS Queue_t: pcHead 0, pcWriteTo 4, u 8, xTasksWaitingToSend 16, xTasksWaitingToReceive 36
+#   (a List_t, uxNumberOfItems first), uxMessagesWaiting 56, uxLength 60.
+# ThreadX TX_QUEUE: id 0, name 4, message_size 8, capacity 12, enqueued 16, ..., suspended_count 44.
+FRQ_RX_WAITERS, FRQ_LEVEL, FRQ_LENGTH = 36, 56, 60
+TXQ_CAPACITY, TXQ_LEVEL, TXQ_SUSPENDED = 12, 16, 44
+QUEUE_CB_SIZE = 0x48
+
+
+@dataclass
+class Queue:
+    name: str
+    level: int
+    capacity: int
+    waiters: int    # tasks blocked on it: receivers, since flexPTP never waits to send
+
+
+def queue_at(mem: Mem, addr: int, name: str, freertos: bool) -> Queue:
+    if freertos:
+        return Queue(name, mem.u32(addr + FRQ_LEVEL), mem.u32(addr + FRQ_LENGTH), mem.u32(addr + FRQ_RX_WAITERS))
+    return Queue(name, mem.u32(addr + TXQ_LEVEL), mem.u32(addr + TXQ_CAPACITY), mem.u32(addr + TXQ_SUSPENDED))
+
+
+def stranded_items(queues: "dict[str, Queue]") -> int:
+    """Items queued beyond the notifications queued for them."""
+    return sum(queues[n].level for n in PTP_ITEM_QUEUES) - queues[PTP_NOTIFY_QUEUE].level
+
+
+# --------------------------------------------------------------------------------------------
 # Faults
 # --------------------------------------------------------------------------------------------
 
@@ -566,6 +607,18 @@ class Swd:
                 "hfsr_forced": bool(hfsr & 0x40000000), "frames": frames,
                 "halted_in": self.syms.func(regs.get("pc", 0))}
 
+    def ptp_queues(self) -> "dict[str, Queue] | None":
+        """flexPTP's five queues, all read in one halt. None while PTP is stopped (no queues)."""
+        names = PTP_ITEM_QUEUES + (PTP_NOTIFY_QUEUE,)
+        addrs = {n: self.syms.addr(n) for n in names}
+        lo, hi = min(addrs.values()), max(addrs.values()) + 4
+        handles_mem, _ = self.dump([(lo, hi - lo)])
+        handles = {n: handles_mem.u32(a) for n, a in addrs.items()}
+        if not all(handles.values()):
+            return None
+        mem, _ = self.dump([(h, QUEUE_CB_SIZE) for h in handles.values()])
+        return {n: queue_at(mem, h, n, self.is_freertos) for n, h in handles.items()}
+
     def console(self) -> dict:
         """lib/io/serial_io.c's state: the FIFO counters, the TX-complete flag, USART3 and GPDMA1 ch0.
 
@@ -620,10 +673,10 @@ def main() -> int:
     ap.add_argument("--elf", type=Path, required=True, help="the image running on the board")
     ap.add_argument("--openocd", type=Path, default=None)
     ap.add_argument("--samples", type=int, default=40)
-    ap.add_argument("what", choices=["snapshot", "heap", "stacks", "fault", "console", "all"])
+    ap.add_argument("what", choices=["snapshot", "heap", "stacks", "fault", "console", "ptpq", "all"])
     a = ap.parse_args()
     swd = Swd(a.elf, a.openocd)
-    todo = ["snapshot", "heap", "stacks", "console"] if a.what == "all" else [a.what]
+    todo = ["snapshot", "heap", "stacks", "console", "ptpq"] if a.what == "all" else [a.what]
     bad = False
     for what in todo:
         print(f"== {what} ==")
@@ -661,6 +714,24 @@ def main() -> int:
                                    for k, v in c.items()))
             if c["desynced"]:
                 print("  CONSOLE DESYNCED: idle with the TX-complete flag set")
+                bad = True
+        elif what == "ptpq":
+            # Three reads a second apart: one can catch a producer between its two pushes, and
+            # the task between a notification and its item; three in a row cannot.
+            stranded = []
+            for i in range(3):
+                q = swd.ptp_queues()
+                if q is None:
+                    print("  PTP is stopped: its queues do not exist")
+                    break
+                print("  " + ", ".join(f"{v.name[1:-4]} {v.level}/{v.capacity}"
+                                       f"{' (task waiting)' if v.waiters else ''}" for v in q.values()))
+                stranded.append(stranded_items(q))
+                if i < 2:
+                    time.sleep(1.0)
+            if stranded and min(stranded) > 0:
+                print(f"  PTP QUEUES OUT OF STEP: {min(stranded)} items queued without notifications "
+                      "(flexPTP U14): the task takes every later item that many late")
                 bad = True
     return 1 if bad else 0
 

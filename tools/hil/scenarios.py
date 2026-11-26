@@ -500,6 +500,31 @@ def master_delresp(b: Board, env: Env, r: Report) -> None:
 CLI_SERVED_AT_20KPPS = {"threadx": True, "freertos": False}
 
 
+def queues_in_step(env: Env, r: Report, tag: str) -> None:
+    """With --elf, flexPTP's queues over SWD after a flood. Every producer pushes an item, then a
+    notification, and the PTP task takes one item per notification; items queued beyond the
+    notifications went in without theirs (U14), and the task takes every later item that many
+    late -- a received message, once traffic is slow, past its TTL. Three reads a second apart: a
+    producer caught between its two pushes shows in one, not in three."""
+    if not env.elf:
+        return
+    try:
+        from swd import Swd, stranded_items
+        swd = Swd(env.elf)
+        seen = []
+        for _ in range(3):
+            q = swd.ptp_queues()
+            if q is None:
+                r.note(f"{tag}: PTP is stopped, no queues to read")
+                return
+            seen.append((stranded_items(q), q))
+            time.sleep(1.0)
+        r.check(f"{tag} flexPTP queues in step after the flood (SWD, U14)", min(n for n, _ in seen) <= 0,
+                ", ".join(f"{v.name[1:-4]} {v.level}/{v.capacity}" for v in seen[-1][1].values()))
+    except Exception as e:
+        r.note(f"{tag}: SWD queue read not run: {e}")
+
+
 def gptp_flood(b: Board, env: Env, r: Report) -> None:
     """gPTP slave through a 120 s saturation flood: still the host's slave after, back at full rate."""
     unit("start", UNIT_GPTP)
@@ -523,6 +548,7 @@ def gptp_flood(b: Board, env: Env, r: Report) -> None:
         r.check("gptp_flood back at full rate (>= 200 samples in 30 s)", len(after) >= 200, f"{len(after)}")
         r.check("gptp_flood offset under 1 us after the flood", bool(tail) and max(tail) < 1000,
                 f"max {max(tail) if tail else None} ns")
+        queues_in_step(env, r, "gptp_flood")
     finally:
         quiet(b)
         b.cmd("ptp profile preset default", quiet=2.0, timeout=20)
@@ -555,6 +581,7 @@ def master_flood(b: Board, env: Env, r: Report) -> None:
         r.check("master_flood ptp4l back in SLAVE after the flood", back, trans[-1] if trans else "never left")
         r.check("master_flood last 10 offsets after the flood within 1 us", len(tail) == 10 and max(tail) < 1000, f"{tail}")
         r.check("master_flood no 'bogus delay request interval'", "bogus delay request interval" not in dur + aft)
+        queues_in_step(env, r, "master_flood")
     finally:
         unit("start", UNIT_DEFAULT)
         b.cmd("ptp profile preset default", quiet=2.0, timeout=20)

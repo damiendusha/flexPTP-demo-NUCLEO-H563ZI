@@ -9,9 +9,9 @@ into its own allocation's heap header, a free list that loops, a stacked PC of 0
 import struct
 import unittest
 
-from swd import (FREERTOS_FILL, HEAP4_ALLOCATED, THREADX_FILL, TX_THREAD_ID, Mem, Symbols,
-                 find_exception_frames, freertos_tasks, list_owners, threadx_threads, untouched,
-                 walk_heap4)
+from swd import (FREERTOS_FILL, HEAP4_ALLOCATED, PTP_ITEM_QUEUES, PTP_NOTIFY_QUEUE, THREADX_FILL,
+                 TX_THREAD_ID, Mem, Symbols, find_exception_frames, freertos_tasks, list_owners,
+                 queue_at, stranded_items, threadx_threads, untouched, walk_heap4)
 
 HEAP = 0x20001004          # deliberately misaligned, as the linker is free to place it
 X_START, PX_END, FREE = 0x20000100, 0x20000108, 0x2000010C
@@ -169,6 +169,47 @@ class Frames(unittest.TestCase):
         self.assertEqual(find_exception_frames(frame, 0), [])
         frame[5] = 0x08001001
         self.assertEqual(len(find_exception_frames(frame, 0)), 1)
+
+
+def tx_queue(capacity: int, level: int, suspended: int) -> bytes:
+    """A ThreadX TX_QUEUE: id 'QUEU', name, message size 1 word, capacity, enqueued, ..."""
+    words = [0x51554555, 0x08001000, 1, capacity, level, capacity - level] + [0] * 4 + [0, suspended]
+    return struct.pack("<12I", *words) + bytes(0x48 - 48)
+
+
+def freertos_queue(length: int, level: int, receivers: int) -> bytes:
+    """A FreeRTOS Queue_t: four pointers, the waiting-to-send and waiting-to-receive lists, the counts."""
+    words = [0] * 4 + [0] * 5 + [receivers] + [0] * 4 + [level, length, 4]
+    return struct.pack("<17I", *words) + bytes(0x48 - 68)
+
+
+NAMES = PTP_ITEM_QUEUES + (PTP_NOTIFY_QUEUE,)
+
+
+class PtpQueues(unittest.TestCase):
+    def read(self, blocks, freertos):
+        mem = Mem({0x20010000 + i * 0x100: b for i, b in enumerate(blocks)})
+        return {n: queue_at(mem, 0x20010000 + i * 0x100, n, freertos) for i, n in enumerate(NAMES)}
+
+    def test_the_stuck_threadx_board(self):
+        # Read off the board after a gPTP flood: the PTP thread idle on an empty notification
+        # FIFO, with twelve received frames and three heartbeats queued for nobody.
+        q = self.read([tx_queue(16, 12, 0), tx_queue(16, 0, 0), tx_queue(10, 0, 0), tx_queue(16, 3, 0),
+                       tx_queue(16, 0, 1)], freertos=False)
+        self.assertEqual((q["sRxPacketFIFO"].level, q["sRxPacketFIFO"].capacity), (12, 16))
+        self.assertEqual(q["sNotificationFIFO"].waiters, 1)
+        self.assertEqual(stranded_items(q), 15)
+
+    def test_in_step_freertos_queues(self):
+        q = self.read([freertos_queue(16, 2, 0), freertos_queue(16, 1, 0), freertos_queue(10, 0, 0),
+                       freertos_queue(16, 1, 0), freertos_queue(58, 4, 0)], freertos=True)
+        self.assertEqual((q["sNotificationFIFO"].level, q["sNotificationFIFO"].capacity), (4, 58))
+        self.assertEqual(stranded_items(q), 0)
+
+    def test_idle_freertos_task_waiting_on_empty_queues(self):
+        q = self.read([freertos_queue(16, 0, 0)] * 4 + [freertos_queue(58, 0, 1)], freertos=True)
+        self.assertEqual(q["sNotificationFIFO"].waiters, 1)
+        self.assertEqual(stranded_items(q), 0)
 
 
 class SymbolsAndFill(unittest.TestCase):
