@@ -422,6 +422,41 @@ def stopstart(b: Board, env: Env, r: Report) -> None:
     r.check("stopstart final ping", ping_loss(env.board_ip) == 0.0)
 
 
+def stopstart_busy(b: Board, env: Env, r: Report) -> None:
+    """U11: stop PTP while its task is busy logging, ten times. The stop must neither strand a lock
+    nor hang: every stop answered within 3 s, and afterwards the console intact, the stack up, PTP
+    back.
+
+    unreg_task_ptp() used to delete the PTP task wherever it was; inside a log line, that leaves the
+    console mutex held for ever (the host test //patches/flexptp/test:teardown_test reproduces it
+    deterministically). With U11 the task is asked to stop where it holds nothing and the caller
+    waits for it -- so this also proves that wait is short, not its 2 s fallback."""
+    quiet(b)
+    worst = 0.0
+    try:
+        for cycle in range(1, 11):
+            for f in FLAGS:
+                b.cmd(f"ptp log {f} on", quiet=0.3, timeout=5)
+            b.read_for(4.0)
+            ok, dt = cmd_wait(b, "flexptp stop", r"flexPTP stopped|is not running", 20, r)
+            worst = max(worst, dt)
+            r.check(f"stopstart_busy cycle {cycle}: stop answered within 3 s while logging", ok and dt <= 3.0, f"{dt:.2f} s")
+            if not ok:
+                break
+            ok, dt = cmd_wait(b, "flexptp", r"Starting flexPTP|already up", 20, r)
+            r.check(f"stopstart_busy cycle {cycle}: restart answered", ok, f"{dt:.2f} s")
+    finally:
+        quiet(b)
+    r.note(f"slowest stop {worst:.2f} s")
+    intact, n = osinfo_intact(b)
+    r.check("stopstart_busy console intact afterwards (complete osinfo)", intact, f"{n} chars")
+    r.check("stopstart_busy stack alive afterwards (ping)", ping_loss(env.board_ip) == 0.0)
+    got, _ = wait_master(b)
+    fresh = fresh_samples(b)
+    r.check("stopstart_busy PTP syncing again", got == env.host_gm_id and len(fresh) >= 5,
+            f"master {got}, {len(fresh)} fresh samples")
+
+
 def _board_master_vs_ptp4l(b: Board, env: Env, r: Report, label: str, matched: bool) -> "tuple[int, bool]":
     unit("start", UNIT_SLAVE)                  # Conflicts= stops the host masters
     quiet(b)
@@ -738,7 +773,7 @@ class Scenario:
 SCENARIOS = {
     "u1": Scenario(u1, 1), "u2": Scenario(u2, 1), "u3": Scenario(u3, 1),
     "u4": Scenario(u4, 4, ("freertos",)), "pup": Scenario(pup, 2, ("freertos",)),
-    "gptp": Scenario(gptp, 3), "smss": Scenario(smss, 4), "stopstart": Scenario(stopstart, 3),
+    "gptp": Scenario(gptp, 3), "smss": Scenario(smss, 4), "stopstart": Scenario(stopstart, 3), "stopstart_busy": Scenario(stopstart_busy, 3),
     "master_delresp": Scenario(master_delresp, 5),
     "gptp_flood": Scenario(gptp_flood, 5), "master_flood": Scenario(master_flood, 6),
     "stopstart_flood": Scenario(stopstart_flood, 5), "stopstart_load": Scenario(stopstart_load, 5),
@@ -748,7 +783,7 @@ SCENARIOS = {
 }
 
 PRESETS = {
-    "fixes": ["u1", "u2", "u3", "u4", "pup", "gptp", "smss", "stopstart", "master_delresp"],
+    "fixes": ["u1", "u2", "u3", "u4", "pup", "gptp", "smss", "stopstart", "stopstart_busy", "master_delresp"],
     "load": ["gptp_flood", "master_flood", "stopstart_flood", "cli_flood", "cli_load", "stopstart_load",
              "console_flood"],
     "robust": ["fuzz"],

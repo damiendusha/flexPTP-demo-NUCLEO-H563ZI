@@ -334,6 +334,7 @@ and lwIP put back to their old pins, so there it is observed.
 | `gptp` | the gPTP preset selects a ptp4l gPTP grandmaster and **converges**: 8 Sync/s, max offset < 1 µs over 60–120 s after slaving | gptp |
 | `smss` | SLAVE → MASTER → SLAVE: the servo recovers with no non-finite output (#33's scenario) | default |
 | `stopstart` | `flexptp stop`/start twice: the network stack survives the teardown and PTP resyncs (U9 #34, U11) | default |
+| `stopstart_busy` | ten stops while the PTP task is busy logging: each answered within 3 s, and afterwards the console intact, the stack up, PTP back. U11 waits for the task to stop where it holds nothing; this proves the wait is short and strands nothing | default |
 | `master_delresp` | as master, Delay_Resp carries `logMinDelayReqInterval`, for delreq 0 and SYNCMATCHED (U8 #36, issue #30) | slave |
 | `gptp_flood` | a gPTP slave through a 120 s saturation flood is still the host's slave afterwards, at full rate | gptp |
 | `master_flood` | the board as master through a flood: ptp4l back in SLAVE after, last 10 offsets < 1 µs | slave |
