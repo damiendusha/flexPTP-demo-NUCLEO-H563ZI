@@ -44,9 +44,11 @@ the *larger* clock identity won the election, and with #20 the smaller one corre
 [PR #33](https://github.com/epagris/flexPTP/pull/33) carries #20's change verbatim, credits it, and
 adds a separate fix (`ptp_slave_reset()` before `ptp_slave_enable()`).
 
-The PR branches on the fork are left at their original `494e644` base -- GitHub reports both as
-mergeable, so force-pushing would only churn the review. The patches are generated instead from
-local `rebase/` branches on top of `RC1.0-26`, so their context matches the pin exactly.
+The PR branches for #20 and #26 on the fork are left at their original `494e644` base -- GitHub
+reports both as mergeable, so force-pushing would only churn the review. The patches are generated
+instead from the local `series/rc26` branch: all five fixes cherry-picked in order onto `RC1.0-26`,
+so each patch's context is exactly the tree it is applied to (see
+[`patches/flexptp/README.md`](../../patches/flexptp/README.md#order)).
 
 ## Filing them
 

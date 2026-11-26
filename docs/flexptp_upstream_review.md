@@ -416,7 +416,7 @@ process each time (it rate-limits the warning to once per 300 s):
 ptp4l still uses the Delay_Resp for the path delay either way; what it cannot do is learn the
 master's interval. A real fix must also map `PTP_LOGPER_SYNCMATCHED` — which is **127**, the same bit
 pattern as 0x7F — to something meaningful such as `logSyncPeriod`, rather than copy it through. Not
-filed; the experiment was on a scratch branch.
+filed; the experiment was on a scratch branch. **Since done properly as U8 — see §7.**
 
 The board as master, incidentally, holds a ptp4l slave to about ±30 ns.
 
@@ -439,3 +439,203 @@ One harness fix came out of this. `ptp_sync` sampled from the moment the board s
 its figure depended on which checks ran before it: ~800 ns in S8 order, 7–21 µs as `--checks
 dhcp,ptp_sync`, both PASS because nothing asserts on the offset. It now waits until the board has
 been slaved for 60 s, and reads ~100–150 ns either way.
+
+## 7. Update — three more fixes, dependencies at head, final campaign (2026-11-26)
+
+### Three more fixes, carried as `0008`–`0010`
+
+Each is a branch of its own off `fe4b071` in the working clone, ready to file and **not filed**.
+Each was measured on the board with and without the change.
+
+| | Branch | Defect | Without | With |
+|---|---|---|---|---|
+| U8 | `fix/u8-delay-resp-interval` | Issue #30. A Delay_Resp is a copy of the Delay_Req's header, so it echoes `logMessagePeriod` 0x7F instead of carrying `logMinDelayReqInterval`. `PTP_LOGPER_SYNCMATCHED` is 127 — the same bit pattern — so it is mapped to the Sync interval it means | ptp4l slave warns once per process (`bogus delay request interval 2^127`), for delreq period 0 and for SYNCMATCHED; copying the period naively still warns for SYNCMATCHED | 0 warnings in both cases; ptp4l holds the board within ~±20 ns |
+| U9 | `fix/u9-teardown-unlock` | `unreg_task_ptp()` shuts the lwIP NSD down with `{-1, -1}` in two non-negative enums. arm-none-eabi uses short enums (`Tag_ABI_enum_size: small`), so they hold 255, `== -1` is always false and GCC deletes the branch. Where the branch is live it returns holding `LOCK_TCPIP_CORE()` | upstream: branch compiled out, stack survives by accident; comparison fixed alone: stack dead after one stop (100% ping loss) | two stop/start cycles, 0% loss, PTP resyncs |
+| U10 | `fix/u10-chained-pbufs` | Both lwIP receive paths pass `p->len`, the first pbuf's length, so a chained message reaches flexPTP truncated | `PBUF_POOL_BUFSIZE` 96 (IPv4) and 64 (802.3): master ID `0000000000000000`, no samples | SLAVE within 458 ns and 114 ns |
+
+`nsd_netxduo.c`, ours, made the same `-1` comparison; on this ABI it was always *true* and reached the
+right state only because 255 matches neither transport. It is now type-correct. flexPTP's
+`nsd_etherlib.c` and `nsd_linux.c` compare the same way and are untouched — nothing here can test them.
+
+U9 needed a way in: nothing in either firmware called `unreg_task_ptp()`. Both now have
+`flexptp stop`.
+
+The August branch that U9 and U10 came from carried a third driver change, a guard against an
+802.3 runt underflowing `p->len - 14`. **Dropped as unreachable**: lwIP's `ethernet_input()`
+discards every frame of 14 bytes or less before `LWIP_HOOK_UNKNOWN_ETH_PROTOCOL` runs — still true
+at lwIP `3aa9557`.
+
+### Dependencies at upstream head
+
+| Dependency | Was | Now | Board result |
+|---|---|---|---|
+| STM32H5 HAL | `v1.7.0-8-g0fff6e2` | `v1.7.0-13-gdeaf9d1` | both images byte-identical across the bump |
+| FreeRTOS-Kernel | V11.3.0 (`9b777ae`, a release branch) | `main` head `83a45bf` — reports itself as `V11.1.0+` | S8 13/14, gPTP 240/30 s |
+| lwIP | `STABLE-2_2_1_RELEASE-34` | `-104` (`3aa9557`) | S8 13/14, flood `drop_txts` 0 |
+| ThreadX | `44d7c95` | `v6.5.2.202603b_rel` (`b2868c3`) | S8 14/14 |
+| NetX Duo | `473d192` | `v6.5.2.202603b_rel` (`c690f59`) | S8 14/14 |
+| flexPTP | — | `fe4b071` (`RC1.0-26`), master head, plus `0001` `0006` `0008` `0009` `0010` | below |
+
+embfmt and ST's CMSIS-RTOS2 wrapper were already at head.
+
+### The final campaign: everything together, both firmwares
+
+The final images — this section's three firmware fixes included (FreeRTOS build ID `60bd3664…`,
+ThreadX `1c3b041c…`) — verified on the board by build ID before every run.
+
+| | FreeRTOS + lwIP | ThreadX + NetX Duo |
+|---|---|---|
+| Full S8 | 13/14 (the long-standing `threads` skip); `ptp_sync` ≤ 157 ns | 14/14; ≤ 464 ns |
+| U1–U4, PUP probes | pass (U4 and PUP are lwIP-only) | U1–U3 pass |
+| gPTP, 60–120 s after slaving to a ptp4l gPTP grandmaster | 480 Sync / 60 s; two runs: median 135 and 32 ns, max 225 and 100 ns | median 32 ns, max 119 ns |
+| Host master stopped → board MASTER → back to SLAVE | no non-finite servo output; last 15 within 439 ns | within 208 ns |
+| `flexptp stop` / start, two cycles (U9) | stack alive after each stop, PTP resyncs | same |
+| Board as master, ptp4l slave (U8), delreq 0 and SYNCMATCHED | 0 warnings, offsets ≤ 13 ns | 0 warnings, ≤ 17 ns |
+| 120 s flood | 76 Mbit/s, 0% loss, `drop_txts` 0 | 78 Mbit/s, `drop_txts` 0 |
+| 600 s flood | offered 106 Mbit/s (above line rate), 0% loss, `drop_txts` 0 | 93 Mbit/s, `drop_txts` 0 |
+| Flood during gPTP | 0 samples during; 240/30 s, ≤ 197 ns after | same; ≤ 184 ns after |
+| Flood with the board as master | ptp4l loses it during; back in SLAVE, last 10 ≤ 8 ns | same; last 10 ≤ 20 ns |
+| Stop/start during a saturation flood | commands run as the flood ends; stack alive, PTP resyncs | same |
+| Stop/start at 20 kpps | CLI starved (below); stack alive, PTP resyncs after | 4/4 commands in 0.2 s, stack alive, PTP resyncs |
+| Console after three silent 120 s floods | intact 3/3 | intact 3/3 |
+| Malformed and foreign PTP (below) | survives, recovers | survives, recovers |
+| FreeRTOS heap walk at the end | consistent | — |
+
+The converged gPTP figure moves by a factor of four from run to run on the same image, so it
+says nothing about the fixes: in the same session the image before them measured median 55 ns
+(max 129) and the pre-session image 114 ns (max 180). The earlier "≤ 45–96 ns" figures were
+taken over the first 30 s after slaving, inside the transient a profile switch causes, and are not
+comparable.
+
+### What saturation does, and whether it is new
+
+The same probes were run on the pre-session image (`9aef180`: RC1.0-26 with `0001` and `0006`,
+old dependency pins).
+
+- **PTP stops during a saturation flood, on both firmwares and both images, and recovers after.**
+  As slave: no Sync cycles complete during the flood. As master: the ptp4l slave watching it drops
+  to LISTENING. Both resynchronise once the flood ends. Not new.
+- **The CLI is starved during a saturation flood, on every image.** FreeRTOS answers nothing until
+  the flood ends; ThreadX answered one request in two, after 10–34 s. On FreeRTOS it extends down
+  to 20 kpps (20 Mbit/s): no `osinfo` answered in 120 s on the current image, the image with
+  FreeRTOS put back to V11.3.0, the image with lwIP put back to its old pin, and the baseline
+  alike. SWD sampling puts 30–38 of 40 samples in the TCP/IP and rx threads. ThreadX at 20 kpps
+  answers in 0.2 s. A property of this lwIP port, not of the bumps.
+- **The baseline ThreadX image, not the current one, lost PTP after a gPTP flood:** it made
+  itself master (`56001efffe000451`) and the following master-mode probe got no offsets. Seen
+  once; the current ThreadX image passed the same probes.
+
+### The FreeRTOS wedge: three bugs of ours, all older than this session
+
+Late in long runs, three times, the FreeRTOS board stopped: console garbled then silent, ping
+dead, until a reset. Shorter replays mostly did not reproduce it. Caught live over SWD, it was two
+different crashes and a console fault, all in this repository's firmware rather than in flexPTP,
+and **the baseline image has them**: after a single 120 s flood with nothing sent to the console, the pre-session
+image lost its console and its network in one of two runs.
+
+**1. The CLI task overflows its stack in `osinfo`.** PC in `vApplicationStackOverflowHook`,
+entered from PendSV, current task `cli`, tick stopped; the task's saved stack pointer 16 bytes
+below its stack, and a heap walk stopping at the `heap_4` header of the stack's own allocation,
+overwritten with stack contents. The dump gives the chain `task_cli` → `process_cli_line` →
+`os_info` → `MSG` → `vembfmt` → `pfn_integer` → `print_number`. `os_info()` kept a 16-entry
+`TaskStatus_t` array — 704 of its 776-byte frame — on the CLI's 2048-byte stack, and `osinfo`
+left 80–136 bytes of it untouched when idle; every other command stops well short. Under load
+the CLI is preempted constantly, each preemption saving its context on the task's own stack, and
+at osinfo's deepest point that is enough. The same 34 words free after `osinfo` on the baseline,
+on the image with FreeRTOS put back to V11.3.0, and with lwIP put back to its old pin.
+
+*Fixed:* the array is `static` — only the CLI thread runs `osinfo`. The CLI's lowest point over
+every command is now 640 bytes untouched, the deepest command now `flexptp` start/stop. With
+`osinfo` and `ethstat` every 2 s through a 90 s flood at 2 and at 5 kpps (80 of 80 answered each
+time):
+
+| Image | CLI stack never touched, after |
+|---|---|
+| before the fix | **56 bytes** — 24–80 deeper than idle, from preemption |
+| fixed | 760 bytes |
+
+ThreadX shares the 2048-byte CLI stack from `lib/cli` but has no such array; measured from the
+stack fill after the same deep commands, its CLI thread keeps 648 bytes and no thread fewer
+than 436.
+
+**2. The Ethernet ISR calls a garbage `tx_cb`.** HardFault (`CFSR` = IACCVIOL, forced) taken
+in the ETH interrupt (xPSR exception 122), stacked PC `0xfffffe00`, return address just after
+the `blx` in `ETHHW_ProcessTx()` that calls a TX descriptor's timestamp callback. That pointer
+comes from `pbuf->tx_cb`, one of the `LWIP_PBUF_CUSTOM_DATA` fields — which lwIP does not
+initialise. lwIP has a hook for it, `LWIP_PBUF_CUSTOM_DATA_INIT`, called from
+`pbuf_init_alloced_pbuf()` at both lwIP pins; `lwipopts.h` never defined it, and the driver's
+comment said no hook existed. So a pbuf lwIP allocates for itself — an ICMP reply to the flood,
+ARP, IGMP — can carry stale bytes there, and the driver reads any non-NULL value as "timestamp
+this frame and call this". The clear after the read, ported in September for U5, cannot catch
+it: the gate trusts the field. Rare: an instrumented build that counted, instead of calling,
+non-PTP frames with `tx_cb` set saw none in one 120 s flood.
+
+*Fixed:* `lwipopts.h` defines the hook, zeroing all four custom fields on every allocation; the
+driver's clear stays as the second line. Silent 120 s floods, then three full `osinfo` reads and
+a ping: fixed image intact 7 of 7 (five of them back to back on one boot), baseline broken in 1
+of 2.
+
+**3. The console thread falls one completion behind and stays there.** Not a crash, but it is
+what made both crashes look the way they did: after a saturation flood the board's replies come
+back garbled — characters missing, lines out of order — while the network and PTP run normally.
+Caught on the image with fixes 1 and 2: FIFO empty, DMA channel idle and disabled, and the console thread's
+TX-complete flag *set* with nobody waiting (clear on a healthy board). `serial_io_thread()` waits
+up to 500 ms for each transfer's completion and aborts on timeout; a completion arriving after
+that timeout stayed set, the next wait returned at once, the next chunk was read into the buffer
+the DMA was still sending, and `HAL_UART_Transmit_DMA()` then failed busy and dropped the chunk
+after it. Once a flag ahead, the thread stays a flag ahead. `lib/io/serial_io.c`, shared by both
+firmwares.
+
+*Fixed:* the flag is cleared before each transfer, so a wait can be satisfied only by its own
+transfer's completion.
+
+Found in the code while chasing it, and unrelated to it in the end:
+
+- **U11 candidate — `unreg_task_ptp()` teardown order.** It deletes the message queues before
+  clearing `sPTP_operating`, leaves the handles dangling, and `ptp_transmit_timestamp_cb()` has no
+  `sPTP_operating` guard. A hardware TX timestamp for a frame queued before the stop and completed
+  after it posts into freed queue memory. It also `vTaskDelete()`s the PTP task from the caller's
+  thread, so a mutex that task holds at that moment — lwIP's core lock inside a transmit, or an
+  application's console lock — stays held for ever. Reachable by any application that stops PTP;
+  here only through `flexptp stop`, which the baseline does not have. The heap walks show queues
+  re-allocated at the same addresses on restart, which makes most late callbacks harmless, so the
+  window that actually corrupts is narrow. Not demonstrated on hardware.
+
+### Malformed and foreign PTP traffic
+
+Nine traffic classes, 30 s each at 10 packets/s to 224.0.1.129, with the board slaved to the
+host; Sync cycles counted against a quiet 30 s reference (30 cycles). The same on both firmwares, in
+every run; where a class blocks, a run occasionally let one cycle through:
+
+| Class | Effect |
+|---|---|
+| 1-byte datagram to port 319 | **0–1 of 30 cycles** |
+| foreign two-step Sync cut to 33 B | **0–1** |
+| foreign two-step Sync, `versionPTP` 1 | **0–1** |
+| foreign two-step Sync padded to 1400 B | **0–1** |
+| well-formed foreign two-step Sync, domain 0 | **0–1** |
+| reserved messageType 0x5 | 30 — ignored |
+| foreign Sync, domain 1 | 30 — ignored |
+| foreign Announce, priority1 255 | 30 — ignored, host stays master |
+| random 1–200 B to 319 and 320 | 30 — no effect |
+
+In every case the board stayed with the host as master, never reset, kept its stack up, and
+resynchronised once the traffic stopped. Two gaps in flexPTP's receive path, both in the core and
+so in every port:
+
+- **U12 candidate — no length or version check.** `ptp_process_packet()` parses a 34-byte header
+  from the receive slot whatever was received; a short datagram is parsed partly from the
+  previous message's bytes, and `versionPTP` is never compared.
+- **U13 candidate — the slave takes Sync and Follow_Up from anyone.** `ptp_slave_process_message()`
+  never compares the sender with the selected master, and a Sync arriving while it waits for a
+  Follow_Up is ignored rather than restarting the cycle. So one foreign Sync between two of the
+  master's cycles parks the slave on a sequence ID that never comes, and the master's own Sync is
+  then discarded. A second, misconfigured master on the domain stops synchronisation outright
+  while BMCA still reports the right master. Now and then the mixture completes a cycle instead,
+  from the wrong messages: one such Sync cycle on ThreadX reported a 417 µs offset to the servo.
+
+None of the three candidates is patched here.
+
+The `ptp period` help text advertises `matched`, but the parser compares against `match`;
+`matched` falls through to `atoi()` and silently sets the period to 0. Noted in U8's message, not
+changed.
