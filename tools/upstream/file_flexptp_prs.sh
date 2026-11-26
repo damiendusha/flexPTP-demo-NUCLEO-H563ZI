@@ -5,11 +5,11 @@
 # Each fix is an independent branch off the pinned upstream commit and touches a disjoint set
 # of lines, so they can be reviewed, merged, rejected or reordered in any combination. That is
 # the whole reason they are separate branches rather than one, and it is why this script asks
-# before each one rather than firing seven PRs at a maintainer in a burst.
+# before each one rather than firing every PR at a maintainer in a burst.
 #
 #   tools/upstream/file_flexptp_prs.sh --dry-run     # show exactly what would be filed
 #   tools/upstream/file_flexptp_prs.sh               # ask before each PR, then file it
-#   tools/upstream/file_flexptp_prs.sh --only u5     # just one
+#   tools/upstream/file_flexptp_prs.sh --only u9     # just one
 #
 # Nothing is pushed and no PR is opened until you answer `y` to that specific PR. Answer `q`
 # to stop; branches already filed stay filed.
@@ -29,7 +29,7 @@ ONLY=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --dry-run) DRY_RUN=1 ;;
-        --only)    ONLY="${2:?--only needs a tag, e.g. u5}"; shift ;;
+        --only)    ONLY="${2:?--only needs a tag, e.g. u9}"; shift ;;
         -h|--help) sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -41,16 +41,16 @@ die() { echo "error: $*" >&2; exit 1; }
 # --- The fixes, in the order they are worth a maintainer's attention ------------------------
 #
 # Ordered by consequence, not by number: a maintainer who reads only the first two should have
-# read the two that lose data. u6 is a comment and goes last on purpose.
+# read the two that break a port outright. u1 and u6 were filed in the first batch (#20, #26)
+# and are listed so a re-run reports them as already filed; u6 is a comment and goes last on
+# purpose. U2-U5 and U7 are merged and their branches deleted.
 #
 #   tag | branch | one-line PR title
 FIXES=(
+  "u9|fix/u9-teardown-unlock|lwIP NSD: make the shutdown branch reachable, and release the core lock in it"
+  "u10|fix/u10-chained-pbufs|lwIP NSD: pass a chained pbuf's whole message, not its first segment"
+  "u8|fix/u8-delay-resp-interval|master: Delay_Resp carries logMinDelayReqInterval, not the Delay_Req's 0x7F"
   "u1|fix/u1-gm-clock-identity-byte-order|Announce: stop byte-swapping the grandmaster clock identity on receive"
-  "u2|fix/u2-logid-config-bit|config: store the logid flag, and derive CONFIG_LOG_ALL from the flags"
-  "u5|fix/u5-stale-pbuf-tx-cb|lwIP NSD: untag the pbuf before releasing it"
-  "u7|fix/u7-transport-type-reset|settings: reset the engine when the transport type changes"
-  "u4|fix/u4-p2p-8023-dest-sticky|lwIP NSD: recompute the custom P2P 802.3 destinations on every init"
-  "u3|fix/u3-locked-log-prefix|stats: print the [LOG-LCKD] prefix only when the line behind it prints"
   "u6|fix/u6-pdelay-pcb-comment|lwIP NSD: say that the PDelay pcbs are receive-only"
 )
 
@@ -108,9 +108,14 @@ for entry in "${FIXES[@]}"; do
     echo "$files" | sed 's/^/     /'
     echo
 
-    # Already filed? Do not open a second one.
-    existing="$(gh pr list --repo "$UPSTREAM" --head "$FORK_OWNER:$branch" --state all \
-                  --json number,state,url --jq '.[0] | select(.) | "#\(.number) \(.state) \(.url)"' 2>/dev/null || true)"
+    # Already filed? Do not open a second one. `gh pr list --head` takes a bare branch name and
+    # silently matches nothing given `owner:branch`, so the owner is filtered here instead. A
+    # failed query stops the run: treating "could not ask" as "not filed" is how a duplicate
+    # would get opened.
+    existing="$(gh pr list --repo "$UPSTREAM" --head "$branch" --state all \
+                  --json number,state,url,headRepositoryOwner \
+                  --jq "[.[] | select(.headRepositoryOwner.login == \"$FORK_OWNER\")][0] | select(.) | \"#\\(.number) \\(.state) \\(.url)\"")" \
+        || die "could not query $UPSTREAM for an existing PR from $FORK_OWNER:$branch"
     if [[ -n "$existing" ]]; then
         echo "     already filed: $existing"
         echo "     skipping."

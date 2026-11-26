@@ -1,14 +1,14 @@
 # Upstreaming
 
 Fixes for dependencies live in a working clone of the dependency, one branch per fix, and are
-filed from there. They are **not** carried as patches in `//patches` unless upstream declines
-them — the flexPTP patches this repository used to carry were all accepted, which is why that
-directory is gone.
+filed from there. Until a fix merges, the firmware carries it as a patch in `//patches/flexptp`,
+applied by the Bazel fetch; see [`patches/flexptp/README.md`](../../patches/flexptp/README.md).
 
 ## The flexPTP fixes
 
-Seven, each an independent branch off the pinned upstream revision `494e644` (`RC1.0-17`), each
-touching a disjoint set of lines so they can be reviewed, merged or rejected in any
+Ten, in two batches. U1–U7 are branches off `494e644` (`RC1.0-17`), filed on 2026-09-10. U8–U10
+are branches off the current pin `fe4b071` (`RC1.0-26`), ready but **not yet filed**. Each is one
+commit, independent of the others, so they can be reviewed, merged or rejected in any
 combination. Full analysis and evidence in
 [`docs/flexptp_upstream_review.md`](../../docs/flexptp_upstream_review.md).
 
@@ -21,13 +21,22 @@ combination. Full analysis and evidence in
 | U5 | `fix/u5-stale-pbuf-tx-cb` | [#22](https://github.com/epagris/flexPTP/pull/22) | merged | Recycled pbufs inherit `tx_cb` and get spurious hardware TX timestamps |
 | U6 | `fix/u6-pdelay-pcb-comment` | [#26](https://github.com/epagris/flexPTP/pull/26) | **open** | Comment: the PDelay pcbs are receive-only |
 | U7 | `fix/u7-transport-type-reset` | [#23](https://github.com/epagris/flexPTP/pull/23) | merged | `ptp transport` does not re-init the driver, so the switch silently does not take effect |
+| U8 | `fix/u8-delay-resp-interval` | not filed | ready | Fixes [#30](https://github.com/epagris/flexPTP/issues/30): a Delay_Resp echoes the Delay_Req's 0x7F instead of carrying `logMinDelayReqInterval` |
+| U9 | `fix/u9-teardown-unlock` | not filed | ready | `unreg_task_ptp()`'s lwIP shutdown branch is compiled out on a short-enum ABI, and where it is live it returns holding the core lock |
+| U10 | `fix/u10-chained-pbufs` | not filed | ready | A chained pbuf reaches flexPTP truncated to its first segment |
 
 Every one is verified on a NUCLEO-H563ZI, most with a before/after measurement rather than an
 argument. U7 was found while testing U4 — and is why U4's negative case was untestable, because
 the only way to reach 802.3 without the gPTP preset is the transport switch that U7 repairs.
 
-All seven were filed on 2026-09-10. Five are merged in `RC1.0-26` (`fe4b071`); #20 and #26 are
-open, mergeable, and carried as `//patches/flexptp` until they land.
+Five of the first seven are merged in `RC1.0-26` (`fe4b071`); #20 and #26 are open and
+mergeable. Those two and U8–U10 are carried as `//patches/flexptp` until they land.
+
+U8 came from issue #30, which upstream's `9eefd95` did not fix (it changes the Delay_Req, not the
+Delay_Resp). U9 and U10 came from an August branch of this repository that was never merged; it
+carried a third driver change, a guard against an 802.3 runt underflowing `p->len - 14`, which was
+dropped because lwIP's `ethernet_input()` already discards any frame of 14 bytes or less before the
+hook that would see it.
 
 #20 has outside support. Another flexPTP user, Michael (`emb4fun`), reproduced it independently in
 [issue #32](https://github.com/epagris/flexPTP/issues/32): with two flexPTP masters the one with
@@ -44,12 +53,13 @@ local `rebase/` branches on top of `RC1.0-26`, so their context matches the pin 
 ```bash
 tools/upstream/file_flexptp_prs.sh --dry-run     # show exactly what would be filed
 tools/upstream/file_flexptp_prs.sh               # ask before each PR, then file it
-tools/upstream/file_flexptp_prs.sh --only u5     # just one
+tools/upstream/file_flexptp_prs.sh --only u9     # just one
 ```
 
 **One at a time, and nothing happens without a `y`.** No branch is pushed and no PR is opened
 until that specific PR is confirmed; `q` stops the run and leaves anything already filed alone.
-A branch that already has a PR is detected and skipped, so the script is safe to re-run.
+A branch that already has a PR from the fork is detected and skipped, so the script is safe to
+re-run; if GitHub cannot be asked, the run stops rather than risk a duplicate.
 
 The PR body is the commit message body verbatim — it was written to explain the defect, the
 mechanism and the measurement, which is what the PR has to say anyway.
