@@ -42,9 +42,9 @@ die() { echo "error: $*" >&2; exit 1; }
 #
 # Ordered by consequence, not by number: a maintainer who reads only the first two should have
 # read the two that break synchronisation outright -- any foreign Sync, or one malformed
-# datagram, stops it; u14 next, which stops it for good after a burst. All but u14 are filed --
-# u13, u12 and u11 as #37-#39, u9, u10 and u8 as #34-#36, u1 and u6 from the first batch as #20
-# and #26 -- and listed so a re-run reports them as such. u6 is a comment and goes last on
+# datagram, stops it; u14 next, which stops it for good after a burst. All are filed -- u13, u12
+# and u11 as #37-#39, u14 as #40, u9, u10 and u8 as #34-#36, u1 and u6 from the first batch as
+# #20 and #26 -- and listed so a re-run reports them as such. u6 is a comment and goes last on
 # purpose. U2-U5 and U7 are merged and their branches deleted.
 #
 #   tag | branch | one-line PR title

@@ -747,7 +747,7 @@ pairs. The FreeRTOS + lwIP board did not get there under the same floods (queues
 both, without the fix). With `--elf`, the flood scenarios now read the queues over SWD
 (`queues_in_step()`), and `swd.py ptpq` reads them by hand.
 
-The fix (`0014`, branch `fix/u14-notification-fifo`) makes the notification FIFO as long as the
+The fix (`0014`, branch `fix/u14-notification-fifo`, filed as #40) makes the notification FIFO as long as the
 four together, so a notification push cannot fail once its item push has succeeded: 42 more
 entries, 168 bytes. The test, `notification_test`, starves the OS-less task while heartbeats and a
 peer's Pdelay_Reqs arrive, then has the peer send one a second: without the fix the first two are

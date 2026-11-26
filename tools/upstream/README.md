@@ -8,8 +8,8 @@ applied by the Bazel fetch; see [`patches/flexptp/README.md`](../../patches/flex
 
 Fourteen, in four batches. U1–U7 are branches off `494e644` (`RC1.0-17`), filed on 2026-09-10.
 U8–U14 are branches off the current pin `fe4b071` (`RC1.0-26`); U8–U10 were filed on 2026-11-26,
-U11–U13 on 2026-11-27, after the tests below. U14 was found while testing them and is not filed
-yet. Each is one commit, independent of the others, so they can be reviewed, merged or rejected
+U11–U13 on 2026-11-27, after the tests below, and U14, found while testing them, the same day.
+Each is one commit, independent of the others, so they can be reviewed, merged or rejected
 in any combination. Full analysis and evidence in
 [`docs/flexptp_upstream_review.md`](../../docs/flexptp_upstream_review.md).
 
@@ -28,7 +28,7 @@ in any combination. Full analysis and evidence in
 | U11 | `fix/u11-teardown-order` | [#39](https://github.com/epagris/flexPTP/pull/39) | **open** | `unreg_task_ptp()` deletes the queues before it stops accepting work, so a late TX timestamp is posted into freed memory; and deletes the PTP task wherever it is, so a lock it holds stays held |
 | U12 | `fix/u12-rx-length-version` | [#38](https://github.com/epagris/flexPTP/pull/38) | **open** | A received message is parsed whatever its length and version: a 1-byte datagram is a "Sync" built from the previous message's bytes |
 | U13 | `fix/u13-slave-parent-only` | [#37](https://github.com/epagris/flexPTP/pull/37) | **open** | The slave takes Sync, Follow_Up and Delay_Resp from any sender: one foreign Sync per cycle stops synchronisation |
-| U14 | `fix/u14-notification-fifo` | pending | ready | The notification FIFO is shorter than the four FIFOs it notifies for: a burst strands items without notifications, and the PTP task then takes every later item late, a received one past its TTL -- for good. A ThreadX board stopped answering Pdelay_Req after a flood |
+| U14 | `fix/u14-notification-fifo` | [#40](https://github.com/epagris/flexPTP/pull/40) | **open** | The notification FIFO is shorter than the four FIFOs it notifies for: a burst strands items without notifications, and the PTP task then takes every later item late, a received one past its TTL -- for good. A ThreadX board stopped answering Pdelay_Req after a flood |
 
 Every one is verified on a NUCLEO-H563ZI, most with a before/after measurement rather than an
 argument. U7 was found while testing U4 — and is why U4's negative case was untestable, because
