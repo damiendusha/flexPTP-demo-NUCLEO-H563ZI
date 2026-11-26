@@ -1,6 +1,6 @@
 # flexPTP patches
 
-Five patches against `fe4b071` (`RC1.0-26`), applied **by the Bazel fetch**.
+Eight patches against `fe4b071` (`RC1.0-26`), applied **by the Bazel fetch**.
 
 `//bazel/repositories.bzl` lists them in the `patches` attribute of the `new_git_repository`
 for `@flexptp`, so they are part of fetching the dependency: the patched tree is what lands in
@@ -16,13 +16,16 @@ are here because the firmware needs them now, not because they belong here.
 |---|---|---|---|---|
 | `0001-u1-gm-clock-identity-byte-order` | [#20](https://github.com/epagris/flexPTP/pull/20), open | `msg_utils.c` | The Announce body is the only place a clock identity is byte-swapped on receive. That inverts the BMCA tie-break between two masters, and a remote master's identity displays reversed | Master clock ID `00a0c9fffe2621e4`, both firmwares |
 | `0006-u6-pdelay-pcb-comment` | [#26](https://github.com/epagris/flexPTP/pull/26), open | `nsd_lwip.c` | Comment only: the PDelay pcbs are receive-only | Suite unchanged |
-| `0008-u8-delay-resp-interval` | not yet filed; fixes [#30](https://github.com/epagris/flexPTP/issues/30) | `master.c` | A Delay_Resp echoes the Delay_Req's `logMessagePeriod` (0x7F) instead of carrying `logMinDelayReqInterval`, so a ptp4l slave logs `ignore bogus delay request interval 2^127`. `PTP_LOGPER_SYNCMATCHED` (127, the same bit pattern) is mapped to the Sync interval | ptp4l warnings 1 → 0, delreq period 0 and `match` |
-| `0009-u9-teardown-unlock` | not yet filed | `nsd_lwip.c` | `unreg_task_ptp()`'s shutdown branch compares a non-negative enum with `-1`, which a short-enum ABI (arm-none-eabi) makes always false, so GCC deletes the branch; where it is live it returns holding the lwIP core lock, which stops the whole stack | two `flexptp stop`/start cycles, 0% ping loss, PTP resyncs |
-| `0010-u10-chained-pbufs` | not yet filed | `nsd_lwip.c` | Both receive paths pass `p->len`, the first pbuf's length, so a chained PTP message reaches flexPTP truncated | at `PBUF_POOL_BUFSIZE` 96 and 64: no master → SLAVE within 458 ns / 114 ns |
+| `0008-u8-delay-resp-interval` | [#36](https://github.com/epagris/flexPTP/pull/36), open; fixes [#30](https://github.com/epagris/flexPTP/issues/30) | `master.c` | A Delay_Resp echoes the Delay_Req's `logMessagePeriod` (0x7F) instead of carrying `logMinDelayReqInterval`, so a ptp4l slave logs `ignore bogus delay request interval 2^127`. `PTP_LOGPER_SYNCMATCHED` (127, the same bit pattern) is mapped to the Sync interval | ptp4l warnings 1 → 0, delreq period 0 and `match` |
+| `0009-u9-teardown-unlock` | [#34](https://github.com/epagris/flexPTP/pull/34), open | `nsd_lwip.c` | `unreg_task_ptp()`'s shutdown branch compares a non-negative enum with `-1`, which a short-enum ABI (arm-none-eabi) makes always false, so GCC deletes the branch; where it is live it returns holding the lwIP core lock, which stops the whole stack | two `flexptp stop`/start cycles, 0% ping loss, PTP resyncs |
+| `0010-u10-chained-pbufs` | [#35](https://github.com/epagris/flexPTP/pull/35), open | `nsd_lwip.c` | Both receive paths pass `p->len`, the first pbuf's length, so a chained PTP message reaches flexPTP truncated | at `PBUF_POOL_BUFSIZE` 96 and 64: no master → SLAVE within 458 ns / 114 ns |
+| `0011-u11-teardown-order` | [#39](https://github.com/epagris/flexPTP/pull/39), open | `task_ptp.c` | `unreg_task_ptp()` deleted the message queues before clearing `sPTP_operating`, left the handles dangling, and `ptp_transmit_timestamp_cb()` checked nothing -- a late TX timestamp was posted into freed memory; and it `vTaskDelete()`d the PTP task wherever it was, so a lock it held stayed held. Now: stop accepting work first, have the task stop where it holds nothing, then delete | host: `teardown_test` 3/3 (2 fail without); board: `stopstart_busy`, `stopstart_flood`, `stopstart_load` |
+| `0012-u12-rx-length-version` | [#38](https://github.com/epagris/flexPTP/pull/38), open | `msg_utils.c`, `task_ptp.c` | Nothing compared the received length or `versionPTP` with the header: a short datagram was parsed partly from the previous message's bytes, a PTPv1 message as PTPv2. Now dropped in `ptp_receive_enqueue()` | host: `rx_validation_test` U12 5/5 (all fail without); board: `fuzz` |
+| `0013-u13-slave-parent-only` | [#37](https://github.com/epagris/flexPTP/pull/37), open | `bmca.c`, `slave.c`, `ptp_types.h` | The slave took Sync, Follow_Up and Delay_Resp from any sender, and ignored a new Sync while waiting for a Follow_Up. Now: the selected master's port only (recorded from its Announce header), and a new Sync restarts the cycle | host: `rx_validation_test` U13 5/5 (all fail without); board: `fuzz` |
 
 `0001` is no longer only ours: another flexPTP user, Michael (`emb4fun`), reproduced it
 independently with two flexPTP masters in [issue #32](https://github.com/epagris/flexPTP/issues/32)
-and folded it into his [PR #33](https://github.com/epagris/flexPTP/pull/33). If #33 merges first,
+and folded it into their [PR #33](https://github.com/epagris/flexPTP/pull/33). If #33 merges first,
 it carries this fix and the patch goes then.
 
 ## Merged, and gone from here
@@ -51,16 +54,45 @@ was measured on the board, not reasoned about.
 **`0007` was why `0004` was testable.** gPTP is the only preset that is natively 802.3, so the
 only route to "802.3 with no custom destination" is the transport switch — which did not work.
 
+## Host tests
+
+[`test/`](test) runs flexPTP's real engine on the host -- its own sources, patched exactly as the
+firmware fetches them -- with a fake port and network-stack driver (`fake_port.c`):
+
+| Test | Mode | What it proves |
+|---|---|---|
+| `rx_validation_test` | flexPTP's own OS-less mode, driven synchronously against a simulated ptp4l-like master | U12 and U13: ten interference patterns, each placed before a Sync and between it and its Follow_Up, each checked by completed cycles, by Syncs accepted (exactly the master's), and by no clock step; three positive controls, including 2.0 and 2.1 version bytes and padded frames |
+| `teardown_test` | flexPTP's FreeRTOS binding on FreeRTOS's POSIX port, with an "electric fence" heap that makes freed memory inaccessible | U11: a TX timestamp after the stop touches no deleted queue; a stop while the PTP task is inside a log line leaves no lock held; three stop/start cycles leak nothing |
+
+```bash
+bazel test //patches/flexptp/test:all
+```
+
+Each fix's tests fail without it, and only its own: run them against a flexPTP checkout that lacks
+a patch with `--override_repository`. From the working clone's branches:
+
+```bash
+C=~/git/flexPTP-fixes
+git -C $C checkout series/rc26~3      # everything but 0011-0013
+bazel test --override_repository=flexptp=$C //patches/flexptp/test:all   # 12 tests fail
+git -C $C checkout series/rc26        # all of it
+bazel test --override_repository=flexptp=$C //patches/flexptp/test:all   # all pass
+```
+
+The clone needs the `REPO.bazel` and `BUILD.bazel` described in
+[`tools/upstream/README.md`](../../tools/upstream/README.md).
+
 ## Order
 
-**A stack, applied in the listed order.** Three of the five touch `nsd_lwip.c`, so each patch is
+**A stack, applied in the listed order.** Several touch the same files (`nsd_lwip.c` three times,
+`task_ptp.c` twice), so each patch is
 generated against the tree the patches before it leave, not against bare `fe4b071`: every hunk
 then applies at its exact line, with no offset and no fuzz. Bazel's patcher, unlike `git apply`,
 does not tolerate drift, and an offset that `patch` forgives today is a failure after the next
 edit.
 
 The pull requests stay independent. Each fix is also a branch of its own, one commit off
-`fe4b071`, and the stack is the same five changes cherry-picked in order onto branch
+`fe4b071`, and the stack is the same eight changes cherry-picked in order onto branch
 `series/rc26` in the working clone. `git patch-id --stable` matches each series commit to its PR
 branch, so what the firmware builds is what would be filed.
 
@@ -80,7 +112,8 @@ clone, one per commit, oldest first:
 ```bash
 C=~/git/flexPTP-fixes
 names=(0001-u1-gm-clock-identity-byte-order 0006-u6-pdelay-pcb-comment 0008-u8-delay-resp-interval
-       0009-u9-teardown-unlock 0010-u10-chained-pbufs)
+       0009-u9-teardown-unlock 0010-u10-chained-pbufs 0011-u11-teardown-order
+       0012-u12-rx-length-version 0013-u13-slave-parent-only)
 i=0; for c in $(git -C $C rev-list --reverse fe4b071..series/rc26); do
     git -C $C format-patch --stdout --no-signature -1 "$c" > "patches/flexptp/${names[i]}.patch"; i=$((i+1))
 done

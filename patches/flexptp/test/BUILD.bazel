@@ -1,0 +1,93 @@
+# Host tests of flexPTP's real engine, as patched by //patches/flexptp.
+#
+# The engine is built from @flexptp's own sources -- the patched tree the firmware uses -- with a
+# fake hardware port and network-stack driver (fake_port.c). Run the tests against an
+# unpatched or partly patched flexPTP with --override_repository=flexptp=<checkout> to see each
+# fix's test fail without it; patches/flexptp/README.md has the commands.
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+# ---- OS-less: the engine driven synchronously (U12, U13) -------------------------------------
+
+cc_library(
+    name = "osless_options",
+    testonly = True,
+    hdrs = [
+        "fake_port.h",
+        "osless/flexptp_options.h",
+    ],
+    includes = [
+        ".",
+        "osless",
+    ],
+)
+
+cc_library(
+    name = "flexptp_osless",
+    testonly = True,
+    srcs = [
+        "fake_port.c",
+        "@flexptp//:core_srcs",
+        "@flexptp//:servo_kalman_srcs",
+    ],
+    copts = ["-w"],
+    deps = [
+        ":osless_options",
+        "@flexptp//:headers",
+    ],
+)
+
+cc_test(
+    name = "rx_validation_test",
+    srcs = [
+        "ptp_wire.h",
+        "rx_validation_test.cpp",
+    ],
+    deps = [
+        ":flexptp_osless",
+        "@googletest//:gtest_main",
+    ],
+)
+
+# ---- FreeRTOS: the binding the FreeRTOS + lwIP firmware uses, on the POSIX port (U11) ---------
+
+cc_library(
+    name = "freertos_options",
+    testonly = True,
+    hdrs = [
+        "fake_port.h",
+        "freertos/flexptp_options.h",
+    ],
+    includes = [
+        ".",
+        "freertos",
+    ],
+    deps = ["@freertos//:headers"],
+)
+
+cc_library(
+    name = "flexptp_freertos",
+    testonly = True,
+    srcs = [
+        "efence_heap.c",
+        "fake_port.c",
+        "@flexptp//:core_srcs",
+        "@flexptp//:servo_kalman_srcs",
+    ],
+    hdrs = ["efence_heap.h"],
+    copts = ["-w"],
+    deps = [
+        ":freertos_options",
+        "@flexptp//:headers",
+        "@freertos//:freertos_posix_noheap",
+    ],
+)
+
+cc_test(
+    name = "teardown_test",
+    size = "medium",
+    srcs = ["teardown_test.cpp"],
+    deps = [
+        ":flexptp_freertos",
+        "@googletest//:gtest",
+    ],
+)

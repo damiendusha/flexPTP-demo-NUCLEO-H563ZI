@@ -75,3 +75,26 @@ cc_library(
     linkopts = ["-lpthread"],
     deps = [":headers"],
 )
+
+# The POSIX port with NO heap: the caller supplies pvPortMalloc()/vPortFree(). For the flexPTP
+# teardown test (//patches/flexptp/test), whose allocator makes freed memory inaccessible so that
+# a use-after-free faults where it happens instead of passing silently.
+cc_library(
+    name = "freertos_posix_noheap",
+    testonly = True,
+    srcs = FREERTOS_CORE + [
+        "portable/ThirdParty/GCC/Posix/port.c",
+        "portable/ThirdParty/GCC/Posix/utils/wait_for_event.c",
+    ],
+    hdrs = glob([
+        "portable/ThirdParty/GCC/Posix/*.h",
+        "portable/ThirdParty/GCC/Posix/utils/*.h",
+    ]),
+    copts = ["-w"],
+    includes = [
+        "portable/ThirdParty/GCC/Posix",
+        "portable/ThirdParty/GCC/Posix/utils",
+    ],
+    linkopts = ["-lpthread"],
+    deps = [":headers"],
+)

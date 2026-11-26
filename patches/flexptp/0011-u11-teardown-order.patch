@@ -1,0 +1,243 @@
+From e0a91740c608fae581821a15889f394c4545e921 Mon Sep 17 00:00:00 2001
+From: Damien Dusha <Damien Dusha>
+Date: Thu, 26 Nov 2026 21:50:57 +1000
+Subject: [PATCH] unreg_task_ptp(): stop accepting work first, and stop the
+ task where it holds nothing
+
+unreg_task_ptp() is how an application stops PTP. On FreeRTOS and
+CMSIS-RTOS2 it
+
+  - deleted the message queues before clearing sPTP_operating, and left
+    their handles dangling, while ptp_transmit_timestamp_cb() -- which a MAC
+    driver calls when a frame's transmission completes, so after the stop
+    for a frame queued just before it -- checked nothing and posted into
+    them: a write into freed memory;
+  - vTaskDelete()d / osThreadTerminate()d the PTP task wherever it was. A
+    task deleted while it holds a mutex leaves the mutex held for ever: on a
+    board that is lwIP's core lock inside a transmit, or the application's
+    console lock inside a log line. The next task to take it blocks for
+    good, or -- through priority inheritance -- follows the holder pointer
+    into the freed task.
+
+Now, in order: sPTP_operating is cleared first, so a received message or a
+late TX timestamp is dropped at the door (ptp_transmit_timestamp_cb() now
+checks it, as ptp_receive_enqueue() already did); the heartbeat timer goes;
+the task is sent PTP_CEV_TERMINATE -- the event the Linux binding already
+stops on -- and answers at the end of its loop iteration, where every step
+is complete, then parks, and only then is it deleted, by the caller as
+before (osThreadExit() would not do: ST's ThreadX CMSIS wrapper frees a
+thread's stack and control block in osThreadTerminate() only); then the
+network stack driver is closed; then the queues are deleted and their
+handles set to NULL, and ptp_event_enqueue() refuses once they are gone.
+If the task does not answer within PTP_TASK_STOP_TIMEOUT_MS (2 s, may be
+overridden) it is deleted where it is, as before. A one-shot semaphore
+carries the answer rather than a task notification or thread flag, either
+of which the caller may already use.
+
+Host test: flexPTP's FreeRTOS binding on FreeRTOS's POSIX port, with a heap
+that makes freed memory inaccessible, so a use-after-free faults where it
+happens:
+
+                                          without                   with
+    TX timestamp reported after the stop  SIGSEGV in                dropped
+                                          xQueueGenericSend(), on
+                                          the deleted sTxCbFIFO
+    stop while the PTP task is inside     console mutex still held  released; stop
+    MSG(), the console draining 300 ms    by the deleted task       waits for it
+    later
+    three stop/start cycles               no leak                   no leak (control)
+
+On a NUCLEO-H563ZI, both firmwares:
+
+  - ten stops while the PTP task logs every category it has: each
+    answered in at most 0.20 s, before and after -- the wait for the task
+    costs nothing measurable -- with the console, the stack and PTP intact
+    afterwards;
+  - two stop/start cycles each at rest, during a saturation flood and at
+    20 kpps: stack alive, PTP resynchronised, every time;
+  - the full hardware suite: S8 and all 20 scenarios on FreeRTOS, every
+    check passing; S8 and 18 scenarios on ThreadX, every check passing
+    except a gPTP slave's and a master's recovery after a saturation
+    flood, which fail the same way without this change, from an
+    unrelated defect in how the PTP task's queues are notified.
+
+The two defects themselves need an unlucky instant -- a timestamp landing
+between the queue deletion and a restart, a stop landing inside a log
+line -- which the host test above creates deliberately and the board
+reaches only by chance.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/flexptp/task_ptp.c | 105 +++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 100 insertions(+), 5 deletions(-)
+
+diff --git a/src/flexptp/task_ptp.c b/src/flexptp/task_ptp.c
+index 976ab3c..3400ace 100644
+--- a/src/flexptp/task_ptp.c
++++ b/src/flexptp/task_ptp.c
+@@ -39,7 +39,19 @@ void task_ptp(void); // osless task function
+ 
+ // ---------------------------
+ 
+-static bool sPTP_operating = false; // does the PTP subsystem operate?
++static volatile bool sPTP_operating = false; // does the PTP subsystem operate?
++
++#if defined(FLEXPTP_NON_LINUX_OS)
++#ifndef PTP_TASK_STOP_TIMEOUT_MS
++#define PTP_TASK_STOP_TIMEOUT_MS (2000) ///< How long unreg_task_ptp() waits for the PTP task to stop at a safe point
++#endif
++#ifdef FLEXPTP_FREERTOS
++#include "semphr.h"
++static SemaphoreHandle_t sParked = NULL; ///< given by the PTP task once it has stopped where it holds nothing
++#elif defined(FLEXPTP_CMSIS_OS2)
++static osSemaphoreId_t sParked = NULL; ///< given by the PTP task once it has stopped where it holds nothing
++#endif
++#endif
+ 
+ // ---------------------------
+ 
+@@ -311,12 +323,14 @@ static void ptp_destroy_message_queues() {
+     vQueueDelete(sEventFIFO);
+     vQueueDelete(sNotificationFIFO);
+     vQueueDelete(sTxCbFIFO);
++    sRxPacketFIFO = sTxPacketFIFO = sEventFIFO = sNotificationFIFO = sTxCbFIFO = NULL; // no dangling handles
+ #elif defined(FLEXPTP_CMSIS_OS2)
+     osMessageQueueDelete(sRxPacketFIFO);
+     osMessageQueueDelete(sTxPacketFIFO);
+     osMessageQueueDelete(sEventFIFO);
+     osMessageQueueDelete(sNotificationFIFO);
+     osMessageQueueDelete(sTxCbFIFO);
++    sRxPacketFIFO = sTxPacketFIFO = sEventFIFO = sNotificationFIFO = sTxCbFIFO = NULL; // no dangling handles
+ #elif defined(FLEXPTP_LINUX)
+     CLOSE_PIPE(sRxPacketFIFO);
+     CLOSE_PIPE(sTxPacketFIFO);
+@@ -414,13 +428,62 @@ bool reg_task_ptp() {
+ }
+ 
+ // unregister PTP task
++#if defined(FLEXPTP_NON_LINUX_OS)
++/**
++ * Have the PTP task stop where it holds nothing, and wait for it to say so.
++ *
++ * Deleting it wherever it happens to be is not safe: a task deleted while it holds a mutex leaves
++ * that mutex held for ever -- lwIP's core lock inside a transmit, an application's console lock
++ * inside a log line -- and the next task to take it blocks for good, or, through priority
++ * inheritance, follows the holder pointer into the freed task. So the task is sent a
++ * PTP_CEV_TERMINATE, answers at the end of its loop iteration, where every step is complete, and
++ * parks. If it does not answer within PTP_TASK_STOP_TIMEOUT_MS it is deleted where it is, as before.
++ */
++static void ptp_park_task(void) {
++#ifdef FLEXPTP_FREERTOS
++    if (xTaskGetCurrentTaskHandle() == sTH) {
++        return;
++    }
++    sParked = xSemaphoreCreateBinary();
++#elif defined(FLEXPTP_CMSIS_OS2)
++    if (osThreadGetId() == sTH) {
++        return;
++    }
++    sParked = osSemaphoreNew(1, 0, NULL);
++#endif
++    if (sParked == NULL) {
++        return;
++    }
++    PtpCoreEvent event = {.code = PTP_CEV_TERMINATE, .w = 0, .dw = 0};
++    if (ptp_event_enqueue(&event)) {
++#ifdef FLEXPTP_FREERTOS
++        xSemaphoreTake(sParked, pdMS_TO_TICKS(PTP_TASK_STOP_TIMEOUT_MS));
++#elif defined(FLEXPTP_CMSIS_OS2)
++        osSemaphoreAcquire(sParked, (osKernelGetTickFreq() * PTP_TASK_STOP_TIMEOUT_MS) / 1000);
++#endif
++    }
++#ifdef FLEXPTP_FREERTOS
++    vSemaphoreDelete(sParked);
++#elif defined(FLEXPTP_CMSIS_OS2)
++    osSemaphoreDelete(sParked);
++#endif
++    sParked = NULL;
++}
++#endif
++
+ void unreg_task_ptp() {
++    // Stop accepting work FIRST. From here on, a received message, or a transmit timestamp that a
++    // MAC driver reports for a frame sent just before the stop, is dropped at the door. This used
++    // to be the last step, after the queues had been deleted -- with their handles left dangling
++    // -- so a late timestamp was posted into freed memory.
++    sPTP_operating = false;
++
+     ptp_remove_heartbeat_tmr(); // remove the heartbeat timer
+-    NsdInitSettings nsdInit = {
+-        -1, -1, {}, {}};
+-    ptp_nsd_init(&nsdInit); // de-initialize the network stack driver
++
++    // stop the task before closing the network stack driver it transmits through
+ #if defined(FLEXPTP_NON_LINUX_OS)
+     if (sTH != NULL) {
++        ptp_park_task();
+ #ifdef FLEXPTP_FREERTOS
+         vTaskDelete(sTH); // delete task
+ #elif defined(FLEXPTP_CMSIS_OS2)
+@@ -435,9 +498,13 @@ void unreg_task_ptp() {
+         pthread_join(sTH, NULL);
+     }
+ #endif
++
++    NsdInitSettings nsdInit = {
++        -1, -1, {}, {}};
++    ptp_nsd_init(&nsdInit); // de-initialize the network stack driver
++
+     ptp_deinit();                 // ptp subsystem de-initialization
+     ptp_destroy_message_queues(); // destroy message queues and buffers
+-    sPTP_operating = false;       // the PTP subsystem is NOT operating anymore
+ }
+ 
+ // ---------------------------
+@@ -446,6 +513,11 @@ bool ptp_event_enqueue(const PtpCoreEvent *event) {
+     ProcThreadNotification notif = PTN_EVENT;
+ 
+     bool ok;
++#if defined(FLEXPTP_NON_LINUX_OS)
++    if (sEventFIFO == NULL) { // stopped: the queues are gone (a CLI `ptp reset` after a stop, say)
++        return false;
++    }
++#endif
+ #ifdef FLEXPTP_FREERTOS
+     // push event and check success with no timeout:
+     // if the queue is full, then drop the event
+@@ -602,6 +674,13 @@ bool ptp_transmit_enqueue(const RawPtpMessage *pMsg) {
+ }
+ 
+ void ptp_transmit_timestamp_cb(uint32_t uid, uint32_t seconds, uint32_t nanoseconds) {
++    // Dropped once PTP is stopping: the queues below are deleted, or about to be. A MAC driver
++    // reports a frame's timestamp whenever its transmission completes -- after the stop, for a
++    // frame queued just before it.
++    if (!sPTP_operating) {
++        return;
++    }
++
+     // create timestamp association object
+     TxTs ts = {.uid = uid, .seconds = seconds, .nanoseconds = nanoseconds};
+ 
+@@ -859,6 +938,22 @@ fifo_pop(&sNotificationFIFO, &notification);
+             if (event.code == PTP_CEV_TERMINATE) {
+ #ifdef FLEXPTP_LINUX
+                 run = false;
++#elif defined(FLEXPTP_FREERTOS)
++                // every step of this iteration is complete, so nothing is held: say so, and park
++                // until unreg_task_ptp() deletes this task (see ptp_park_task())
++                if (sParked != NULL) {
++                    xSemaphoreGive(sParked);
++                }
++                for (;;) {
++                    vTaskSuspend(NULL);
++                }
++#elif defined(FLEXPTP_CMSIS_OS2)
++                if (sParked != NULL) {
++                    osSemaphoreRelease(sParked);
++                }
++                for (;;) {
++                    osThreadSuspend(osThreadGetId());
++                }
+ #endif
+             }
+         }

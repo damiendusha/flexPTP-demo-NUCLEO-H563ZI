@@ -41,12 +41,16 @@ die() { echo "error: $*" >&2; exit 1; }
 # --- The fixes, in the order they are worth a maintainer's attention ------------------------
 #
 # Ordered by consequence, not by number: a maintainer who reads only the first two should have
-# read the two that break a port outright. u1 and u6 were filed in the first batch (#20, #26)
-# and are listed so a re-run reports them as already filed; u6 is a comment and goes last on
-# purpose. U2-U5 and U7 are merged and their branches deleted.
+# read the two that break synchronisation outright -- any foreign Sync, or one malformed
+# datagram, stops it. All are filed -- u13, u12 and u11 as #37-#39, u9, u10 and u8 as #34-#36, u1
+# and u6 from the first batch as #20 and #26 -- and listed so a re-run reports them as such. u6
+# is a comment and goes last on purpose. U2-U5 and U7 are merged and their branches deleted.
 #
 #   tag | branch | one-line PR title
 FIXES=(
+  "u13|fix/u13-slave-parent-only|slave: take Sync, Follow_Up and Delay_Resp from the selected master's port only"
+  "u12|fix/u12-rx-length-version|receive: drop messages shorter than their header or messageLength, or not PTPv2"
+  "u11|fix/u11-teardown-order|unreg_task_ptp(): stop accepting work first, and stop the task where it holds nothing"
   "u9|fix/u9-teardown-unlock|lwIP NSD: make the shutdown branch reachable, and release the core lock in it"
   "u10|fix/u10-chained-pbufs|lwIP NSD: pass a chained pbuf's whole message, not its first segment"
   "u8|fix/u8-delay-resp-interval|master: Delay_Resp carries logMinDelayReqInterval, not the Delay_Req's 0x7F"

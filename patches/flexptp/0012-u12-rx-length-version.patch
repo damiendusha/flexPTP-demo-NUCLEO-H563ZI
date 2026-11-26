@@ -1,0 +1,162 @@
+From 290ddade2f5b98194559f6ce8a95209c93fa9967 Mon Sep 17 00:00:00 2001
+From: Damien Dusha <Damien Dusha>
+Date: Thu, 26 Nov 2026 21:36:16 +1000
+Subject: [PATCH] receive: drop messages shorter than their header or
+ messageLength, or not PTPv2
+
+Nothing compared what was received with what the header claims.
+ptp_process_packet() parses a 34-byte header, and each handler its fixed
+body, out of the receive slot whatever arrived -- so a short datagram was
+parsed partly from the bytes the previous message left in that slot, and
+versionPTP was never looked at. On a slave that means:
+
+  - a 1-byte datagram to 319 is a "Sync" with the previous message's
+    identity and sequenceId, and its twoStepFlag: it parks the slave on a
+    stale sequenceId, or -- one-step -- hands the servo an originTimestamp
+    of zero, which steps the clock by decades;
+  - a Follow_Up cut to its header completes a cycle with the previous
+    message's timestamp;
+  - a PTPv1 message is taken as PTPv2.
+
+ptp_receive_enqueue() now drops, before it takes a buffer, anything shorter
+than a common header, with a versionPTP other than 2 (the low nibble: the
+high one is minorVersionPTP, which 1588-2019 devices such as ptp4l 4.x set
+to 1), with a messageLength longer than what arrived, or shorter than its
+message type's fixed part. A datagram LONGER than messageLength is accepted:
+that is padding, which every 802.3 frame under 60 bytes carries.
+
+Host test: flexPTP's real engine, OS-less, slaved to a simulated master;
+each malformed message injected both before a Sync and between it and its
+Follow_Up, judged by cycles completed, Syncs accepted and clock steps:
+
+                                              without                with
+    1-byte datagram                           20 Syncs accepted for  10, and 0
+                                              the master's 10, and
+                                              10 clock steps
+    Sync cut to 33 bytes                      0/10 cycles            10/10
+    Follow_Up cut to its 34-byte header       10 clock steps         0
+    versionPTP 1                              0/10 cycles            10/10
+    messageLength 34 on a Sync                0/10 cycles            10/10
+    versionPTP 0x02 and 0x12, padded Sync     10/10                  10/10  (control)
+
+Measured on a NUCLEO-H563ZI, both firmwares, slaved to ptp4l, 10 packets/s
+of each class to 224.0.1.129 for 30 s, Sync cycles against a quiet
+30-cycle reference:
+
+                                  without        with
+                                  lwIP  NetX     lwIP  NetX
+    1-byte datagram to 319         0/30  0/30     30/30 30/30
+    Sync cut to 33 bytes           0/30  0/30     30/30 30/30
+    versionPTP 1                   0/30  0/30     31/30 30/30
+
+Every other class (reserved messageType, domain 1, a worse foreign
+Announce, random bytes) was ignored without this change too; with it, all
+nine are. The board stayed with the host as master throughout, and
+resynchronised afterwards.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/flexptp/msg_utils.c | 36 ++++++++++++++++++++++++++++++++++++
+ src/flexptp/msg_utils.h | 14 ++++++++++++++
+ src/flexptp/task_ptp.c  |  9 +++++++++
+ 3 files changed, 59 insertions(+)
+
+diff --git a/src/flexptp/msg_utils.c b/src/flexptp/msg_utils.c
+index ad2973d..3419725 100644
+--- a/src/flexptp/msg_utils.c
++++ b/src/flexptp/msg_utils.c
+@@ -52,6 +52,42 @@ uint16_t ptp_write_flags(const PtpFlags *pFlags) {
+ }
+ 
+ // extract fields from a PTP header
++// fixed size of each message type, without TLVs; 0 where flexPTP does not parse the body
++static uint16_t ptp_msg_min_length(uint8_t messageType) {
++    switch (messageType) {
++    case PTP_MT_Sync:
++        return PTP_PCKT_SIZE_SYNC;
++    case PTP_MT_Delay_Req:
++        return PTP_PCKT_SIZE_DELAY_REQ;
++    case PTP_MT_PDelay_Req:
++        return PTP_PCKT_SIZE_PDELAY_REQ;
++    case PTP_MT_PDelay_Resp:
++        return PTP_PCKT_SIZE_PDELAY_RESP;
++    case PTP_MT_Follow_Up:
++        return PTP_PCKT_SIZE_FOLLOW_UP;
++    case PTP_MT_Delay_Resp:
++        return PTP_PCKT_SIZE_DELAY_RESP;
++    case PTP_MT_PDelay_Resp_Follow_Up:
++        return PTP_PCKT_SIZE_PDELAY_RESP_FOLLOW_UP;
++    case PTP_MT_Announce:
++        return PTP_PCKT_SIZE_ANNOUNCE;
++    default:
++        return PTP_HEADER_LENGTH;
++    }
++}
++
++bool ptp_msg_plausible(const void *pPayload, uint32_t len) {
++    const uint8_t *p = (const uint8_t *)pPayload;
++    if (len < PTP_HEADER_LENGTH) {
++        return false;
++    }
++    if ((p[1] & 0x0F) != 2) { // versionPTP
++        return false;
++    }
++    uint32_t messageLength = ((uint32_t)p[2] << 8) | p[3];
++    return (messageLength <= len) && (messageLength >= ptp_msg_min_length(p[0] & 0x0F));
++}
++
+ void ptp_extract_header(PtpHeader *pHeader, const void *pPayload) {
+     // cast header to byte accessible form
+     uint8_t *p = (uint8_t *)pPayload;
+diff --git a/src/flexptp/msg_utils.h b/src/flexptp/msg_utils.h
+index 322ff49..2ec1527 100644
+--- a/src/flexptp/msg_utils.h
++++ b/src/flexptp/msg_utils.h
+@@ -44,6 +44,20 @@ uint16_t ptp_write_flags(const PtpFlags *pFlags);
+ */
+ void ptp_extract_header(PtpHeader *pHeader, const void *pPayload);
+ 
++/**
++ * Can these bytes be a PTPv2 message flexPTP may parse?
++ *
++ * At least a common header; versionPTP 2 (the low nibble -- the high one is minorVersionPTP,
++ * which 1588-2019 devices set to 1); a messageLength no longer than what arrived, and no
++ * shorter than its message type's fixed part. A datagram LONGER than messageLength is accepted:
++ * that is padding, which every 802.3 frame shorter than 60 bytes carries.
++ *
++ * @param pPayload received bytes, starting at the PTP common header
++ * @param len number of bytes received
++ * @return true if the message may be parsed
++ */
++bool ptp_msg_plausible(const void *pPayload, uint32_t len);
++
+ /**
+  * Render PtpHeader object to binary (raw) form.
+  * 
+diff --git a/src/flexptp/task_ptp.c b/src/flexptp/task_ptp.c
+index 3400ace..3c58ede 100644
+--- a/src/flexptp/task_ptp.c
++++ b/src/flexptp/task_ptp.c
+@@ -5,6 +5,7 @@
+ #include "config.h"
+ #include "event.h"
+ #include "msg_buf.h"
++#include "msg_utils.h"
+ #include "network_stack_driver.h"
+ #include "profiles.h"
+ #include "ptp_core.h"
+@@ -549,6 +550,14 @@ void ptp_receive_enqueue(const void *pPayload, uint32_t len, uint32_t ts_sec, ui
+         return;
+     }
+ 
++    // Drop what cannot be a PTPv2 message before it takes a buffer. Everything downstream parses
++    // a whole common header, and each handler its fixed body, out of the receive slot whatever
++    // was received -- so a short datagram used to be parsed partly from the bytes the previous
++    // message left there, and a PTPv1 message as a PTPv2 one.
++    if (!ptp_msg_plausible(pPayload, len)) {
++        return;
++    }
++
+     // enqueue message
+     RawPtpMessage *pMsgAlloc = msgb_alloc(&sRawRxMsgBuf, RPMT_RANDOM, FLEXPTP_MS_TO_TICKS(RX_TTL_MS));
+     if (pMsgAlloc) {

@@ -15,4 +15,7 @@ exports_files([
     "0008-u8-delay-resp-interval.patch",
     "0009-u9-teardown-unlock.patch",
     "0010-u10-chained-pbufs.patch",
+    "0011-u11-teardown-order.patch",
+    "0012-u12-rx-length-version.patch",
+    "0013-u13-slave-parent-only.patch",
 ])

@@ -67,13 +67,26 @@ def _vendored_impl(_mctx):
     # reset), #24 (sticky P2P 802.3 destinations) and #25 (orphan [LOG-LCKD] prefix) -- so
     # their patches are gone. #21 and #25 landed with the comments trimmed; the code is ours.
     #
-    # Two are still open and carried here until they merge:
+    # The rest are carried here, applied in this order (a stack: each is generated against the
+    # tree the ones before it leave), until their pull requests merge:
     #
     #   0001  #20  the Announce body is the only place a clock identity is byte-swapped on
     #              receive. Not cosmetic: it inverts the BMCA tie-break between two masters,
     #              independently reproduced by another user in issue #32, and folded into
     #              their PR #33.
     #   0006  #26  comment only: the PDelay pcbs are receive-only.
+    #   0008  #36  a Delay_Resp carries logMinDelayReqInterval, not the Delay_Req's 0x7F
+    #              (issue #30).
+    #   0009  #34  the lwIP NSD's shutdown branch is reachable, and releases the core lock.
+    #   0010  #35  a chained pbuf reaches flexPTP whole.
+    #   0011  #39  unreg_task_ptp() stops the PTP task where it holds nothing, and drops
+    #              callbacks once stopping, instead of posting them into deleted queues.
+    #   0012  #38  a received message shorter than its header or its messageLength, or not
+    #              PTPv2, is dropped instead of parsed partly from stale bytes.
+    #   0013  #37  a slave takes Sync, Follow_Up and Delay_Resp from its selected master's
+    #              port only, and a new Sync restarts a cycle whose Follow_Up was lost.
+    #
+    # //patches/flexptp/test runs flexPTP's real engine on the host against 0011-0013.
     #
     # Delete each as its pull request merges. //patches/flexptp/README.md has the commands to
     # check that a fix really is in a new revision before deleting its patch.
@@ -88,6 +101,9 @@ def _vendored_impl(_mctx):
             "//patches/flexptp:0008-u8-delay-resp-interval.patch",
             "//patches/flexptp:0009-u9-teardown-unlock.patch",
             "//patches/flexptp:0010-u10-chained-pbufs.patch",
+            "//patches/flexptp:0011-u11-teardown-order.patch",
+            "//patches/flexptp:0012-u12-rx-length-version.patch",
+            "//patches/flexptp:0013-u13-slave-parent-only.patch",
         ],
         remote = "https://github.com/epagris/flexPTP.git",
     )

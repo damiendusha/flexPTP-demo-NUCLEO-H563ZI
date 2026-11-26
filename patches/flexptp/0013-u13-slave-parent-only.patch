@@ -1,0 +1,160 @@
+From d4a300944b9f7aa40b22598eb7ac985d4e25ac01 Mon Sep 17 00:00:00 2001
+From: Damien Dusha <Damien Dusha>
+Date: Thu, 26 Nov 2026 21:37:17 +1000
+Subject: [PATCH] slave: take Sync, Follow_Up and Delay_Resp from the selected
+ master's port only
+
+ptp_slave_process_message() never compared a message's sender with the
+master the BMCA had selected. One foreign two-step Sync between two of the
+master's cycles parks the slave on a sequenceId that never comes; the
+master's own Sync is then ignored (the slave is waiting for a Follow_Up),
+and its Follow_Up does not match. So a second, misconfigured master on the
+domain -- or anything that sends Sync -- stops synchronisation outright
+while the BMCA still reports the right master. A foreign Follow_Up with the
+master's sequenceId completes the master's cycle with the wrong origin
+time; a foreign Delay_Resp naming this clock corrupts the path delay.
+
+The BMCA now records the parent port -- the sourcePortIdentity in the
+header of the Announce that won -- and the slave takes Sync, Follow_Up and
+Delay_Resp from that port only. That is the parent port, not the
+grandmaster: behind a boundary clock or a gPTP bridge, Sync comes from the
+neighbouring port, which is also where the winning Announce came from.
+Peer-delay messages are between link neighbours and are not filtered.
+
+Separately, a Sync from the master that arrives while its previous
+Follow_Up is still awaited now starts a new cycle. That Follow_Up was lost,
+and waiting for it threw away the next cycle as well.
+
+Host test: flexPTP's real engine, OS-less, slaved to a simulated master,
+each interference injected both before a Sync and between it and its
+Follow_Up (the two placements break different things), judged by cycles
+completed, by Syncs accepted (exactly the master's) and by clock steps:
+
+                                              without          with
+    foreign two-step Sync                     0/10 cycles      10/10
+    foreign Follow_Up, master's seq, -1 s     11 clock steps   0
+    Sync from the master's port 2             0/10 cycles      10/10
+    Sync(n), Sync(n+1), Follow_Up(n+1)        0/10 cycles      10/10
+    foreign Delay_Resp before the master's    1 clock step     0
+
+Measured on a NUCLEO-H563ZI, both firmwares (FreeRTOS + lwIP, ThreadX +
+NetX Duo), slaved to ptp4l, 10 packets/s of each class to 224.0.1.129 for
+30 s, Sync cycles against a quiet 30-cycle reference:
+
+                                  without        with
+                                  lwIP  NetX     lwIP  NetX
+    foreign two-step Sync          0/30  0/30     30/30 30/30
+    foreign Sync padded to 1400 B  0/30  0/30     30/30 30/30
+
+Every other class (reserved messageType, domain 1, a worse foreign
+Announce, random bytes) was ignored without this change too; with it, all
+nine are. The board stayed with the host as master throughout, and
+resynchronised afterwards.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/flexptp/bmca.c      |  9 ++++++++-
+ src/flexptp/bmca.h      | 11 +++++++++++
+ src/flexptp/ptp_types.h |  2 ++
+ src/flexptp/slave.c     | 16 ++++++++++++++++
+ 4 files changed, 37 insertions(+), 1 deletion(-)
+
+diff --git a/src/flexptp/bmca.c b/src/flexptp/bmca.c
+index c5373c7..64d0118 100644
+--- a/src/flexptp/bmca.c
++++ b/src/flexptp/bmca.c
+@@ -172,10 +172,13 @@ void ptp_handle_announce_msg(PtpAnnounceBody *pAnn, PtpHeader *pHeader) {
+         break;
+     }
+ 
+-    // if master has changed, then calculate Announce period
++    // if master has changed, then calculate Announce period, and remember which port it speaks
++    // from: a slave takes Sync, Follow_Up and Delay_Resp from that port only
+     if (masterChanged) {
+         S.bmca.masterTOCntr = 0;
+         s->masterAnnPer_ms = ptp_logi2ms(pHeader->logMessagePeriod);
++        s->parentClockIdentity = pHeader->clockIdentity;
++        s->parentPortNumber = pHeader->sourcePortID;
+     }
+ 
+     // clear Master timeout if relevant Announce has arrived
+@@ -190,6 +193,10 @@ void ptp_handle_announce_msg(PtpAnnounceBody *pAnn, PtpHeader *pHeader) {
+     ptp_bmca_handle_state_change(state);
+ }
+ 
++bool ptp_bmca_is_parent(const PtpHeader *pHeader) {
++    return (pHeader->clockIdentity == S.bmca.parentClockIdentity) && (pHeader->sourcePortID == S.bmca.parentPortNumber);
++}
++
+ void ptp_bmca_init() {
+     // initialize device capabilities
+     PtpMasterProperties *caps = &S.capabilities;
+diff --git a/src/flexptp/bmca.h b/src/flexptp/bmca.h
+index 27009d2..9ebc55c 100644
+--- a/src/flexptp/bmca.h
++++ b/src/flexptp/bmca.h
+@@ -33,6 +33,17 @@ int ptp_select_better_master(PtpMasterProperties * pMP1, PtpMasterProperties * p
+  */
+ void ptp_handle_announce_msg(PtpAnnounceBody *pAnn, PtpHeader *pHeader);
+ 
++/**
++ * Is this message from the selected master's port -- the port whose Announce won the BMCA?
++ *
++ * That is the parent port, not the grandmaster: behind a boundary clock or a gPTP bridge, Sync
++ * comes from the neighbouring port, which is also where the winning Announce came from.
++ *
++ * @param pHeader header of the received message
++ * @return true if the message's sourcePortIdentity is the parent port's
++ */
++bool ptp_bmca_is_parent(const PtpHeader *pHeader);
++
+ /**
+  * Initialize SBMC module.
+  */
+diff --git a/src/flexptp/ptp_types.h b/src/flexptp/ptp_types.h
+index 248fdb2..4776dfd 100644
+--- a/src/flexptp/ptp_types.h
++++ b/src/flexptp/ptp_types.h
+@@ -329,6 +329,8 @@ typedef struct {
+     uint16_t masterTOCntr;           ///< Current master announce dropout counter
+     uint32_t stateDuration;          ///< Heartbeat cycles since last state transition
+     bool preventMasterSwitchOver;    ///< Set if master switchover is prohibited
++    uint64_t parentClockIdentity;    ///< sourcePortIdentity of the selected master's Announce: clockIdentity
++    uint16_t parentPortNumber;       ///< ... and portNumber. The port a slave takes Sync, Follow_Up and Delay_Resp from
+ } PtpBmcaState;
+ 
+ /**
+diff --git a/src/flexptp/slave.c b/src/flexptp/slave.c
+index 44d6f9e..7db84a9 100644
+--- a/src/flexptp/slave.c
++++ b/src/flexptp/slave.c
+@@ -5,6 +5,7 @@
+ #include <stdlib.h>
+ #include <inttypes.h>
+ 
++#include "bmca.h"
+ #include "common.h"
+ 
+ #include "format_utils.h"
+@@ -326,6 +327,21 @@ void ptp_slave_process_message(RawPtpMessage *pRawMsg, PtpHeader *pHeader) {
+     PtpMessageType mt = pHeader->messageType;
+     PtpDelayMechanism dm = S.profile.delayMechanism;
+ 
++    // Sync, Follow_Up and Delay_Resp count only from the selected master's port. Taken from any
++    // sender, one foreign Sync between two of the master's cycles parked the slave on a
++    // sequenceId that never came, and the master's own Sync was then discarded: a second,
++    // misconfigured master on the domain stopped synchronisation while the BMCA still reported
++    // the right master. Peer-delay messages are between link neighbours and are not filtered.
++    if (((mt == PTP_MT_Sync) || (mt == PTP_MT_Follow_Up) || (mt == PTP_MT_Delay_Resp)) && !ptp_bmca_is_parent(pHeader)) {
++        return;
++    }
++
++    // A Sync from the master while its previous Follow_Up is still awaited starts a new cycle:
++    // that Follow_Up was lost, and waiting for it only throws away this cycle as well.
++    if ((mt == PTP_MT_Sync) && (S.slave.messaging.m2sState == SWaitFollowUp)) {
++        S.slave.messaging.m2sState = SIdle;
++    }
++
+     // process non-Announce messages
+     if (mt == PTP_MT_Sync || mt == PTP_MT_Follow_Up) {
+         switch (S.slave.messaging.m2sState) {

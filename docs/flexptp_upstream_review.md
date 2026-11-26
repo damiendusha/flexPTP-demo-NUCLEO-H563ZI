@@ -591,7 +591,7 @@ transfer's completion.
 
 Found in the code while chasing it, and unrelated to it in the end:
 
-- **U11 candidate — `unreg_task_ptp()` teardown order.** It deletes the message queues before
+- **U11 — `unreg_task_ptp()` teardown order** (fixed by `0011`, see the next section). It deletes the message queues before
   clearing `sPTP_operating`, leaves the handles dangling, and `ptp_transmit_timestamp_cb()` has no
   `sPTP_operating` guard. A hardware TX timestamp for a frame queued before the stop and completed
   after it posts into freed queue memory. It also `vTaskDelete()`s the PTP task from the caller's
@@ -623,10 +623,10 @@ In every case the board stayed with the host as master, never reset, kept its st
 resynchronised once the traffic stopped. Two gaps in flexPTP's receive path, both in the core and
 so in every port:
 
-- **U12 candidate — no length or version check.** `ptp_process_packet()` parses a 34-byte header
+- **U12 — no length or version check** (fixed by `0012`). `ptp_process_packet()` parses a 34-byte header
   from the receive slot whatever was received; a short datagram is parsed partly from the
   previous message's bytes, and `versionPTP` is never compared.
-- **U13 candidate — the slave takes Sync and Follow_Up from anyone.** `ptp_slave_process_message()`
+- **U13 — the slave takes Sync and Follow_Up from anyone** (fixed by `0013`). `ptp_slave_process_message()`
   never compares the sender with the selected master, and a Sync arriving while it waits for a
   Follow_Up is ignored rather than restarting the cycle. So one foreign Sync between two of the
   master's cycles parks the slave on a sequence ID that never comes, and the master's own Sync is
@@ -634,8 +634,77 @@ so in every port:
   while BMCA still reports the right master. Now and then the mixture completes a cycle instead,
   from the wrong messages: one such Sync cycle on ThreadX reported a 417 µs offset to the servo.
 
-None of the three candidates is patched here.
+### U11–U13: fixed, and tested on the host and the board
+
+All three are now patches (`0011`–`0013`) and branches off `fe4b071`, each with a test of flexPTP's
+real engine on the host -- its own sources, patched as the firmware fetches them -- in
+[`//patches/flexptp/test`](../patches/flexptp/test). Each fix's tests fail without it, and only its
+own, whichever of the others is present.
+
+**U13**, slave filters by parent port. The BMCA records the `sourcePortIdentity` from the header
+of the Announce that won -- the parent port, not the grandmaster, so it is right behind a boundary
+clock or a gPTP bridge too -- and the slave takes Sync, Follow_Up and Delay_Resp from that port
+only. A new Sync from it while a Follow_Up is awaited restarts the cycle instead of being dropped.
+
+**U12**, `ptp_receive_enqueue()` drops anything shorter than a common header, not PTPv2 (low
+nibble: ptp4l 4.x sends 2.1), shorter than its own `messageLength`, or shorter than its type's
+fixed part. Longer is padding, and fine.
+
+| Host test (`rx_validation_test`, OS-less engine vs a simulated master) | without | with |
+|---|---|---|
+| 1-byte datagram, before and between each Sync/Follow_Up | 20 Syncs accepted for the master's 10; 10 clock steps | 10; 0 |
+| Sync cut to 33 bytes | 0/10 cycles | 10/10 |
+| Follow_Up cut to its 34-byte header | 10 clock steps | 0 |
+| `versionPTP` 1 | 0/10 | 10/10 |
+| `messageLength` 34 on a Sync | 0/10 | 10/10 |
+| foreign two-step Sync | 0/10 | 10/10 |
+| foreign Follow_Up, master's sequenceId, a second off | 11 clock steps | 0 |
+| Sync from the master's port 2 | 0/10 | 10/10 |
+| Sync(n), Sync(n+1), Follow_Up(n+1) | 0/10 | 10/10 |
+| foreign Delay_Resp before the master's | 1 clock step | 0 |
+| controls: settled slave; 2.0/2.1 version bytes and padded frames; a better master appears | pass | pass |
+
+**U11**, `unreg_task_ptp()` in a safe order: stop accepting work (`sPTP_operating` first, and
+`ptp_transmit_timestamp_cb()` now checks it), remove the heartbeat, ask the task to stop where it
+holds nothing (`PTP_CEV_TERMINATE`, answered at the end of its loop iteration, after which it
+parks) and only then delete it, then close the network stack driver, then delete the queues and
+NULL their handles. The answer comes on a one-shot semaphore; after `PTP_TASK_STOP_TIMEOUT_MS`
+(2 s) the task is deleted where it is, as before. Self-exit was not an option: in ST's ThreadX
+CMSIS wrapper only `osThreadTerminate()` frees a thread's stack.
+
+| Host test (`teardown_test`: FreeRTOS binding, POSIX port, heap that makes freed memory inaccessible) | without | with |
+|---|---|---|
+| TX timestamp reported after the stop | SIGSEGV in `xQueueGenericSend()` on the deleted `sTxCbFIFO` | dropped |
+| stop while the PTP task is inside `MSG()`, the console draining 300 ms later | console mutex still held by the deleted task | released; the stop waits for it |
+| three stop/start cycles (control) | no leak | no leak |
+
+The board results are in the next section. Filed as #37 (U13), #38 (U12) and #39 (U11).
+
+One latent oddity found on the way, not filed: in `FLEXPTP_OSLESS` mode the event FIFO is created
+with an element size of `sizeof(uint32_t)` while its pool and its items are `PtpCoreEvent`s (8
+bytes), so only `code` and `w` survive a push. Nothing reads `dw` today.
 
 The `ptp period` help text advertises `matched`, but the parser compares against `match`;
 `matched` falls through to `atoi()` and silently sets the period to 0. Noted in U8's message, not
 changed.
+
+### U11–U13 on the board
+
+The same images before and after: the final-campaign images, then the same tree plus `0011`–`0013`
+(build IDs `2808cbc5` FreeRTOS, `0850473d` ThreadX; rebuilding after the commit messages were
+finalised gives the same IDs). The scenarios are `tools/hil/scenario.py`'s, now permanent.
+
+| | without (final images) | with `0011`–`0013` |
+|---|---|---|
+| `fuzz`, both firmwares | 1-byte, cut-to-33, `versionPTP` 1, padded-foreign and foreign Sync: **0/30** cycles each | all nine classes **30/30**, host stays master, resync < 1 µs |
+| `stopstart_busy` (ten stops while the PTP task logs everything) | pass, slowest stop 0.20 s | pass, slowest stop 0.20 s -- the wait for the task costs nothing measurable |
+| S8, FreeRTOS | -- | 13 passed, 1 not applicable (`threads`) |
+| S8, ThreadX | -- | 14/14 |
+| all 20 scenarios, FreeRTOS | -- | **111 checks passed, 0 failed** (58 min) |
+| all 18 scenarios, ThreadX | -- | 98 passed, **5 failed**: `gptp_flood` (3) and `master_flood` (2) |
+
+The two ThreadX failures are not U11–U13's. They fail the same way on the final images without
+them: a second round of the baseline campaign showed the same pair, five of five attempts
+reproduce it with them, and every attempt without. After a saturation flood in gPTP, the board
+stays its own master and the host never serves it again; after one with the board as an E2E
+master, ptp4l sees its Announces but never reports an offset. The next section has the cause.
