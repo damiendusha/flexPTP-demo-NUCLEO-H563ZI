@@ -6,10 +6,11 @@ applied by the Bazel fetch; see [`patches/flexptp/README.md`](../../patches/flex
 
 ## The flexPTP fixes
 
-Thirteen, in three batches. U1–U7 are branches off `494e644` (`RC1.0-17`), filed on 2026-09-10.
-U8–U10 and U11–U13 are branches off the current pin `fe4b071` (`RC1.0-26`); U8–U10 were filed on
-2026-11-26, U11–U13 on 2026-11-27, after the tests below. Each is one commit, independent of the others, so they
-can be reviewed, merged or rejected in any combination. Full analysis and evidence in
+Fourteen, in four batches. U1–U7 are branches off `494e644` (`RC1.0-17`), filed on 2026-09-10.
+U8–U14 are branches off the current pin `fe4b071` (`RC1.0-26`); U8–U10 were filed on 2026-11-26,
+U11–U13 on 2026-11-27, after the tests below. U14 was found while testing them and is not filed
+yet. Each is one commit, independent of the others, so they can be reviewed, merged or rejected
+in any combination. Full analysis and evidence in
 [`docs/flexptp_upstream_review.md`](../../docs/flexptp_upstream_review.md).
 
 | | Branch | PR | Status (2026-11-27) | What it fixes |
@@ -27,17 +28,19 @@ can be reviewed, merged or rejected in any combination. Full analysis and eviden
 | U11 | `fix/u11-teardown-order` | [#39](https://github.com/epagris/flexPTP/pull/39) | **open** | `unreg_task_ptp()` deletes the queues before it stops accepting work, so a late TX timestamp is posted into freed memory; and deletes the PTP task wherever it is, so a lock it holds stays held |
 | U12 | `fix/u12-rx-length-version` | [#38](https://github.com/epagris/flexPTP/pull/38) | **open** | A received message is parsed whatever its length and version: a 1-byte datagram is a "Sync" built from the previous message's bytes |
 | U13 | `fix/u13-slave-parent-only` | [#37](https://github.com/epagris/flexPTP/pull/37) | **open** | The slave takes Sync, Follow_Up and Delay_Resp from any sender: one foreign Sync per cycle stops synchronisation |
+| U14 | `fix/u14-notification-fifo` | pending | ready | The notification FIFO is shorter than the four FIFOs it notifies for: a burst strands items without notifications, and the PTP task then takes every later item late, a received one past its TTL -- for good. A ThreadX board stopped answering Pdelay_Req after a flood |
 
 Every one is verified on a NUCLEO-H563ZI, most with a before/after measurement rather than an
 argument. U7 was found while testing U4 — and is why U4's negative case was untestable, because
 the only way to reach 802.3 without the gPTP preset is the transport switch that U7 repairs.
 
 Five of the first seven are merged in `RC1.0-26` (`fe4b071`); #20 and #26 are open and
-mergeable. Those two and U8–U13 are carried as `//patches/flexptp` until they land.
+mergeable. Those two and U8–U14 are carried as `//patches/flexptp` until they land.
 
-U11–U13 have host tests that run flexPTP's real engine: `//patches/flexptp/test`, described in
+U11–U14 have host tests that run flexPTP's real engine: `//patches/flexptp/test`, described in
 [`patches/flexptp/README.md`](../../patches/flexptp/README.md#host-tests). Each fix's tests fail
-without it and pass with it; U12 and U13 also have the HIL `fuzz` scenario, and U11 `stopstart_busy`.
+without it and pass with it; U12 and U13 also have the HIL `fuzz` scenario, U11 `stopstart_busy`,
+and U14 `gptp_flood` and `master_flood`, which with `--elf` also read flexPTP's queues over SWD.
 
 U8 came from issue #30, which upstream's `9eefd95` did not fix (it changes the Delay_Req, not the
 Delay_Resp). U9 and U10 came from an August branch of this repository that was never merged; it

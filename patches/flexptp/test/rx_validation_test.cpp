@@ -180,6 +180,7 @@ TEST_F(Engine, AcceptsVersion2Point0AndPaddedFrames) {
         done += cycles() - c0;
     }
     EXPECT_EQ(done, 5u);
+    EXPECT_EQ(syncs() - syncs0, 5u) << "a 2.0 or padded Sync was not accepted";
 }
 
 TEST_F(Engine, FollowsABetterMasterWhenOneAppears) {

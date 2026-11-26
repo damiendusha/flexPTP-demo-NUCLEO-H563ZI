@@ -85,8 +85,11 @@ def _vendored_impl(_mctx):
     #              PTPv2, is dropped instead of parsed partly from stale bytes.
     #   0013  #37  a slave takes Sync, Follow_Up and Delay_Resp from its selected master's
     #              port only, and a new Sync restarts a cycle whose Follow_Up was lost.
+    #   0014       the notification FIFO is as long as the four FIFOs it notifies for, so a
+    #              burst cannot strand an item without its notification -- after which the
+    #              task took every later item late, a received one past its TTL, for good.
     #
-    # //patches/flexptp/test runs flexPTP's real engine on the host against 0011-0013.
+    # //patches/flexptp/test runs flexPTP's real engine on the host against 0011-0014.
     #
     # Delete each as its pull request merges. //patches/flexptp/README.md has the commands to
     # check that a fix really is in a new revision before deleting its patch.
@@ -104,6 +107,7 @@ def _vendored_impl(_mctx):
             "//patches/flexptp:0011-u11-teardown-order.patch",
             "//patches/flexptp:0012-u12-rx-length-version.patch",
             "//patches/flexptp:0013-u13-slave-parent-only.patch",
+            "//patches/flexptp:0014-u14-notification-fifo-length.patch",
         ],
         remote = "https://github.com/epagris/flexPTP.git",
     )

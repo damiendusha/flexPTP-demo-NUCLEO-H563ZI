@@ -708,3 +708,63 @@ them: a second round of the baseline campaign showed the same pair, five of five
 reproduce it with them, and every attempt without. After a saturation flood in gPTP, the board
 stays its own master and the host never serves it again; after one with the board as an E2E
 master, ptp4l sees its Announces but never reports an offset. The next section has the cause.
+
+### U14: a burst strands items without their notifications, and the PTP task never catches up
+
+Read over SWD on the stuck ThreadX board (`final-threadx`, so without `0011`–`0013` too), three
+times a few seconds apart:
+
+| Queue | Level / capacity |
+|---|---|
+| `sNotificationFIFO` | **0/16, the PTP thread suspended on it** |
+| `sRxPacketFIFO` | **12/16** -- uids 2120–2131, of which only 2128–2131 still had a live slot in the receive buffer |
+| `sEventFIFO` | 3/16 |
+| `sTxPacketFIFO`, `sTxCbFIFO` | 0 |
+
+Every producer in `task_ptp.c` pushes its item onto its own FIFO and then a notification onto
+`sNotificationFIFO`, and the task takes a notification, then one item. The notification FIFO held
+16 entries, the four item FIFOs 58 between them. During the flood it filled while the receive and
+event FIFOs still had room: fifteen items went in without notifications, and no counter says so.
+The task then takes every received message twelve notifications late. A gPTP link without a Sync
+stream carries two or three PTP frames a second, so each is taken about five seconds after it
+arrived, after `RX_TTL_MS` (2 s) has aged its slot out: `msgb_get_by_uid()` returns NULL and the
+frame is skipped. The board answers no Pdelay_Req; ptp4l, with no peer delay to it, stops sending
+it Announce and Sync; the board becomes its own master and stays so. Still out of step, it then
+answers no Delay_Req as an E2E master either -- which is all `master_flood`'s failures were: it ran
+after `gptp_flood` and inherited its queues. A `ptp reset` or a profile change does not help --
+neither touches the queues -- which is why the trials after the first one in a run started out
+stuck, and why the scenarios after a `stopstart` (which recreates them) recovered.
+
+Run on its own from a fresh boot, `master_flood` passes its ptp4l checks without the fix, but the
+flood strands something else: **15 heartbeats** in `sEventFIFO` (15 of 16), twice out of two. The
+task then handles every heartbeat 15 late, and an event arriving behind them waits for
+notifications that come one per heartbeat -- and `unreg_task_ptp()` removes the heartbeat timer
+before it sends U11's stop request. So `flexptp stop` on that board took **2.00 s**, U11's timeout,
+after which the task is deleted where it is; on the same board after a restart, 0.20 s.
+
+It is in every binding, not just CMSIS-RTOS2's: FreeRTOS and OS-less use the same push-then-notify
+pairs. The FreeRTOS + lwIP board did not get there under the same floods (queues in step after
+both, without the fix). With `--elf`, the flood scenarios now read the queues over SWD
+(`queues_in_step()`), and `swd.py ptpq` reads them by hand.
+
+The fix (`0014`, branch `fix/u14-notification-fifo`) makes the notification FIFO as long as the
+four together, so a notification push cannot fail once its item push has succeeded: 42 more
+entries, 168 bytes. The test, `notification_test`, starves the OS-less task while heartbeats and a
+peer's Pdelay_Reqs arrive, then has the peer send one a second: without the fix the first two are
+answered with a stale request's sequenceId and the rest not at all; with it, all ten at once.
+
+On the board (ThreadX, `u13` images without the fix, `u14` with it; build IDs `0850473d` and
+`2798aa1b`):
+
+| | without `0014` | with |
+|---|---|---|
+| gPTP slave, the host its master again 20 s after a 120 s saturation flood | **0/5** | 5/5 |
+| queues after `gptp_flood` (SWD) | 13 received and 2 heartbeats stranded, task idle | in step |
+| queues after `master_flood` alone (SWD) | 15 heartbeats stranded, twice | in step |
+| `flexptp stop` after `master_flood` | 2.00 s (the timeout) | 0.20 s |
+| S8 | -- | 14/14 |
+| all 18 scenarios | 5 checks fail (`gptp_flood`, `master_flood`) | **105/105** |
+
+FreeRTOS with `0014`: S8 13 passed (1 not applicable), all 20 scenarios **113/113**. Free heap 40 B
+lower on FreeRTOS, 132 B on ThreadX. The board was left on the ThreadX image with all nine
+patches.

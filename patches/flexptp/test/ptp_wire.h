@@ -22,6 +22,7 @@ struct Port {
 };
 
 struct Header {
+    uint8_t transport_specific = 0;   // 1 for gPTP (802.1AS)
     uint8_t type = kSync;
     uint8_t version = 0x12;     // ptp4l 4.x sends 2.1: minorVersionPTP 1, versionPTP 2
     uint16_t length = 44;       // messageLength
@@ -38,7 +39,7 @@ inline void put32(Bytes &b, uint32_t v) { put16(b, v >> 16); put16(b, v & 0xFFFF
 
 inline Bytes header(const Header &h) {
     Bytes b;
-    b.push_back(h.type & 0x0F);                       // transportSpecific 0 | messageType
+    b.push_back(static_cast<uint8_t>((h.transport_specific << 4) | (h.type & 0x0F)));
     b.push_back(h.version);
     put16(b, h.length);
     b.push_back(h.domain);
@@ -87,6 +88,17 @@ inline Bytes delay_resp(const Port &from, uint16_t seq, int64_t receive_ns, cons
     timestamp(b, receive_ns);
     b.insert(b.end(), requester.id.begin(), requester.id.end());
     put16(b, requester.number);
+    return b;
+}
+
+inline Bytes pdelay_req(const Port &from, uint16_t seq, uint8_t transport_specific = 0) {
+    Header h;
+    h.transport_specific = transport_specific;
+    h.type = kPDelayReq; h.length = 54; h.source = from; h.seq = seq; h.two_step = false;
+    h.control = 5;
+    Bytes b = header(h);
+    timestamp(b, 0);                                  // originTimestamp
+    for (int i = 0; i < 10; i++) b.push_back(0);      // reserved
     return b;
 }
 

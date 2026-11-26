@@ -247,7 +247,7 @@
     },
     "//bazel:repositories.bzl%vendored": {
       "general": {
-        "bzlTransitiveDigest": "ssxk6HLn6n8Fa3RWWLVpSOmimlfxtoyQrLTpT7H5OeQ=",
+        "bzlTransitiveDigest": "12ZX+u1Vwa0NJZjgSWv08WCkp6bFjptI2itfx4yuUck=",
         "usagesDigest": "TXFRr/ekOJ4WkENAUY1PQ7JCVxHUmRqoFm+HcCVY/SY=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"
@@ -301,7 +301,8 @@
                 "@@//patches/flexptp:0010-u10-chained-pbufs.patch",
                 "@@//patches/flexptp:0011-u11-teardown-order.patch",
                 "@@//patches/flexptp:0012-u12-rx-length-version.patch",
-                "@@//patches/flexptp:0013-u13-slave-parent-only.patch"
+                "@@//patches/flexptp:0013-u13-slave-parent-only.patch",
+                "@@//patches/flexptp:0014-u14-notification-fifo-length.patch"
               ],
               "remote": "https://github.com/epagris/flexPTP.git"
             }

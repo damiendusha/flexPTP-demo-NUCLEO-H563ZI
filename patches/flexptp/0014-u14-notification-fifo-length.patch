@@ -1,0 +1,102 @@
+From 7ce280be6c558ca0bbc85ca64f577e69321b8bdf Mon Sep 17 00:00:00 2001
+From: Damien Dusha <Damien Dusha>
+Date: Fri, 27 Nov 2026 01:18:37 +1000
+Subject: [PATCH] task_ptp: make the notification FIFO as long as the four
+ FIFOs it notifies for
+
+Every producer -- ptp_receive_enqueue(), ptp_transmit_enqueue(),
+ptp_transmit_timestamp_cb(), ptp_event_enqueue() -- pushes its item onto
+its own FIFO and then a notification onto sNotificationFIFO; the PTP task
+takes a notification, then one item. The notification FIFO held 16
+entries, the four item FIFOs 58 between them.
+
+So a burst that leaves the task behind can fill the notification FIFO
+while an item FIFO still has room. The item goes in; its notification does
+not, and nothing counts or reports that. From then on the task takes every
+later item from that FIFO one notification late, for good: nothing catches
+it up. A received message taken late is still processed while its slot is
+inside RX_TTL_MS; once traffic is slow enough that the lag is longer, the
+slot has aged out by the time its turn comes, msgb_get_by_uid() returns
+NULL, and the message is skipped -- every message, silently. Stranded
+events are taken late in the same way, and while the event FIFO is full
+of them, a new event is dropped.
+
+Seen on a NUCLEO-H563ZI (ThreadX + NetX Duo, the CMSIS-RTOS2 binding),
+after a 120 s saturation flood, the queues read over SWD:
+
+  - as a gPTP slave of ptp4l: the PTP thread idle on an empty
+    notification FIFO, with 12-13 received messages in sRxPacketFIFO and
+    2-3 heartbeats in sEventFIFO. The link was carrying two or three PTP
+    frames a second, so each was taken about five seconds late, past its
+    2 s TTL. The board answered no Pdelay_Req; ptp4l, with no peer delay
+    to it, stopped sending it Announce and Sync; the board became its own
+    master and stayed so. Five times out of five. Still out of step, it
+    then answered no Delay_Req as an E2E master either, and a ptp4l slave
+    never reported an offset;
+  - as an E2E master: 15 heartbeats in sEventFIFO (15 of 16), nothing
+    else. ptp4l stayed served, but every heartbeat was now handled 15
+    late, and a stop request waited behind them: unreg_task_ptp() ran
+    into its timeout instead of the task's answer.
+
+None of these recovers by itself, nor on a profile change or `ptp reset`
+-- neither touches the queues -- only unreg_task_ptp() and reg_task_ptp(),
+which recreate them.
+
+The notification FIFO is now as long as the four together -- the most
+items they can hold -- so a notification push cannot fail once its item
+push has succeeded. That is 42 more entries; on the board, 40 B less free
+heap with FreeRTOS, 132 B with ThreadX.
+
+Host test: flexPTP's real engine, OS-less, gPTP profile, a link peer
+sending Pdelay_Req. The task is starved while half a second of heartbeats
+and eight of the peer's frames arrive, then runs again, and the peer goes
+on sending one Pdelay_Req a second:
+
+                                                without        with
+    Pdelay_Req answered at once, with its own
+    sequenceId, over the next 10 s              0/10           10/10
+      (without: the first two get a stale
+      request's answer, the rest none at all)
+    control: no starvation                      10/10          10/10
+
+On the board, ThreadX + NetX Duo, the same 120 s floods:
+
+                                                without        with
+    gPTP slave, with the host as master
+    again 20 s after the flood                  0/5            5/5
+    queues in step after the flood (SWD):
+      gPTP slave                                13 rx, 2 ev    in step
+      E2E master                                15 ev (twice)  in step
+    `flexptp stop` after the master's flood     2.00 s, the    0.20 s
+                                                timeout
+    full hardware suite: S8 and 18 scenarios    5 checks fail  105/105
+
+The FreeRTOS + lwIP firmware stayed in step under the same floods
+without the change -- its binding has the same pairs; it did not happen
+there -- and passes S8 and all 20 scenarios, 113 checks, with it.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/flexptp/task_ptp.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/src/flexptp/task_ptp.c b/src/flexptp/task_ptp.c
+index 3c58ede..2a14ea1 100644
+--- a/src/flexptp/task_ptp.c
++++ b/src/flexptp/task_ptp.c
+@@ -68,8 +68,14 @@ static osSemaphoreId_t sParked = NULL; ///< given by the PTP task once it has st
+ // FIFO for incoming packets
+ #if defined(FLEXPTP_NON_LINUX_OS) || defined(FLEXPTP_OSLESS)
+ #define EVENT_FIFO_LENGTH (16)        ///< Event FIFO length
+-#define NOTIFICATION_FIFO_LENGTH (16) ///< Notification FIFO length
+ #define TX_CALLBACK_FIFO_LENGTH (10)  ///< Transmit callback FIFO length
++
++// Each item pushed onto one of the four FIFOs above is followed by one notification, and the task
++// takes one item per notification. So the notification FIFO must have room for every item they
++// can hold together: if it fills while one of them still has room, an item goes in without its
++// notification, and the task takes every later item from that FIFO one notification late, for
++// good -- a received one, once traffic is slow, past its TTL, i.e. not at all.
++#define NOTIFICATION_FIFO_LENGTH (RX_PACKET_FIFO_LENGTH + TX_PACKET_FIFO_LENGTH + EVENT_FIFO_LENGTH + TX_CALLBACK_FIFO_LENGTH) ///< Notification FIFO length
+ #endif
+ 
+ #define TX_TTL_MS (2000) ///< TTL for outbound packets
