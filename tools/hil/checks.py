@@ -381,9 +381,20 @@ def read_stats(board: Board) -> dict:
     contract; the prose is free to change.
 
     Returns {} if the firmware predates the command, so a caller can SKIP rather than fail.
+
+    Retried, because one missing marker is not proof of anything. Straight after a long
+    saturation flood the console can still be catching up, and a single read once came back
+    without BEGIN/END: check_ptp_flood then honestly reported "drop_txts NOT asserted" after a
+    600 s flood that it should have been able to judge. Draining and asking again is cheap;
+    giving up on the first try made a long flood the one run that asserted nothing.
     """
-    out = board.cmd("ethstat", quiet=1.2, timeout=10)
-    if "BEGIN ethstat" not in out or "END ethstat" not in out:
+    out = ""
+    for _attempt in range(3):
+        out = board.cmd("ethstat", quiet=1.5, timeout=15)
+        if "BEGIN ethstat" in out and "END ethstat" in out:
+            break
+        board.read_for(2.0)  # drain whatever the console was busy with, then ask again
+    else:
         return {}
 
     body = out.split("BEGIN ethstat", 1)[1].split("END ethstat", 1)[0]
