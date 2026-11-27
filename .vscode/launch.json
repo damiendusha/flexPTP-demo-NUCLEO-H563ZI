@@ -1,109 +1,196 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    // Cortex-Debug configurations, four per firmware: Launch (flash, reset, run to main) and
+    // Attach (to whatever is running), through OpenOCD or through ST's GDB server.
+    //
+    // Every one builds the dbg image first (preLaunchTask, in tasks.json). That is not only for
+    // freshness: bazel-bin/ points at the LAST build's configuration, so after an opt build or a
+    // `bazel test //...` the "executable" path below is a different image, or no image at all.
+    // An Attach therefore assumes the board is running the dbg build of this tree.
+    //
+    // GDB, objdump and nm come from the Arm toolchain Bazel fetched (armToolchainPath), reached
+    // through the bazel-<workspace directory name> symlink Bazel creates in the workspace -- so
+    // nothing beyond Bazel is needed for them. The same symlink is put on GDB's source path
+    // (pre*Commands): the debug info names vendored files as external/+vendored+<repo>/...,
+    // relative to the execroot, and without it stepping into ThreadX, NetX Duo, FreeRTOS, lwIP or
+    // the HAL finds no source. First-party files resolve against "cwd".
+    //
+    // OpenOCD must be ST's fork, at toolchains/openocd/bin/openocd. README "Flashing" says how
+    // to put the one Bazel builds there. The ST-Link GDB server configurations and the register
+    // view (svdFile) need STM32CubeCLT; without it only the register view is lost.
+    //
+    // OpenOCD's RTOS awareness (-rtos ThreadX / FreeRTOS) lists the threads with their names and
+    // states, and the CURRENT thread is exact. Every other thread's registers are not: OpenOCD
+    // unstacks them with a plain Cortex-M layout, and both kernels' Cortex-M33 ports save more
+    // than that (ThreadX: EXC_RETURN below r4-r11; FreeRTOS ARM_CM33_NTZ: PSPLIM and EXC_RETURN),
+    // so their backtraces start one slot off -- seen on the board as prvTaskExitError and
+    // 0x12121212 frames. Read a blocked thread's state from its TCB, not from its backtrace.
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Build & Debug Microcontroller - ST-Link",
-            "cwd": "${workspaceFolder}",
-            "type": "cortex-debug",
-            "executable": "${command:cmake.launchTargetPath}",
-            // Let CMake extension decide executable: "${command:cmake.launchTargetPath}"
-            // Or fixed file path: "${workspaceFolder}/path/to/filename.elf"
-            "request": "launch",
-            "servertype": "stlink",
-            "device": "STM32H563ZITx", //MCU used
-            "interface": "swd",
-            "serialNumber": "", //Set ST-Link ID if you use multiple at the same time
-            "runToEntryPoint": "main",
-            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H563.svd",
-            "v1": false, //Change it depending on ST Link version
-            "serverpath": "${config:STM32VSCodeExtension.cubeCLT.path}/STLink-gdb-server/bin/ST-LINK_gdbserver",
-            "stm32cubeprogrammer": "${config:STM32VSCodeExtension.cubeCLT.path}/STM32CubeProgrammer/bin",
-            "stlinkPath": "${config:STM32VSCodeExtension.cubeCLT.path}/STLink-gdb-server/bin/ST-LINK_gdbserver",
-            "armToolchainPath": "${config:STM32VSCodeExtension.cubeCLT.path}/GNU-tools-for-STM32/bin",
-            "gdbPath": "gdb-multiarch",
-            "serverArgs": [
-                "-m",
-                "0",
-            ],
-            //"preLaunchTask": "Build + Flash"
-            /* If you use external loader, add additional arguments */
-            //"serverArgs": ["--extload", "path/to/ext/loader.stldr"],
-        },
-        {
-            "name": "Attach to Microcontroller - ST-Link",
-            "cwd": "${workspaceFolder}",
-            "type": "cortex-debug",
-            "executable": "${command:cmake.launchTargetPath}",
-            // Let CMake extension decide executable: "${command:cmake.launchTargetPath}"
-            // Or fixed file path: "${workspaceFolder}/path/to/filename.elf"
-            "request": "attach",
-            "servertype": "stlink",
-            "device": "STM32H563ZITx", //MCU used
-            "interface": "swd",
-            "serialNumber": "", //Set ST-Link ID if you use multiple at the same time
-            "runToEntryPoint": "main",
-            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H563.svd",
-            "v1": false, //Change it depending on ST Link version
-            "serverpath": "${config:STM32VSCodeExtension.cubeCLT.path}/STLink-gdb-server/bin/ST-LINK_gdbserver",
-            "stm32cubeprogrammer": "${config:STM32VSCodeExtension.cubeCLT.path}/STM32CubeProgrammer/bin",
-            "stlinkPath": "${config:STM32VSCodeExtension.cubeCLT.path}/STLink-gdb-server/bin/ST-LINK_gdbserver",
-            "armToolchainPath": "${config:STM32VSCodeExtension.cubeCLT.path}/GNU-tools-for-STM32/bin",
-            "gdbPath": "gdb-multiarch",
-            "serverArgs": [
-                "-m",
-                "0",
-            ],
-            /* If you use external loader, add additional arguments */
-            //"serverArgs": ["--extload", "path/to/ext/loader.stldr"],
-        },
-        {
-            "name": "OpenOCD Launch (STLink)",
-            "cwd": "${workspaceFolder}",
+            "name": "ThreadX: OpenOCD Launch",
             "type": "cortex-debug",
             "request": "launch",
-            "executable": "${command:cmake.launchTargetPath}",
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Bazel: build ThreadX (dbg)",
+            "executable": "${workspaceFolder}/bazel-bin/projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/flexptp-demo.elf",
+            "armToolchainPath": "${workspaceFolder}/bazel-${workspaceFolderBasename}/external/+http_archive+arm_gnu_toolchain/bin",
+            "preLaunchCommands": ["directory ${workspaceFolder}/bazel-${workspaceFolderBasename}"],
             "servertype": "openocd",
-            // Built by "./build.sh --with-openocd". A distro OpenOCD cannot program an
-            // STM32H5 -- it has no stm32h5x flash driver. See docs/implementation_plan.md.
             "serverpath": "${workspaceFolder}/toolchains/openocd/bin/openocd",
-            "device": "STM32H563ZITx",
-            "runToEntryPoint": "main",
-            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H563.svd",
-            "gdbPath": "gdb-multiarch",
-            "configFiles": [
-                "board/st_nucleo_h5.cfg"
+            "configFiles": ["board/st_nucleo_h5.cfg"],
+            "openOCDLaunchCommands": [
+                "init",
+                "reset halt",
+                "$_CHIPNAME.cpu configure -rtos ThreadX"
             ],
+            "device": "STM32H563ZITx",
+            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H563.svd",
+            "runToEntryPoint": "main",
+            "showDevDebugOutput": "raw"
+        },
+        {
+            "name": "ThreadX: OpenOCD Attach",
+            "type": "cortex-debug",
+            "request": "attach",
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Bazel: build ThreadX (dbg)",
+            "executable": "${workspaceFolder}/bazel-bin/projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/flexptp-demo.elf",
+            "armToolchainPath": "${workspaceFolder}/bazel-${workspaceFolderBasename}/external/+http_archive+arm_gnu_toolchain/bin",
+            "preAttachCommands": ["directory ${workspaceFolder}/bazel-${workspaceFolderBasename}"],
+            "servertype": "openocd",
+            "serverpath": "${workspaceFolder}/toolchains/openocd/bin/openocd",
+            "configFiles": ["board/st_nucleo_h5.cfg"],
+            "openOCDLaunchCommands": [
+                "$_CHIPNAME.cpu configure -rtos ThreadX"
+            ],
+            "device": "STM32H563ZITx",
+            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H563.svd",
+            "showDevDebugOutput": "raw"
+        },
+        {
+            "name": "FreeRTOS: OpenOCD Launch",
+            "type": "cortex-debug",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Bazel: build FreeRTOS (dbg)",
+            "executable": "${workspaceFolder}/bazel-bin/projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo/flexptp-demo-freertos.elf",
+            "armToolchainPath": "${workspaceFolder}/bazel-${workspaceFolderBasename}/external/+http_archive+arm_gnu_toolchain/bin",
+            "preLaunchCommands": ["directory ${workspaceFolder}/bazel-${workspaceFolderBasename}"],
+            "servertype": "openocd",
+            "serverpath": "${workspaceFolder}/toolchains/openocd/bin/openocd",
+            "configFiles": ["board/st_nucleo_h5.cfg"],
             "openOCDLaunchCommands": [
                 "init",
                 "reset halt",
                 "$_CHIPNAME.cpu configure -rtos FreeRTOS"
             ],
+            "device": "STM32H563ZITx",
+            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H563.svd",
+            "runToEntryPoint": "main",
             "showDevDebugOutput": "raw"
         },
         {
-            "name": "OpenOCD Attach (STLink)",
-            "cwd": "${workspaceFolder}",
+            "name": "FreeRTOS: OpenOCD Attach",
             "type": "cortex-debug",
             "request": "attach",
-            "executable": "${command:cmake.launchTargetPath}",
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Bazel: build FreeRTOS (dbg)",
+            "executable": "${workspaceFolder}/bazel-bin/projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo/flexptp-demo-freertos.elf",
+            "armToolchainPath": "${workspaceFolder}/bazel-${workspaceFolderBasename}/external/+http_archive+arm_gnu_toolchain/bin",
+            "preAttachCommands": ["directory ${workspaceFolder}/bazel-${workspaceFolderBasename}"],
             "servertype": "openocd",
-            // Built by "./build.sh --with-openocd". A distro OpenOCD cannot program an
-            // STM32H5 -- it has no stm32h5x flash driver. See docs/implementation_plan.md.
             "serverpath": "${workspaceFolder}/toolchains/openocd/bin/openocd",
-            "device": "STM32H563ZITx",
-            "runToEntryPoint": "main",
-            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H563.svd",
-            "gdbPath": "gdb-multiarch",
-            "configFiles": [
-                "board/st_nucleo_h5.cfg"
-            ],
+            "configFiles": ["board/st_nucleo_h5.cfg"],
             "openOCDLaunchCommands": [
                 "$_CHIPNAME.cpu configure -rtos FreeRTOS"
             ],
+            "device": "STM32H563ZITx",
+            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H563.svd",
             "showDevDebugOutput": "raw"
         },
+        {
+            "name": "ThreadX: ST-Link Launch",
+            "type": "cortex-debug",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Bazel: build ThreadX (dbg)",
+            "executable": "${workspaceFolder}/bazel-bin/projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/flexptp-demo.elf",
+            "armToolchainPath": "${workspaceFolder}/bazel-${workspaceFolderBasename}/external/+http_archive+arm_gnu_toolchain/bin",
+            "preLaunchCommands": ["directory ${workspaceFolder}/bazel-${workspaceFolderBasename}"],
+            "servertype": "stlink",
+            "serverpath": "${config:STM32VSCodeExtension.cubeCLT.path}/STLink-gdb-server/bin/ST-LINK_gdbserver",
+            "stlinkPath": "${config:STM32VSCodeExtension.cubeCLT.path}/STLink-gdb-server/bin/ST-LINK_gdbserver",
+            "stm32cubeprogrammer": "${config:STM32VSCodeExtension.cubeCLT.path}/STM32CubeProgrammer/bin",
+            "serverArgs": ["-m", "0"],
+            "device": "STM32H563ZITx",
+            "interface": "swd",
+            "serialNumber": "", // Set the ST-Link's ID if more than one is connected
+            "v1": false, // Change it depending on ST-Link version
+            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H563.svd",
+            "runToEntryPoint": "main"
+            /* If you use external loader, add additional arguments */
+            //"serverArgs": ["--extload", "path/to/ext/loader.stldr"],
+        },
+        {
+            "name": "ThreadX: ST-Link Attach",
+            "type": "cortex-debug",
+            "request": "attach",
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Bazel: build ThreadX (dbg)",
+            "executable": "${workspaceFolder}/bazel-bin/projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/flexptp-demo.elf",
+            "armToolchainPath": "${workspaceFolder}/bazel-${workspaceFolderBasename}/external/+http_archive+arm_gnu_toolchain/bin",
+            "preAttachCommands": ["directory ${workspaceFolder}/bazel-${workspaceFolderBasename}"],
+            "servertype": "stlink",
+            "serverpath": "${config:STM32VSCodeExtension.cubeCLT.path}/STLink-gdb-server/bin/ST-LINK_gdbserver",
+            "stlinkPath": "${config:STM32VSCodeExtension.cubeCLT.path}/STLink-gdb-server/bin/ST-LINK_gdbserver",
+            "stm32cubeprogrammer": "${config:STM32VSCodeExtension.cubeCLT.path}/STM32CubeProgrammer/bin",
+            "serverArgs": ["-m", "0"],
+            "device": "STM32H563ZITx",
+            "interface": "swd",
+            "serialNumber": "",
+            "v1": false,
+            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H563.svd"
+        },
+        {
+            "name": "FreeRTOS: ST-Link Launch",
+            "type": "cortex-debug",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Bazel: build FreeRTOS (dbg)",
+            "executable": "${workspaceFolder}/bazel-bin/projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo/flexptp-demo-freertos.elf",
+            "armToolchainPath": "${workspaceFolder}/bazel-${workspaceFolderBasename}/external/+http_archive+arm_gnu_toolchain/bin",
+            "preLaunchCommands": ["directory ${workspaceFolder}/bazel-${workspaceFolderBasename}"],
+            "servertype": "stlink",
+            "serverpath": "${config:STM32VSCodeExtension.cubeCLT.path}/STLink-gdb-server/bin/ST-LINK_gdbserver",
+            "stlinkPath": "${config:STM32VSCodeExtension.cubeCLT.path}/STLink-gdb-server/bin/ST-LINK_gdbserver",
+            "stm32cubeprogrammer": "${config:STM32VSCodeExtension.cubeCLT.path}/STM32CubeProgrammer/bin",
+            "serverArgs": ["-m", "0"],
+            "device": "STM32H563ZITx",
+            "interface": "swd",
+            "serialNumber": "",
+            "v1": false,
+            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H563.svd",
+            "runToEntryPoint": "main"
+        },
+        {
+            "name": "FreeRTOS: ST-Link Attach",
+            "type": "cortex-debug",
+            "request": "attach",
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Bazel: build FreeRTOS (dbg)",
+            "executable": "${workspaceFolder}/bazel-bin/projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo/flexptp-demo-freertos.elf",
+            "armToolchainPath": "${workspaceFolder}/bazel-${workspaceFolderBasename}/external/+http_archive+arm_gnu_toolchain/bin",
+            "preAttachCommands": ["directory ${workspaceFolder}/bazel-${workspaceFolderBasename}"],
+            "servertype": "stlink",
+            "serverpath": "${config:STM32VSCodeExtension.cubeCLT.path}/STLink-gdb-server/bin/ST-LINK_gdbserver",
+            "stlinkPath": "${config:STM32VSCodeExtension.cubeCLT.path}/STLink-gdb-server/bin/ST-LINK_gdbserver",
+            "stm32cubeprogrammer": "${config:STM32VSCodeExtension.cubeCLT.path}/STM32CubeProgrammer/bin",
+            "serverArgs": ["-m", "0"],
+            "device": "STM32H563ZITx",
+            "interface": "swd",
+            "serialNumber": "",
+            "v1": false,
+            "svdFile": "${config:STM32VSCodeExtension.cubeCLT.path}/STMicroelectronics_CMSIS_SVD/STM32H563.svd"
+        }
     ]
 }

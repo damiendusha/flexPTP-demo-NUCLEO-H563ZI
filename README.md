@@ -106,11 +106,11 @@ verification, are in
 bazel test //...
 ```
 
-24 targets in one invocation: the Ethernet descriptor rings and the flexPTP network-stack
+25 targets in one invocation: the Ethernet descriptor rings and the flexPTP network-stack
 driver's logic units; the console FIFO, the CLI and the RTOS context rules against real ThreadX
 and FreeRTOS kernels; flexPTP's own engine, patched as the firmware fetches it, against the
 defects the patches fix; the C++ rules asserted against the linked images; and the HIL tools'
-own parsers. It runs in seconds and gates every push in CI. Host and target are two platforms in
+own parsers and the compile-commands generator's path rewrite. It runs in seconds and gates every push in CI. Host and target are two platforms in
 one graph, so there is no separate test root to configure.
 
 To run one binary, or the target-image checks alone:
@@ -188,6 +188,7 @@ configurations look:
 
 ```bash
 bazel build //tools/flash:openocd_binary
+rm -rf toolchains/openocd    # cp would nest a second copy inside an existing one, and keep the old binary
 mkdir -p toolchains && cp -rL --no-preserve=mode bazel-bin/external/+openocd+openocd_src/openocd_build toolchains/openocd
 chmod +x toolchains/openocd/bin/openocd
 ```
@@ -280,27 +281,66 @@ outage seen on FreeRTOS.
 
 ## Development
 
-An all-around [Visual Studio Code](https://code.visualstudio.com/) project is packaged along
-the project. Install the [STM32Cube for Visual Studio Code](https://marketplace.visualstudio.com/items?itemName=stmicroelectronics.stm32-vscode-extension),
-[CMakeTools](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cmake-tools),
-[Cortex-Debug](https://marketplace.visualstudio.com/items?itemName=marus25.cortex-debug) and
-[Embedded Tools](https://marketplace.visualstudio.com/items?itemName=ms-vscode.vscode-embedded-tools)
-extensions. [clangd](https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-clangd)
-and clang-format are highly recommended.
+A [Visual Studio Code](https://code.visualstudio.com/) configuration ships in `.vscode/`. It
+needs [Cortex-Debug](https://marketplace.visualstudio.com/items?itemName=marus25.cortex-debug)
+to debug and [clangd](https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-clangd)
+for IntelliSense; `.vscode/extensions.json` recommends those and the rest, including the
+[Bazel](https://marketplace.visualstudio.com/items?itemName=BazelBuild.vscode-bazel) extension.
+The compiler and GDB come from the toolchain Bazel fetches, so nothing else is needed to build
+or debug through OpenOCD.
 
-The project has predefined *Launch* and *Attach* tasks. The OpenOCD ones point at
-`toolchains/openocd/bin/openocd` (see [Flashing](#flashing) for putting ST's fork there);
-`--//tools/flash:openocd=local` makes the Bazel flash target use the same binary, so the two
-agree. The ST-Link GDB-server configurations and the register (`.SVD`) views still resolve
-through [STM32CubeCLT](https://www.st.com/en/development-tools/stm32cubeclt.html); it is
-optional, and without it only the register view is lost.
+**Tasks** (*Terminal → Run Task…*):
 
-> [!WARNING]
-> **The `.vscode/` configuration predates the Bazel migration.** Its build task, the CMakeTools
-> recommendation and every launch configuration's `"executable": "${command:cmake.launchTargetPath}"`
-> assume the CMake build, which is gone, so they do not work as shipped. Until they are updated,
-> build with `bazel build --config=dbg …` and point the launch configuration's `executable` at the
-> ELF in `bazel-bin/projects/<project>/` — a debug image, so the debugger has `-g3` information.
+| Task | Runs |
+|---|---|
+| `Bazel: build ThreadX (dbg)` / `(opt)` | `bazel build --config=dbg` / `--config=opt` `//projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:flexptp-demo` |
+| `Bazel: build FreeRTOS (dbg)` / `(opt)` | the same for `//projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo:flexptp-demo-freertos` |
+| `Bazel: flash ThreadX (dbg)` / `(opt)`, `Bazel: flash FreeRTOS (dbg)` / `(opt)` | `bazel run --config=… //…:flash` — build and program in one step (see [Flashing](#flashing)) |
+| `Bazel: test //...` | the whole test suite |
+| `Bazel: refresh compile_commands.json` | `tools/ide/refresh_compile_commands.py` — see *IntelliSense* below |
+
+`dbg` and `opt` are the debug and release modes in [Building](#building) — so a `dbg` image
+has `DEBUG` too: ThreadX's stack check and NetX Duo's API error checking.
+
+**Debugging.** Four configurations per firmware: *Launch* (flash, reset, run to `main`) and
+*Attach* (to whatever is running), each through OpenOCD or through ST's GDB server. They load
+the ELF from `bazel-bin/projects/flexptp_demo_stm32h563/<project>/`, and every one runs that
+firmware's `build … (dbg)` task first. That matters more than it looks: `bazel-bin` points at
+the **last** build's configuration, so after an `opt` build or a `bazel test //...` the ELF
+there is a different image, or missing. An *Attach* therefore assumes the board is running the
+`dbg` build of the tree you have checked out.
+
+The OpenOCD configurations use `toolchains/openocd/bin/openocd`, which must be ST's fork;
+[Flashing](#flashing) shows how to put Bazel's build of it there. The flash tasks use Bazel's
+own build; add `--//tools/flash:openocd=local` to make them use that same binary. The ST-Link GDB-server
+configurations and the register (`.SVD`) view resolve through
+[STM32CubeCLT](https://www.st.com/en/development-tools/stm32cubeclt.html), located by the
+[STM32Cube for Visual Studio Code](https://marketplace.visualstudio.com/items?itemName=stmicroelectronics.stm32-vscode-extension)
+extension; both are optional, and without them only those two are lost.
+
+> [!NOTE]
+> OpenOCD's RTOS awareness lists every thread with its name and state, and the *current*
+> thread is exact. The others' backtraces are not: OpenOCD unstacks them with a plain
+> Cortex-M frame, and both kernels' Cortex-M33 ports save more than that. Read a blocked
+> thread's state from its control block, not from its backtrace. The details are in
+> `.vscode/launch.json`.
+
+**IntelliSense.** clangd reads `compile_commands.json` at the workspace root, which Bazel does
+not write by itself. Generate it — and again after adding a source file or changing a
+`BUILD.bazel`:
+
+```bash
+tools/ide/refresh_compile_commands.py
+```
+
+It builds both firmwares and every host test with `--config=dbg`, takes their compile commands
+from `bazel aquery`, and rewrites Bazel's execroot-relative paths so they resolve from the
+workspace — the vendored trees included, so go-to-definition reaches into ThreadX, NetX Duo and
+the HAL. A file compiled both for the board and for a host test gets the board's command. Other
+flags or targets go on the command line:
+`tools/ide/refresh_compile_commands.py --config=opt -- //projects/flexptp_demo_stm32h563/lib:mac_drv_tx_ring_test`.
+The usual tool for this, hedronvision/bazel-compile-commands-extractor, is not in BCR and, as
+published, uses native rules Bazel 9 removed; the script's docstring has the details.
 
 ### Software structure
 

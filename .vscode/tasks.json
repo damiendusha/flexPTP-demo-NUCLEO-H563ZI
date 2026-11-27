@@ -1,61 +1,115 @@
 {
+    // Bazel tasks. The "build (dbg)" labels are the preLaunchTasks in launch.json: rename both
+    // together.
+    //
+    // dbg is -O0 -g3 -ggdb plus DEBUG -- ThreadX's stack check, NetX Duo's API error checking --
+    // and opt is -O2 -g0 (toolchain/BUILD.bazel; README "Building"). They land in different
+    // bazel-out/ directories, and bazel-bin/ points at whichever was built LAST -- so the ELF
+    // under bazel-bin/ is the last build's, and the debug configurations rebuild dbg first.
+    //
+    // $gcc resolves compiler diagnostics against the workspace, which is where Bazel's
+    // execroot-relative paths for first-party files point. Vendored code is compiled with -w.
     "version": "2.0.0",
-    "windows": {
-        "options": {
-            "shell": {
-                "executable": "cmd.exe",
-                "args": ["/d", "/c"]
-            }
-        }
-    },
     "tasks": [
         {
+            "label": "Bazel: build ThreadX (dbg)",
+            "detail": "flexptp-demo, -O0 -g3 and DEBUG -- what the ThreadX debug configurations load",
             "type": "shell",
-            "label": "CubeProg: Flash project (SWD)",
-            "command": "STM32_Programmer_CLI",
-            "args": [
-                "--connect",
-                "port=swd",
-                "--download",
-                "${command:cmake.launchTargetPath}",
-                // Let CMake extension decide executable: "${command:cmake.launchTargetPath}",
-                "-hardRst", // Hardware reset - if rst pin is connected
-                "-rst", // Software reset (backup)
-                "--start" // Start execution
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "Build + Flash",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "CMake: clean rebuild",
-                "CubeProg: Flash project (SWD)",
-            ]
-        },
-                {
-            "type": "cmake",
-            "label": "CMake: clean rebuild",
-            "command": "cleanRebuild",
-            "targets": [
-                "all"
-            ],
-            "preset": "${command:cmake.activeBuildPresetName}",
+            "command": "bazel",
+            "args": ["build", "--config=dbg", "//projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:flexptp-demo"],
+            "options": { "cwd": "${workspaceFolder}" },
             "group": "build",
-            "problemMatcher": [],
-            "detail": "CMake template clean rebuild task"
+            "problemMatcher": "$gcc"
         },
         {
+            "label": "Bazel: build ThreadX (opt)",
+            "detail": "flexptp-demo, -O2 -g0 -- the release image",
             "type": "shell",
+            "command": "bazel",
+            "args": ["build", "--config=opt", "//projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:flexptp-demo"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "group": "build",
+            "problemMatcher": "$gcc"
+        },
+        {
+            "label": "Bazel: build FreeRTOS (dbg)",
+            "detail": "flexptp-demo-freertos, -O0 -g3 and DEBUG -- what the FreeRTOS debug configurations load",
+            "type": "shell",
+            "command": "bazel",
+            "args": ["build", "--config=dbg", "//projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo:flexptp-demo-freertos"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "group": "build",
+            "problemMatcher": "$gcc"
+        },
+        {
+            "label": "Bazel: build FreeRTOS (opt)",
+            "detail": "flexptp-demo-freertos, -O2 -g0 -- the release image",
+            "type": "shell",
+            "command": "bazel",
+            "args": ["build", "--config=opt", "//projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo:flexptp-demo-freertos"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "group": "build",
+            "problemMatcher": "$gcc"
+        },
+        // Build and flash in one step, with ST's OpenOCD built from source by Bazel (README
+        // "Flashing"). The debug configurations flash through GDB instead and need none of these.
+        {
+            "label": "Bazel: flash ThreadX (dbg)",
+            "type": "shell",
+            "command": "bazel",
+            "args": ["run", "--config=dbg", "//projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:flash"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": "$gcc"
+        },
+        {
+            "label": "Bazel: flash ThreadX (opt)",
+            "type": "shell",
+            "command": "bazel",
+            "args": ["run", "--config=opt", "//projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:flash"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": "$gcc"
+        },
+        {
+            "label": "Bazel: flash FreeRTOS (dbg)",
+            "type": "shell",
+            "command": "bazel",
+            "args": ["run", "--config=dbg", "//projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo:flash"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": "$gcc"
+        },
+        {
+            "label": "Bazel: flash FreeRTOS (opt)",
+            "type": "shell",
+            "command": "bazel",
+            "args": ["run", "--config=opt", "//projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo:flash"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": "$gcc"
+        },
+        {
+            "label": "Bazel: test //...",
+            "detail": "host tests, the C++ rules against both images, the OpenOCD capability check",
+            "type": "shell",
+            "command": "bazel",
+            "args": ["test", "//..."],
+            "options": { "cwd": "${workspaceFolder}" },
+            "group": "test",
+            "problemMatcher": "$gcc"
+        },
+        {
+            "label": "Bazel: refresh compile_commands.json",
+            "detail": "for clangd -- builds both firmwares and the host tests (dbg), then extracts their compile commands",
+            "type": "shell",
+            "command": "python3",
+            "args": ["tools/ide/refresh_compile_commands.py"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": "$gcc"
+        },
+        {
             "label": "CubeProg: List all available communication interfaces",
+            "type": "shell",
             "command": "STM32_Programmer_CLI",
             "args": ["--list"],
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
+            "options": { "cwd": "${workspaceFolder}" },
             "problemMatcher": []
         }
     ]

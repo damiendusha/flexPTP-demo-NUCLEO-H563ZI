@@ -3,3 +3,6 @@ toolchains/
 __pycache__/
 *.pyc
 bazel-*
+# tools/ide/refresh_compile_commands.py, and clangd's index of it
+compile_commands.json
+.cache/

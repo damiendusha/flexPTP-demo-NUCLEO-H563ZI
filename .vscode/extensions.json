@@ -1,10 +1,10 @@
 {
+    // Not ms-vscode.cpptools-extension-pack: it installs CMake Tools, and the build is Bazel.
     "recommendations": [
-        "ms-vscode.cpptools",                   // (dependencies to ms-vscode.cpptools-extension-pack)
-        "ms-vscode.cpptools-themes",            // (dependencies to ms-vscode.cpptools-extension-pack)
-        "ms-vscode.cmake-tools",                // (dependencies to ms-vscode.cpptools-extension-pack)
-        "twxs.cmake",				            // (dependencies to ms-vscode.cpptools-extension-pack)
-        "ms-vscode.cpptools-extension-pack",    // Provides CMake and C++ file coloring, completion & support
+        "bazelbuild.vscode-bazel",              // BUILD/.bzl syntax, and the Bazel target tree
+        "llvm-vs-code-extensions.vscode-clangd", // IntelliSense, from compile_commands.json (see settings.json)
+        "ms-vscode.cpptools",                   // C/C++; its own IntelliSense is turned off in settings.json
+        "ms-vscode.cpptools-themes",            // C/C++ semantic colouring
         "dan-c-underwood.arm",		            // Provides syntax highlighting for the Arm Assembly language
         "zixuanwang.linkerscript",	            // Provides syntax highlighting for linker scripts
         "ms-vscode.hexeditor",                  // Provides hex editor fo viewing & anipulating files in their raw hexadecimal representation

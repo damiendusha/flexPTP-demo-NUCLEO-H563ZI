@@ -1,0 +1,15 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+# refresh_compile_commands.py is run directly, not with `bazel run`: it drives bazel itself, and
+# writes into the workspace. See its docstring, and README.md "Development".
+
+# sh_test rather than py_test, for the same reason as tools/hil/BUILD.bazel: no rules_python (D2).
+sh_test(
+    name = "refresh_compile_commands_test",
+    srcs = ["run_unittest.sh"],
+    args = ["test_refresh_compile_commands"],
+    data = [
+        "refresh_compile_commands.py",
+        "test_refresh_compile_commands.py",
+    ],
+)

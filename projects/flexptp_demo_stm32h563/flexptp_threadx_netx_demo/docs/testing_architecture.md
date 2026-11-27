@@ -46,12 +46,12 @@ their host tests) · [`docs/flexptp_upstream_review.md`](../../../../docs/flexpt
 | 2 | **Real kernels on the host** — ThreadX's Linux port and FreeRTOS's POSIX port, under the real CMSIS-RTOS2 wrappers | dev machine / CI | nothing | seconds | every push |
 | 3 | **flexPTP's real engine on the host** — its own sources, patched as the firmware fetches them | dev machine / CI | nothing | seconds | every push |
 | 4 | **Checks on the linked image** — the C++ rules, the per-project file split | dev machine / CI | nothing | seconds | every push |
-| 5 | **Tool tests** — the HIL parsers, the SWD readers, OpenOCD discovery and capability | dev machine / CI | nothing | seconds | every push |
+| 5 | **Tool tests** — the HIL parsers, the SWD readers, OpenOCD discovery and capability, the compile-commands rewrite | dev machine / CI | nothing | seconds | every push |
 | 6 | **HIL checks** — `tools/hil/run.py`, 14 checks from build ID to a saturation flood | the board, over serial + SWD | board, cable, host NIC | ~6 min | manual |
 | 7 | **HIL scenarios** — `tools/hil/scenario.py`, 20 long scenarios: fix regressions, floods, malformed PTP, stacks, health | the board, the host's ptp4l units | as 6, plus the installed bench | ~55 min per image | manual |
 | 8 | **SWD inspection** — `tools/hil/swd.py`: heap, stacks, faults, the console thread, flexPTP's queues | the board, halted for milliseconds | ST-Link | seconds | inside 7, and by hand |
 
-Layers 1–5 are one command, `bazel test //...` — 24 targets, host and target in one graph, so
+Layers 1–5 are one command, `bazel test //...` — 25 targets, host and target in one graph, so
 there is no separate test root to configure. Layers 6–8 need the board.
 
 **The split is not a maturity ladder.** The board layers are not slower versions of the host
