@@ -17,10 +17,9 @@ deliberately left as written.
 ## Table of Contents
 
 - [Port Overview](#port-overview)
+- [Dependency Pins](#dependency-pins)
 - [System Clock Tree](#system-clock-tree)
-- [Submodule Pinning](#submodule-pinning)
 - [PTP Clock](#ptp-clock) — full derivation in [ptp_clock.md](ptp_clock.md)
-- [EtherLib Porting Guide](#etherlib-porting-guide)
 - [TrustZone Migration Guide](#trustzone-migration-guide)
 - [RMII Pin Map](#rmii-pin-map)
 - [RXER Pin Note](#rxer-pin-note)
@@ -53,117 +52,30 @@ Key decisions:
 - RTOS: **Eclipse ThreadX**, reached through ST's CMSIS-RTOS2 wrapper so the application and
   flexPTP stay RTOS-agnostic (was FreeRTOS)
 - Network stack: **Eclipse NetX Duo**, whose `nx_link` layer carries PTP hardware timestamps
-  natively (was lwIP; EtherLib remains selectable but uncompiled)
+  natively (was lwIP, now the FreeRTOS firmware's stack; EtherLib was removed, decision D9)
 - TrustZone: Disabled (TZEN=0, `TX_SINGLE_MODE_NON_SECURE`)
 - mac_drv.c: Register-level port, **unchanged by the RTOS/stack port**
 
 ---
 
-## Submodule Pinning
+## Dependency Pins
 
-There are eight submodules. Four came from the H743 reference project, one is ST's HAL, and
-three were added by the ThreadX port.
+Every vendored tree is a git repository fetched by Bazel and pinned by commit in
+[`bazel/repositories.bzl`](../../../../bazel/repositories.bzl), which also says why each one comes
+from where it does. Since November 2026 every pin is its upstream head, each bump verified on
+hardware — see [`docs/flexptp_upstream_review.md`](../../../../docs/flexptp_upstream_review.md), §7.
+Two trees are patched, by the fetch: flexPTP (nine fixes, each filed upstream) and embfmt (one);
+see [`patches/`](../../../../patches/flexptp/README.md).
 
-| Submodule | Pinned at | Notes |
-|---|---|---|
-| `flexptp` | `76aaf67` | H743 reference had `62fc906` — see below |
-| `embfmt` | `670a349` | H743 reference had `78d8aa4` |
-| `etherlib` | `ec35be5` | H743 reference had `1127b3d`. Selectable, never compiled here |
-| `lwip` | `3d896ba` | H743 reference had `554e104`. **No longer built** — retained so the pre-port firmware stays reconstructable |
-| `stm32h5xx-hal-driver` | `0fff6e2` | ST HAL, `v1.7.0-8-g0fff6e2` |
-| `threadx` | `44d7c95` | Eclipse ThreadX, self-reports **6.5.1** |
-| `netxduo` | `473d192` | Eclipse NetX Duo, self-reports **6.5.1** |
-| `cmsis_rtos_threadx` | `3b0b28a` | ST's CMSIS-RTOS2 wrapper, `v1.4.1` |
+One workaround from the first port is still live: flexPTP uses `__PRI64_PREFIX`, a glibc-internal
+macro newlib lacks, so `bazel/flexptp.bzl` defines it as `__INT64` (finding F47).
 
-**The two Eclipse pins sit just past their release tags, and the difference is documentation
-only.** `threadx` is one commit after `v6.5.1.202602a_rel` and `netxduo` two after
-`v6.5.1.202602_rel`; in both cases the extra commits touch nothing but `SECURITY.md`. The
-`Middlewares/*.cmake` headers name the tags, which is materially accurate but not literally
-what is checked out — worth knowing before you try to reproduce a build from the tag alone.
-
-### The four original pins are ahead of the reference project
-
-Stage 1 of the silicon port added them at then-current `master` rather than at the commits the
-H743 demo records. That was not a deliberate choice at the time. It is now a deliberate one to
-keep.
-
-### Decision: keep the newer pins
-
-flexPTP is five commits ahead:
-
-```
-76aaf67  P2P Sync-FollowUp-PDelReq separation
-3601a6f  Fix non-atomic sec/nsec register read in ptphw_gettime()
-70d2636  C linkage marking added
-a60190f  Linux and OS-less working mode, new message buffer and FIFO
-12fec5a  CMSIS OS2 support has been added
-```
-
-The deciding commit is **`3601a6f`**. `ptphw_gettime()` reads the seconds and nanoseconds
-registers separately; without a guard, a seconds rollover between the two reads yields a
-timestamp up to a second wrong. Compare:
-
-```c
-/* 62fc906 — what pinning back would give us */      /* 76aaf67 — what we have */
-pTime->sec     = ETH->MACSTSR;                       do {
-pTime->nanosec = ETH->MACSTNR & ETH_MACSTNR_TSSS;        pTime->sec     = ETH->MACSTSR;
-                                                         pTime->nanosec = ETH->MACSTNR & ETH_MACSTNR_TSSS;
-                                                     } while (pTime->sec != ETH->MACSTSR);
-```
-
-Since `Src/flexptp_port/ptp_port_stm32h563.c` is derived from the submodule's H743 port, it
-inherits the fixed version. **Pinning back to match the reference project would silently
-reintroduce a PTP timestamp bug** — the opposite of what "match the known-good reference"
-is supposed to buy. `12fec5a` (CMSIS-OS2 support) is also directly relevant to this project.
-
-### Cost of the decision
-
-Two defects had to be worked around, both consequences of integrating a library the
-reference project never did. Details in [port_review.md](port_review.md):
-
-| Finding | Problem | Fix |
-|---|---|---|
-| **F47** | flexPTP uses `__PRI64_PREFIX`, a glibc-internal macro absent from newlib, so the library does not compile for `arm-none-eabi` | `__PRI64_PREFIX=__INT64` in `FLEXPTP_COMPILE_DEFS` |
-| **F48** | `tx_cb`'s tag argument changed from `uint32_t` to `void *`, breaking the TX timestamp path | Aligned `Inc/lwipopts.h` and the `mac_drv.c` call site (historical — that path is now the NetX Duo NSD) |
-
-Neither of those two patches a submodule.
-
-### Submodules that *are* patched
-
-Four patches under `patches/` are applied to submodule working trees by `build.sh`, because
-the parent repository can only record a submodule's commit pointer — a working-tree edit inside
-`Modules/` is invisible to a clone and is discarded by `git submodule update`.
-
-| Patch | Fixes |
-|---|---|
-| `embfmt/0001-formatting-fixes` | **F60/F66** — `%ll` conversions dropped, NaN printed as `0.0000`, small `%e` values and rounding carries misreported |
-| `flexptp/0002-servo-nan-latch-fix` | **F59** — one duplicated Sync latches the Kalman servo into NaN permanently, with every visible indicator staying green while the clock free-runs |
-| `flexptp/0003-generic-netstack-igmp-addresses` | Not a defect: an extension point so a port supplying its own network stack can provide the two IGMP group addresses. Without it flexPTP `#error`s unless it recognises lwIP, EtherLib or Linux |
-| `flexptp/0004-cmsis-os2-event-enqueue-from-timer-thread` | **F80** — the binding enqueues heartbeat events with `osWaitForever` from the RTOS timer thread, which ThreadX forbids from blocking, so every heartbeat is dropped and the BMCA never leaves `INITIALIZING` |
-
-**Skipping them does not break the build; it produces a firmware that is silently wrong.**
-`build.sh` therefore refuses to continue if a patch can neither be applied nor be shown to be
-already applied, and CI re-checks two of them independently after the build.
-
-### What to watch
-
-- **F47 should be reported upstream.** It breaks every newlib target, not just this one.
-  If upstream fixes it, drop the `__PRI64_PREFIX` define — it is a reserved identifier and
-  only defined here under duress.
-- **Patches 0003 and 0004 should go upstream too.** Both are general: 0003 unblocks any
-  third-party network stack, and 0004 fixes a binding that is wrong on any RTOS whose timer
-  thread may not block — which is every ThreadX target, not just this board.
-- **A flexPTP bump must re-check all three flexPTP patches.** They are applied by
-  `git apply`, so a bump that touches the same lines fails loudly rather than silently
-  skipping — but a bump that *renames* the affected function would let a patch apply cleanly
-  to the wrong place.
-- The remaining submodules were not audited commit-by-commit. They build and link; no
-  behavioural claim is made about their divergence.
-
-### To revert
-
-Pin all four back with `git -C Modules/<name> checkout <hash>`, then revert the F47 and F48
-workarounds — and re-apply the `ptphw_gettime()` atomicity fix by hand, or accept the bug.
+The first port pinned its submodules *ahead* of the H743 reference project, deliberately:
+flexPTP's `3601a6f` fixed a seconds-rollover race in `ptphw_gettime()` that this project's
+hardware port inherits, so pinning back would have reintroduced a timestamp bug. That decision,
+its costs (F47, F48) and the submodule and `build.sh` mechanics that went with it were described
+here until the Bazel migration retired them; the text is in git history, at
+`git show b742e43:projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/design_doc.md`.
 
 ---
 
@@ -223,13 +135,13 @@ no arithmetic change.
 
 **Three places state that frequency and none can include the others.** Under FreeRTOS the
 single source of truth was `configCPU_CLOCK_HZ` in `FreeRTOSConfig.h`; that header went away
-with the kernel in S3. The value now lives in `TARGET_SYSCLK_HZ` in `Src/main.c`, beside the
+with the kernel in S3. The value now lives in `TARGET_SYSCLK_HZ` in `main.c`, beside the
 PLL configuration that produces it, and two other declarations must agree with it by hand:
 
 | Where | Why it cannot just include `main.c` |
 |---|---|
-| `SYSTEM_CLOCK` in `Startup/tx_initialize_low_level.S` | Assembly; it computes the SysTick reload divisor |
-| `PTP_MAIN_OSCILLATOR_FREQ_HZ` in `Inc/flexptp_options.h` | `pll1_q_ck` feeds the timestamp unit at the same 250 MHz |
+| `SYSTEM_CLOCK` in `startup/tx_initialize_low_level.S` | Assembly; it computes the SysTick reload divisor |
+| `PTP_MAIN_OSCILLATOR_FREQ_HZ` in `flexptp_options.h` | `pll1_q_ck` feeds the timestamp unit at the same 250 MHz |
 
 Change one, change all three. A mismatch in the first gives a tick rate that is wrong by the
 ratio and an RTOS whose timeouts are all skewed; a mismatch in the second gives a PTP clock
@@ -287,126 +199,6 @@ divider `CR = DIV102` are paired with the 250 MHz *HCLK*, not with PTP.
 
 ---
 
-## EtherLib Porting Guide
-
-EtherLib is Epagris' in-house Ethernet stack and an alternative to NetX Duo. It is present as
-a submodule and selectable with `ETH_STACK` in the top-level `CMakeLists.txt`:
-
-```cmake
-set(ETH_STACK "NETXDUO")   # "NETXDUO", "ETHERLIB", or "NONE"
-```
-
-**It is not compiled in this port and has never been built for the H563.** Only the NetX Duo
-path is exercised. The pieces that would have to be checked are listed below; none is known to
-be broken, but none has been tried either.
-
-> `ETH_STACK="LWIP"` is a fourth spelling that `Modules/CMakeLists.txt` recognises only in
-> order to reject it with a `FATAL_ERROR`. lwIP was removed from the build in S3 of the ThreadX
-> port; the submodule stays pinned so the pre-port firmware remains reconstructable, but the
-> path is gone. Check out a pre-S3 commit to build it.
->
-> `"NONE"` builds flexPTP with a no-op network-stack driver and no stack underneath. It exists
-> because S3–S5 needed the servo, the profile machinery, the 19 CLI commands and the H563
-> hardware port to stay compiled and exercised while the stack beneath them was replaced.
-
-### What already exists
-
-| Piece | State |
-|---|---|
-| `Modules/etherlib` submodule | Present, pinned at `ec35be5` |
-| `Inc/etherlib_options.h` | Complete — pool size, ARP cache, timers, and the CMSIS-OS2 binding |
-| `Src/etherlib_options.c` | Provides `ETHLIB_OS_THREAD_CREATE()` and the recursive-mutex attribute |
-| `Drivers/EthDrv/eth_drv_etherlib.c` | The EtherLib-side driver shim, alongside `eth_drv_netxduo.c` |
-| `Modules/CMakeLists.txt` | Already branches on `ETH_STACK` and wires the flexPTP NSD to match |
-
-So the wiring is in place. What is missing is a linker placement, and verification.
-
-### The `.ETHLibPool` placement — measure it, do not assume
-
-`Inc/etherlib_options.h` puts EtherLib's 32 KB dynamic pool into a named section:
-
-```c
-#define ETHLIB_MEMORY_POOL_TOTAL_SIZE (2 * 16384)
-#define ETHLIB_MEMORY_POOL_ATTRIBUTES section(".ETHLibPool")
-```
-
-`Modules/etherlib/dynmem.c` then declares `sDynMemPool` with that attribute and hands it to
-`mp_init()`. **The linker script has no placement for `.ETHLibPool`** — neither here nor in
-the H743 project (finding F29).
-
-The consequence was measured rather than guessed, by compiling a stand-in 32 KB array with
-the same section attribute into the current build:
-
-| | Without a live reference | With a live reference |
-|---|---|---|
-| Outcome | Silently **discarded** — the section appears in the map's *Discarded input sections* list | Placed as an **orphan** output section |
-| Placement | — | VMA `0x20000a6c` (SRAM1, immediately after `.data`), **load address `0x080366c0` in FLASH** |
-| FLASH | unchanged | **222 904 → 255 680 B** (+32 KB) |
-| SRAM1 | unchanged | **133 328 → 166 096 B** (+32 KB) |
-
-The build is compiled with `-fdata-sections -ffunction-sections -Wl,--gc-sections`, which is
-why the unreferenced case vanishes without a word. With EtherLib actually compiled the pool
-*is* referenced, so the second column is what you get — and it is wrong in two ways:
-
-1. **32 KB of zeros are stored in the image.** The orphan section is `PROGBITS` with a load
-   address, so it occupies flash for no purpose.
-2. **The pool is never initialised.** The startup copy loop runs `_sdata` … `_edata`, and the
-   measured symbols were `_edata = 0x20000a6c` and `sTestPool = 0x20000a6c` — the pool starts
-   exactly where the copy stops. `_sbss` was `0x20008a70`, *after* the pool, so the zeroing
-   loop skips it too. It is neither copied nor cleared, and holds whatever the SRAM powered
-   up with.
-
-The fix is a `NOLOAD` placement next to the other Ethernet regions in
-`stm32h563zitx_FLASH.ld`:
-
-```ld
-  .ETHLib_sec (NOLOAD) :
-  {
-    . = ALIGN(4);
-    *(.ETHLibPool)
-    . = ALIGN(4);
-  } >SRAM3
-```
-
-SRAM3 has room. The measurement above was taken on the lwIP build, where the Ethernet buffers
-and the lwIP heap used 74 888 B of 320 KB; the NetX Duo build uses 89 704 B of the same region
-and there is still a quarter of a megabyte spare. Deselecting the current stack frees its
-packet pool in either case. `NOLOAD` removes the flash cost and makes the "uninitialised"
-status explicit rather than accidental; `mp_init()` initialises the pool header itself, so
-zeroing is not required.
-
-### Remaining work to enable EtherLib
-
-1. Add the linker placement above.
-2. ~~Build with `ETH_STACK=ETHERLIB` and fix what falls out.~~ **Done — it builds**, and CI
-   compiles it on every push (finding TS-08). Two things had to change first, and neither was
-   in the EtherLib files: `Src/main.c` and `Src/cmds.c` included NetX Duo headers
-   unconditionally, so the configuration never reached the compiler at all.
-
-   It **compiles**; it has never **run**. The F51 UID lesson still applies —
-   `eth_drv_etherlib.c:97` builds its MAC from the same `ETH_MAC_ADDR*` macros, and that is a
-   runtime HardFault, not a compile error.
-3. Check the flexPTP network-stack driver. The NSD follows `ETH_STACK`, so the EtherLib NSD
-   gets selected automatically — but note that the NetX Duo path does **not** use flexPTP's
-   bundled NSD at all: it supplies its own under `Src/flexptp_nsd/` through the
-   `FLEXPTP_NSD_SRC` extension point. Whether EtherLib's bundled NSD still matches flexPTP's
-   current interface has not been checked, and the `tx_cb` contract that bit us in F48 was
-   lwIP-specific.
-4. Hardware checksum offload is configured per stack. On NetX Duo it is declared through
-   `nx_interface_capability_flag`, and getting it wrong made the MAC compute checksums twice
-   during bring-up; EtherLib has its own arrangement, and the old `CHECKSUM_BY_HARDWARE` in
-   `Inc/lwipopts.h` is gone with lwIP.
-5. Re-run the PTP verification. EtherLib changes the RX/TX path completely, so the
-   receive-path findings need re-examining. `mac_drv.c` is shared and unmodified by either
-   stack port, so the **F61** fix carries over; **F58**'s pbuf-copy fix does not, because
-   EtherLib has no pbufs — and neither does the 2-byte alignment shim the NetX Duo driver
-   needs, which is a property of where that stack expects the IP header to land.
-6. Patch `0003-generic-netstack-igmp-addresses` already covers EtherLib: it was written so
-   that *any* port supplying its own stack can provide the two IGMP group addresses, rather
-   than flexPTP `#error`ing on an unrecognised stack.
-
----
-
 ## TrustZone Migration Guide
 
 This port runs **flat and non-secure**: `TZEN` disabled, one image, no partitioning. That is
@@ -419,8 +211,8 @@ measurement in these documents was taken on. This section is what a migration wo
 | Setting | Value | Where |
 |---|---|---|
 | `TZEN` option bit | disabled (`0xC3`) | `FLASH_OPTSR2_PRG`, RM0481 §3.6.1 |
-| ThreadX port | `ports/cortex_m33/gnu` | `Middlewares/threadx.cmake` |
-| `TX_SINGLE_MODE_NON_SECURE` | defined | `Middlewares/threadx.cmake` |
+| ThreadX port | `ports/cortex_m33/gnu` | `bazel/threadx.BUILD` |
+| `TX_SINGLE_MODE_NON_SECURE` | defined | `bazel/threadx.BUILD` |
 | Secure-stack sources | **excluded from the build** | `list(FILTER … EXCLUDE REGEX "secure_stack")` |
 | Flash / SRAM | `0x08000000` / `0x20000000` — the non-secure aliases | `stm32h563zitx_FLASH.ld` |
 
@@ -456,7 +248,7 @@ The linker script and the vector table move accordingly; secure and non-secure h
 §3.6.2), so the non-secure kernel gets its own SysTick.
 
 **ThreadX changes.** Stop defining `TX_SINGLE_MODE_NON_SECURE` and stop filtering the
-`secure_stack` sources out of `THREADX_PORT_SRC` — both in `Middlewares/threadx.cmake`. That
+`secure_stack` sources out of `THREADX_PORT_SRC` — both in `bazel/threadx.BUILD`. That
 restores `tx_thread_secure_stack.c` and its four assembly companions, which give each thread
 a secure stack allocated through `tx_thread_secure_stack_allocate()` so that non-secure
 threads can call into the secure world without corrupting one another's secure state.
@@ -538,7 +330,7 @@ All pins use `GPIO_AF11_ETH` on both parts.
 ON when using Ethernet"* — PB15 is shared with `I2S_A_SD` and routed through that jumper.
 The board manual is therefore independent confirmation of the PB13 → PB15 change.
 
-**Consequence for the port:** `ETHHW_InitClocks()` in `Drivers/EthDrv/mac_drv.c` groups
+**Consequence for the port:** `ETHHW_InitClocks()` in `lib/eth/mac_drv.c` groups
 PB5 and PB13 into a single `HAL_GPIO_Init(GPIOB, ...)` call. On the H563 that call reduces
 to **PB15 alone**. Leaving PB13 configured as AF11 and PB15 unconfigured produces a link
 that negotiates and receives normally but never transmits — a failure mode that looks like
@@ -605,7 +397,7 @@ at all, even though `stm32h5xx_hal_eth.c` is compiled into the HAL library. This
 from the H743 project, not a decision taken here — but it is worth understanding, because it
 determines who owns the defects.
 
-| | `Drivers/EthDrv/mac_drv.c` | `stm32h5xx_hal_eth.c` |
+| | `lib/eth/mac_drv.c` | `stm32h5xx_hal_eth.c` |
 |---|---|---|
 | Size | 859 lines | 3 524 lines |
 | Descriptors | `ETHHW_DescFull` = the 4 hardware DWORDs **plus a software extension** | `ETH_DMADescTypeDef`, hardware layout plus HAL-private backup fields |
@@ -668,15 +460,15 @@ absence of.
 | ICACHE after reset | Disabled — `EN` in `ICACHE_CR` resets to 0 (RM0481 §8.7) |
 | DCACHE after reset | Disabled — `EN` in `DCACHE_CR` resets to 0 (RM0481 §9.7) |
 | `HAL_Init()` | Sets NVIC priority grouping and the SysTick source. Does not touch either cache |
-| `HAL_ICACHE_MODULE_ENABLED` / `HAL_DCACHE_MODULE_ENABLED` | Both commented out in `Inc/stm32h5xx_hal_conf.h`, so the drivers are not even compiled |
-| Application code | No `HAL_ICACHE_Enable()`, `HAL_DCACHE_Enable()`, `SCB_EnableICache()` or `SCB_EnableDCache()` anywhere in `Src/`, `Drivers/EthDrv/` or `Inc/` |
+| `HAL_ICACHE_MODULE_ENABLED` / `HAL_DCACHE_MODULE_ENABLED` | Both commented out in `lib/runtime/stm32h5xx_hal_conf.h`, so the drivers are not even compiled |
+| Application code | No `HAL_ICACHE_Enable()`, `HAL_DCACHE_Enable()`, `SCB_EnableICache()` or `SCB_EnableDCache()` anywhere in the first-party sources (`projects/`) |
 
 The H7 needed care here: the Cortex-M7 has an architectural D-cache, and the H743 project put
 the Ethernet buffers in AXI-SRAM (`RAM_D1`) for that reason — the comment carried into
 `stm32h563zitx_FLASH.ld` records it as "accessible by the Ethernet DMA without cache coherency
 issues (when MPU was configured correctly)". **This project configures no MPU regions at all**
-— there is no `HAL_MPU_Enable()` or `ARM_MPU_*` call anywhere in `Src/`, `Drivers/EthDrv/` or
-`Inc/` — which is consistent, because with both caches off there is nothing to be coherent
+— there is no `HAL_MPU_Enable()` or `ARM_MPU_*` call anywhere in the first-party
+sources (`projects/`) — which is consistent, because with both caches off there is nothing to be coherent
 with. The H5 has no Cortex-M7 cache; ICACHE and DCACHE are separate peripherals on the bus,
 disabled at reset.
 

@@ -76,7 +76,7 @@ finding came from before trusting how it was established**:
 | Static review | F1–F43 | reading code, headers and documentation |
 | Implementation | F44–F50 | configuring, compiling and linking |
 | Hardware bring-up | F51–F66 | executing on the target, read over SWD and the console |
-| Independent review | F67–F79 | two later review passes over the tree; see [reviews/](reviews/README.md) |
+| Independent review | F67–F79 | two later review passes over the tree; the raw reviews were archived in `docs/reviews/`, removed 2026-11-27 and kept in git history (`git show b742e43:projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/reviews/README.md`) |
 | ThreadX/NetX Duo port | F80 | the S6 bench session |
 
 > **This paragraph used to read "Still not done: **no hardware**. Nothing here has executed on
@@ -202,7 +202,7 @@ of them blocking. Reviewing a port and building it are not substitutes for each 
 | F74 | CLI tokenizer: a one-byte overflow and shared state | **RESOLVED** [N8, N12] | host-tested and mutation-verified (TS-02) |
 | F75 | A dropped transmit was reported to lwIP as sent | **RESOLVED** [N14] | the NetX Duo driver reports `NX_TX_QUEUE_DEPTH`; host-tested |
 | F76 | The MAC handed the FCS up with every received frame | **RESOLVED** [N13] | CST/ACS enabled; host-tested |
-| F77 | Two traps on the EtherLib receive path | **RESOLVED** [N10, N11] | EtherLib is present but not compiled — see [design_doc.md](design_doc.md#etherlib-porting-guide) |
+| F77 | Two traps on the EtherLib receive path | **RESOLVED** [N10, N11] | EtherLib was present but never compiled, and has since been removed from the tree (Bazel decision D9); the porting guide that recorded these traps is in git history (`design_doc.md` at `b742e43`) |
 | F78 | Two configuration statements that did not hold | **RESOLVED** [N15, N16] | the same class as NX-03, which corrected a third |
 | F79 | The flash figure is not reproducible across build directories | **documented** [N17] | compare deltas, not absolutes |
 | F80 | **flexPTP's heartbeat cannot be enqueued from ThreadX's timer thread** | **RESOLVED** | `patches/flexptp/0004`; pinned by a host test against a real kernel |
@@ -1684,10 +1684,10 @@ state. Stage 20 previously said only "converging offset"; it now names the thres
 
 F67 onward, from two different sources — which this heading used to conflate.
 
-**F67–F79** were raised by the second review pass
-([`final_review_v2_opus_5p0.md`](reviews/final_review_v2_opus_5p0.md),
-[`consolidated_review_v2.md`](reviews/consolidated_review_v2.md)); the N-numbers in brackets are
-the identifiers those documents use, and their absence is the visible sign of the other source.
+**F67–F79** were raised by the second review pass (`final_review_v2_opus_5p0.md` and
+`consolidated_review_v2.md` in the review archive, now in git history at `b742e43`); the
+N-numbers in brackets are the identifiers those documents use, and their absence is the visible
+sign of the other source.
 
 **F80** has no N-number because it was not found by review at all. It came out of the S6 bench
 session of the ThreadX/NetX Duo port, and it is why `patches/flexptp/0004` exists.

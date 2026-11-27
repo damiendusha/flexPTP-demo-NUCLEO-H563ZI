@@ -50,14 +50,14 @@ hook that would see it.
 
 #20 has outside support. Another flexPTP user, Michael (`emb4fun`), reproduced it independently in
 [issue #32](https://github.com/epagris/flexPTP/issues/32): with two flexPTP masters the one with
-the *larger* clock identity won the election, and with #20 the smaller one correctly does. His
+the *larger* clock identity won the election, and with #20 the smaller one correctly does. Their
 [PR #33](https://github.com/epagris/flexPTP/pull/33) carries #20's change verbatim, credits it, and
 adds a separate fix (`ptp_slave_reset()` before `ptp_slave_enable()`).
 
 The PR branches for #20 and #26 on the fork are left at their original `494e644` base -- GitHub
 reports both as mergeable, so force-pushing would only churn the review. The patches are generated
-instead from the local `series/rc26` branch: all five fixes cherry-picked in order onto `RC1.0-26`,
-so each patch's context is exactly the tree it is applied to (see
+instead from the local `series/rc26` branch: all nine carried fixes cherry-picked in order onto
+`RC1.0-26`, so each patch's context is exactly the tree it is applied to (see
 [`patches/flexptp/README.md`](../../patches/flexptp/README.md#order)).
 
 ## Filing them

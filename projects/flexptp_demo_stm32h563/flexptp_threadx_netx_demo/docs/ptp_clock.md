@@ -92,8 +92,8 @@ For a nominally correct clock this must equal 10⁹, giving
 addend = 2³² × 10⁹ / (f_ptp × SSINC)
 ```
 
-which is exactly what flexPTP computes in
-`Modules/flexptp/src/flexptp/ptp_defs.h`:
+which is exactly what flexPTP computes in its
+[`src/flexptp/ptp_defs.h`](https://github.com/epagris/flexPTP/blob/fe4b071d72c1f6e489f13e350e0e4c8e157de4b8/src/flexptp/ptp_defs.h):
 
 ```c
 #define PTP_CLOCK_TICK_FREQ_HZ  (1000000000 / PTP_INCREMENT_NSEC)
@@ -110,7 +110,7 @@ PTP_HW_INIT(PTP_INCREMENT_NSEC, (uint32_t)PTP_ADDEND_INIT);
 
 Note the cast to `uint32_t` — it matters, see below.
 
-`ETHHW_SetPTPSubsecondIncrement()` in `Drivers/EthDrv/mac_drv.c` writes
+`ETHHW_SetPTPSubsecondIncrement()` in `lib/eth/mac_drv.c` writes
 `increment << 16`, which lands correctly in SSINC on the H563
 (`ETH_MACMACSSIR_SSINC_Pos = 16`). The sub-nanosecond field SNSINC at `[15:8]` is left at
 zero, matching the H743 build.
@@ -216,7 +216,7 @@ would need checking against the reference manual before being relied on.
 ## Selected configuration
 
 ```c
-/* Inc/flexptp_options.h */
+/* flexptp_options.h, both firmwares */
 #define PTP_MAIN_OSCILLATOR_FREQ_HZ (250000000)  /* = pll1_q_ck (VCO 500 MHz / PLLQ 2) */
 #define PTP_INCREMENT_NSEC (5)                   /* must exceed the 4 ns clock period   */
 ```

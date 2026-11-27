@@ -96,9 +96,9 @@ The clone needs the `REPO.bazel` and `BUILD.bazel` described in
 ## Order
 
 **A stack, applied in the listed order.** Several touch the same files (`nsd_lwip.c` three times,
-`task_ptp.c` three times), so each patch is
-generated against the tree the patches before it leave, not against bare `fe4b071`: every hunk
-then applies at its exact line, with no offset and no fuzz. Bazel's patcher, unlike `git apply`,
+`task_ptp.c` three times), so each patch is generated against the tree the patches before it
+leave, not against bare `fe4b071`: every hunk then applies at its exact line, with no offset and
+no fuzz. Bazel's patcher, unlike `git apply`,
 does not tolerate drift, and an offset that `patch` forgives today is a failure after the next
 edit.
 
@@ -141,8 +141,9 @@ how the old `0002` first shipped with temporary instrumentation folded in.
 
 Delete the patch, drop its line from `//bazel/repositories.bzl` and its `exports_files` entry,
 and bump the pin. Rebase `series/rc26` onto the new pin and regenerate the patches after it: they
-were generated against a tree that had the merged one applied, and upstream may have trimmed it. Then check the fix really is in the new revision rather than assuming, the way
-`RC1.0-17` was checked:
+were generated against a tree that had the merged one applied, and upstream may have trimmed it.
+Then check the fix really is in the new revision rather than assuming, the way `RC1.0-17` was
+checked:
 
 ```bash
 git -C /tmp/fp apply -R --check patches/flexptp/0001-u1-gm-clock-identity-byte-order.patch  # clean == present

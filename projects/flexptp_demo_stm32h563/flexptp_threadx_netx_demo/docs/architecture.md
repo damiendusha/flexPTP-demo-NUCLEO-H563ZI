@@ -47,20 +47,17 @@ needs access to the DMA descriptors that the HAL driver abstracts away.
 
 ## Module Inventory
 
-Every third-party component and its provenance. Where behaviour had to change, it was done
+Every third-party component and its provenance. Each is a git repository fetched by Bazel and
+pinned by commit in [`bazel/repositories.bzl`](../../../../bazel/repositories.bzl) — not a
+submodule, and not a working tree anyone can edit. Where behaviour had to change, it was done
 through a supported extension point or a compile definition rather than by editing vendored
-source. Two submodules are the exception, and both changes are **permanent bug fixes**.
+source, with two exceptions, both carried as patches that **the fetch applies**:
 
-> **Two submodules carry local patches**, all fixing real defects rather than instrumenting
-> anything.
->
-> **flexPTP — three patch files.** A servo fix
-> ([F59](port_review.md#f59--one-duplicated-sync-cycle-latches-the-servo-into-nan-for-ever-resolved));
-> an extension point so a port that supplies its own network stack can provide the two IGMP
-> group addresses, added by the ThreadX/NetX Duo port; and a fix for the CMSIS-RTOS2 binding
-> enqueueing heartbeat events with `osWaitForever` from ThreadX's timer thread, which that
-> thread is not allowed to block in — so every heartbeat was silently dropped and the BMCA
-> never left `INITIALIZING` ([F80](port_review.md#f80--flexptps-heartbeat-cannot-be-enqueued-from-threadxs-timer-thread-resolved)).
+> **flexPTP — nine patches**, each a fix filed upstream and deleted from here as its pull request
+> merges: U1 (#20), U6 (#26), U8–U10 (#34–#36) and U11–U14 (#37–#40). What each fixes, how it was
+> verified, and the commands to regenerate them are in
+> [`patches/flexptp/README.md`](../../../../patches/flexptp/README.md); the review that found them
+> is [`docs/flexptp_upstream_review.md`](../../../../docs/flexptp_upstream_review.md).
 >
 > **embfmt — one patch file, four defects.** `%ll` conversions dropped and NaN rendered as
 > `0.0000` ([F60](port_review.md#f60--embfmt-drops-ll-conversions-and-renders-nan-as-00000-resolved)),
@@ -68,50 +65,36 @@ source. Two submodules are the exception, and both changes are **permanent bug f
 > rounding carry that subtracted 10 rather than 10^precision
 > ([F66](port_review.md#f66--embfmt-misreports-small-e-values-and-any-rounding-carry-resolved)).
 > Two findings, four defects, one patch file — the three counts that have been confused for
-> each other.
-> Because the parent repository records only a submodule's commit pointer, working-tree edits
-> inside `Modules/` are invisible to a clone and are destroyed by `git submodule update` —
-> which is why the patches are kept in-tree. Neither is target-specific; both are worth
-> reporting upstream. See [patches/embfmt/README.md](../../../../patches/embfmt/README.md).
+> each other. See [patches/embfmt/README.md](../../../../patches/embfmt/README.md).
 >
-> **The flexPTP patches were reported upstream, and taken.** All three are in flexPTP as of
-> `RC1.0-17` — [PR #15](https://github.com/epagris/flexPTP/pull/15) (servo NaN latch),
-> [PR #18](https://github.com/epagris/flexPTP/pull/18) (generic-netstack IGMP addresses) and
-> commit `e873105` (non-blocking enqueue, which upstream extended to the receive, transmit and
-> TX-timestamp paths and to the FreeRTOS branch). The pin carries those fixes, and
-> `patches/flexptp/` now holds a *different* series — seven fixes found reviewing that release,
-> filed upstream and carried here until they merge. embfmt's patch is still ours to carry.
->
-> **`build.sh` applies them**, immediately after the submodule update, and **refuses to
-> build** if a submodule is neither pristine nor patched. This matters because omitting them
-> does not break the build — it produces a firmware that is silently wrong: the servo latches
-> to NaN on the first duplicated Sync (F59) while printing a plausible `0.0000` correction
-> (F60), or the clock never syncs at all because no master is ever selected (F80). Before that
-> check existed, a fresh clone built exactly that firmware with no warning.
->
-> The temporary F42/F61 instrumentation patch that used to sit alongside them was **dropped**
-> once both findings were resolved. It is recoverable from git:
-> `git show 2963813:patches/flexptp/0001-temporary-F42-instrumentation.patch`.
+> **A patch cannot be skipped any more.** The patched tree is what lands in Bazel's repository
+> cache, so there is no working tree that can be pristine, patched, or neither. That matters
+> because omitting one never broke the build: it produced a firmware that was silently wrong — the
+> servo latched to NaN on the first duplicated Sync (F59) while printing a plausible `0.0000`
+> correction (F60), or the clock never synced because no master was ever selected (F80). Those
+> three flexPTP fixes, the first series this project carried, were taken upstream in `RC1.0-17`:
+> [PR #15](https://github.com/epagris/flexPTP/pull/15), [PR #18](https://github.com/epagris/flexPTP/pull/18)
+> and commit `e873105`.
 
 | Component | Version | How it is vendored | Modified? |
 |---|---|---|---|
-| **stm32h5xx-hal-driver** | `v1.7.0-13-gdeaf9d1`, upstream `main` head | git submodule | **As-is.** Configured by `Inc/stm32h5xx_hal_conf.h`; 12 of 61 modules enabled |
-| **CMSIS Core (M)** | 5.6 (= CMSIS 5.9.0 content) | in-tree, `Drivers/CMSIS/Include` | **As-is, and already current for CMSIS 5.** Inherited from the H743 project, but verified byte-identical to the final CMSIS 5 release — see the note below. Not a submodule |
-| **CMSIS Device STM32H5xx** | 1.7.0 | in-tree, `Drivers/CMSIS/Device` | **As-is.** From `STMicroelectronics/cmsis_device_h5` |
-| **CMSIS-RTOS2 API header** | ARM | in-tree, `Drivers/CMSIS/CMSIS_RTOS_V2/cmsis_os2.h` | **As-is.** The header is RTOS-agnostic and survived the kernel swap unchanged. ST's FreeRTOS-backed `cmsis_os2.c`, `freertos_os2.h` and `freertos_mpool.h` were removed with FreeRTOS in S3 |
-| **CMSIS-RTOS2 implementation** | [`stm32-mw-cmsis-rtos-tx`](https://github.com/STMicroelectronics/stm32-mw-cmsis-rtos-tx) `v1.4.1` | git submodule | **As-is**, and the one non-MIT component in the tree (SLA0044). No MIT equivalent exists — Eclipse ThreadX ships FreeRTOS, OSEK and POSIX layers but not CMSIS-RTOS2 |
-| **ThreadX** | [`eclipse-threadx/threadx`](https://github.com/eclipse-threadx/threadx) `b2868c3` = `v6.5.2.202603b_rel`, upstream `master` head | git submodule | **As-is** (MIT). Configured by `Inc/tx_user.h`. `tx_initialize_low_level.S` is **ours** — Eclipse keeps it in `example_build/` because it is board-specific; see `Startup/tx_initialize_low_level.S` for what changed and what was deliberately left out |
-| **NetX Duo** | [`eclipse-threadx/netxduo`](https://github.com/eclipse-threadx/netxduo) `c690f59` = `v6.5.2.202603b_rel`, upstream `master` head | git submodule | **As-is** (MIT). Configured by `Inc/nx_user.h`. Eclipse upstream rather than ST's fork, which is pinned at 6.4.0 and missing published CVE fixes on the IPv4/DHCP receive path this firmware runs — see [threadx_netxduo_feasibility.md](threadx_netxduo_feasibility.md#choosing-the-supply-chain). **`NX_ENABLE_VLAN` is mandatory**: the whole `nx_link` layer, which is the PTP timestamp path, is behind it |
-| **lwIP** | — | **removed in S3** | Replaced by NetX Duo. The `LWIP_PBUF_CUSTOM_DATA` injection it needed is gone with it: NetX Duo carries timestamps in its own API |
-| **flexPTP** | `76aaf67` (`RC1.0-11`) | git submodule | **Patched — three files now.** A servo fix (F59, `0002-…`), a generic network-stack extension point (`0003-…`), and a non-blocking heartbeat enqueue ([F80](port_review.md#f80--flexptps-heartbeat-cannot-be-enqueued-from-threadxs-timer-thread-resolved), `0004-…`). Plus two external workarounds. (1) `__PRI64_PREFIX=__INT64` compile definition, because flexPTP uses a glibc-internal macro newlib lacks (F47). (2) The STM32H5 hardware port is supplied by this project, since flexPTP ships none |
-| **embfmt** | `670a349` | git submodule | **Patched.** Formatted-print backend for `MSG()`. `%ll` conversions were dropped entirely and NaN printed as `0.0000`; see [F60](port_review.md#f60--embfmt-drops-ll-conversions-and-renders-nan-as-00000-resolved) and `patches/embfmt/` |
-| **EtherLib** | `ec35be5` | git submodule | **Present but not compiled.** Alternative to NetX Duo, selectable via the `ETH_STACK` CMake variable. See [design_doc.md](design_doc.md#etherlib-porting-guide) |
+| **stm32h5xx-hal-driver** | `v1.7.0-13-gdeaf9d1`, upstream `main` head | Bazel git repository | **As-is.** Configured by `lib/runtime/stm32h5xx_hal_conf.h`; 12 of 61 modules enabled |
+| **CMSIS Core (M)** | 5.6 (= CMSIS 5.9.0 content) | in-tree, `third_party/CMSIS/Include` | **As-is, and already current for CMSIS 5.** Inherited from the H743 project, but verified byte-identical to the final CMSIS 5 release — see the note below. Not fetched |
+| **CMSIS Device STM32H5xx** | 1.7.0 | in-tree, `third_party/CMSIS/Device` | **As-is.** From `STMicroelectronics/cmsis_device_h5` |
+| **CMSIS-RTOS2 API header** | ARM | in-tree, `third_party/CMSIS/CMSIS_RTOS_V2/cmsis_os2.h` | **As-is.** The header is RTOS-agnostic: the same one serves both firmwares, and it is why the CLI and console in `//projects/flexptp_demo_stm32h563/lib` name no RTOS |
+| **CMSIS-RTOS2 implementation** | [`stm32-mw-cmsis-rtos-tx`](https://github.com/STMicroelectronics/stm32-mw-cmsis-rtos-tx) `v1.4.1` | Bazel git repository | **As-is**, and the one non-MIT component in the tree (SLA0044). No MIT equivalent exists — Eclipse ThreadX ships FreeRTOS, OSEK and POSIX layers but not CMSIS-RTOS2 |
+| **ThreadX** | [`eclipse-threadx/threadx`](https://github.com/eclipse-threadx/threadx) `b2868c3` = `v6.5.2.202603b_rel`, upstream `master` head | Bazel git repository | **As-is** (MIT). Configured by `tx_user.h`. `tx_initialize_low_level.S` is **ours** — Eclipse keeps it in `example_build/` because it is board-specific; see `startup/tx_initialize_low_level.S` for what changed and what was deliberately left out |
+| **NetX Duo** | [`eclipse-threadx/netxduo`](https://github.com/eclipse-threadx/netxduo) `c690f59` = `v6.5.2.202603b_rel`, upstream `master` head | Bazel git repository | **As-is** (MIT). Configured by `nx_user.h`. Eclipse upstream rather than ST's fork, which is pinned at 6.4.0 and missing published CVE fixes on the IPv4/DHCP receive path this firmware runs — see [threadx_netxduo_feasibility.md](threadx_netxduo_feasibility.md#choosing-the-supply-chain). **`NX_ENABLE_VLAN` is mandatory**: the whole `nx_link` layer, which is the PTP timestamp path, is behind it |
+| **lwIP** | — | not in this firmware | Removed from it in S3 and replaced by NetX Duo, which carries timestamps in its own API. lwIP is now the network stack of the FreeRTOS firmware |
+| **flexPTP** | `fe4b071` (`RC1.0-26`), upstream `master` head | Bazel git repository, **nine patches** | **Patched** — see above. Plus two external workarounds: (1) the `__PRI64_PREFIX=__INT64` compile definition (`bazel/flexptp.bzl`), because flexPTP uses a glibc-internal macro newlib lacks (F47); (2) the STM32H5 hardware port is supplied by this project (`lib/ptp/ptp_port_stm32h563.c`), since flexPTP ships none |
+| **embfmt** | `670a349`, upstream head | Bazel git repository, one patch | **Patched.** Formatted-print backend for `MSG()`. `%ll` conversions were dropped entirely and NaN printed as `0.0000`; see [F60](port_review.md#f60--embfmt-drops-ll-conversions-and-renders-nan-as-00000-resolved) and `patches/embfmt/` |
+| **EtherLib** | — | **removed** | Was an alternative network stack, compiled but never run on this port; removed in the Bazel migration (decision D9) |
 
 > **"CMSIS Core (M) 5.6" is not a stale version.** `5.6` is the **Core(M)** version from
 > `cmsis_version.h`, which is versioned separately from the CMSIS *pack*. CMSIS 5.9.0 — the
 > final CMSIS 5 release — also reports Core(M) 5.6, so the number says nothing about age.
 >
-> Checked rather than assumed: all **30 files** in `Drivers/CMSIS/Include` are byte-identical
+> Checked rather than assumed: all **30 files** in `third_party/CMSIS/Include` are byte-identical
 > to `CMSIS/Core/Include` at tag `5.9.0` of `ARM-software/CMSIS_5`. Fetching CMSIS 5 directly
 > would therefore change **nothing**. The five headers this project actually compiles —
 > `core_cm33.h`, `cmsis_version.h`, `cmsis_compiler.h`, `cmsis_gcc.h`, `mpu_armv8.h`, all
@@ -127,48 +110,27 @@ source. Two submodules are the exception, and both changes are **permanent bug f
 > way to move is to take the CMSIS Core that ships with the STM32CubeH5 release matching the
 > device pack, not the newest tag available.
 
-> **What "patched" means for the CMSIS-RTOS2 shim.** It is easy to read the row above as a
-> header having been copied or converted. It was neither.
->
-> The shim is four files, taken verbatim from the H743 project in Stage 1 (`d0f0b2a`). The
-> whole of its subsequent history is one line in `cmsis_os2.c`, made in Stage 15 (`51031d9`):
->
-> ```diff
-> --- a/Drivers/CMSIS/CMSIS_RTOS_V2/cmsis_os2.c
-> +++ b/Drivers/CMSIS/CMSIS_RTOS_V2/cmsis_os2.c
-> @@ -34,7 +34,7 @@
-> -#include "stm32h7xx.h"
-> +#include "stm32h5xx.h"
-> ```
->
-> `git diff d0f0b2a HEAD -- Drivers/CMSIS/CMSIS_RTOS_V2/` reports **1 file changed, 1
-> insertion, 1 deletion**; `cmsis_os2.h`, `freertos_mpool.h` and `freertos_os2.h` have never
-> been touched.
->
-> The device header itself was **not** modified, converted or hand-written.
-> `stm32h5xx.h` is ST's own CMSIS device header, added unmodified as part of the H5 device
-> pack in Stage 3 (`f4e4b2f`) and living at
-> `Drivers/CMSIS/Device/ST/STM32H5xx/Include/stm32h5xx.h` — the *CMSIS Device STM32H5xx* row
-> above. `stm32h7xx.h` does not exist anywhere in this repository; the H7 device headers were
-> removed in Stage 3, which is exactly why this `#include` had to change.
->
-> So the shim was retargeted at a different device header, not ported.
-
 Project-owned code that would otherwise look like a third-party module:
 
 | Component | Location | Role |
 |---|---|---|
-| **EthDrv** | `Drivers/EthDrv/` | Register-level Ethernet MAC driver (`mac_drv.c`), PHY driver, and the NetX Duo glue (`eth_drv_netxduo.c`) |
-| **flexPTP NSD** | `Src/flexptp_nsd/` | This project's network-stack driver for flexPTP, supplied through `FLEXPTP_NSD_SRC` rather than using flexPTP's bundled one. Four of its units are C++ and host-tested |
-| **blocking_io** | `Modules/blocking_io/` | Blocking FIFO behind the console |
-| **flexPTP HW port** | `Src/flexptp_port/` | STM32H563 hardware port for flexPTP (Stage 14) |
+| **MAC and PHY drivers** | `lib/eth/` | Register-level Ethernet MAC driver (`mac_drv.c`) and PHY driver, shared by both firmwares |
+| **NetX Duo glue** | `eth/` | `eth_drv_netxduo.c` (the link driver) and `ethernet_netxduo.c` (pool, IP instance, DHCP) |
+| **flexPTP NSD** | `ptp/` and `lib/ptp/` | This project's network-stack driver for flexPTP (`ptp/nsd_netxduo.c`), used instead of flexPTP's bundled ones. Its four logic units are C++, in `lib/ptp/`, and host-tested |
+| **flexPTP HW port** | `lib/ptp/ptp_port_stm32h563.c` | STM32H563 hardware port for flexPTP (Stage 14) |
+| **CLI, console, FIFO** | `lib/cli/`, `lib/io/`, `lib/blocking_io/` | The command line, `MSG()` and the USART3/GPDMA console, the blocking FIFO behind it |
+| **Runtime and startup** | `lib/runtime/`, `lib/startup/` | syscalls, the heap, C++ support, `SystemInit()`, the reset vector, the linker script, the HAL configuration |
 
-`Modules/lwip_port/` — the `sys_arch` layer that mapped lwIP onto FreeRTOS — was deleted in S3
-along with both of the things it bridged.
+`lib/` is `//projects/flexptp_demo_stm32h563/lib`, shared with the FreeRTOS firmware; everything
+else above is in this project's directory.
 
-> **Submodule pins are all ahead of the NUCLEO-H743ZI reference project.** This is a
-> deliberate, documented decision — see [design_doc.md](design_doc.md#submodule-pinning).
-> It is the root cause of findings F47–F49.
+The `sys_arch` layer that maps lwIP onto FreeRTOS left this firmware in S3 with both of the things
+it bridged; it lives on in the FreeRTOS firmware, as `lwip_port/`.
+
+> **Every pin is at its upstream head** as of November 2026, each bump verified on hardware —
+> see [`docs/flexptp_upstream_review.md`](../../../../docs/flexptp_upstream_review.md), §7. The
+> original pins were already ahead of the NUCLEO-H743ZI reference project, which is the root cause
+> of findings F47–F49.
 
 ---
 
@@ -185,12 +147,12 @@ along with both of the things it bridged.
         └───────┬────────┘   └───┬────────┬───┘   └───────┬───────┘
                 │                │        │               │
                 │        ┌───────▼──┐  ┌──▼─────────────┐ │
-                │        │ HW port  │  │ Src/flexptp_nsd│ │  flexPTP ports
+                │        │ HW port  │  │ ptp/, lib/ptp  │ │  flexPTP ports
                 │        │ (H563)   │  │ (THIS project) │ │
                 │        └───────┬──┘  └──┬─────────────┘ │
                 │                │        │               │
         ┌───────▼────────────────▼────────▼───────────────▼───────┐
-        │  EthDrv:  mac_drv.c · phy_drv · eth_drv_netxduo.c       │  project drivers
+        │  lib/eth: mac_drv.c · phy_drv  ·  eth/eth_drv_netxduo.c │  project drivers
         └─────────────────────────┬───────────────────────────────┘
                                   │
         ┌─────────────────────────▼───────────────────────────────┐
@@ -204,9 +166,9 @@ along with both of the things it bridged.
 
 The NSD box is the one that moved. Under lwIP this project used flexPTP's **bundled**
 `nsd_lwip.c`; under NetX Duo it supplies its own through flexPTP's `FLEXPTP_NSD_SRC`
-extension point, because flexPTP ships no NetX Duo driver. That is why
-`Src/flexptp_nsd/` exists and why four of its units were extracted into testable,
-dependency-free C++ — see [testing_architecture.md](testing_architecture.md).
+extension point, because flexPTP ships no NetX Duo driver. That is why `ptp/nsd_netxduo.c`
+exists and why four of its units were extracted into testable, dependency-free C++ in `lib/ptp/`
+— see [testing_architecture.md](testing_architecture.md).
 
 Two boundaries are worth calling out:
 
@@ -217,7 +179,7 @@ Two boundaries are worth calling out:
   binding, the clock interface, the servo, and the print/CLI macros, and it is where the
   hardware port is wired in. flexPTP has no other configuration input.
 - **`ethinfo` is composed by the application, not by the driver.** It prints three layers —
-  the MAC driver's counters, the NSD's, and flexPTP's core state — and `Src/cmds.c` calls all
+  the MAC driver's counters, the NSD's, and flexPTP's core state — and `cmds.c` calls all
   three in order. The driver deliberately does **not** reach up into the NSD: it used to, through
   four hand-written `extern` declarations inside `eth_drv_report()`'s body, which is four
   chances for the signature drift that is F48.
@@ -232,12 +194,12 @@ Two boundaries are worth calling out:
 ## Boot Sequence
 
 ```
-Reset_Handler                       Startup/startup_stm32h563zitx.s
+Reset_Handler                       lib/startup/startup_stm32h563zitx.s
   ├─ set SP = _estack (0x20040000)
-  ├─ SystemInit()                   Src/system_stm32h5xx.c — VTOR
+  ├─ SystemInit()                   lib/runtime/system_stm32h5xx.c — VTOR
   ├─ copy .data, zero .bss
   ├─ __libc_init_array()
-  └─ main()                         Src/main.c
+  └─ main()                         main.c
        ├─ SystemInit()              (called again; harmless, inherited from H743)
        ├─ HAL_Init()
        ├─ init_osc_and_clk()        VOS0 → PLL1 → 250 MHz → SBS comp cells
@@ -260,7 +222,7 @@ task_startup ("init")
   └─ loop { ethernet_poll_dhcp(); osDelay(1000) }
 
 "flexptp" CLI command → reg_task_ptp() → creates the "ptp" thread on demand
-  └─ flexptp_user_event_cb(PTP_UEV_INIT_DONE)      Src/main.c
+  └─ flexptp_user_event_cb(PTP_UEV_INIT_DONE)      main.c
        ├─ ptp_load_profile(FLEXPTP_INITIAL_PROFILE)  "default" — see ptp_profiles.md
        └─ ptp_log_enable(PTP_LOG_DEF | PTP_LOG_BMCA)
 ```
@@ -340,8 +302,8 @@ round-robined every tick.
 
 Nothing here depends on it: every one of those four blocks — on a queue, an event flag, a FIFO
 or `osDelay()` — so none can starve another. Recorded because it is a behavioural difference the
-kernel swap introduced silently, and because `RTOS2_DEFAULT_TIME_SLICE` is overridable from
-`Middlewares/threadx.cmake` if a future thread ever does spin.
+kernel swap introduced silently, and because `RTOS2_DEFAULT_TIME_SLICE` is overridable as a define on the wrapper's target in
+`bazel/cmsis_rtos_threadx.BUILD` if a future thread ever does spin.
 
 ### RX depths, and which one is the limit
 
@@ -359,7 +321,7 @@ it, so one descriptor can never contribute two entries. It was previously 32 —
 ceiling, so its top third was unreachable.
 
 **The limit is the message queue, not the packet pool** — which is the opposite of what this
-section said under lwIP, and the opposite of what the packet-pool comment in `Inc/nx_user.h`
+section said under lwIP, and the opposite of what the packet-pool comment in `nx_user.h`
 implies. Measured:
 
 | Load | Result |
@@ -410,12 +372,12 @@ power cycle.
 
 | Interrupt | IRQn | Vector idx | Priority | Handler | Defined in |
 |---|---|---|---|---|---|
-| MemManage | −12 | 4 | **0** | `MemManage_Handler` | `Src/main.c` — reports and halts |
-| BusFault | −11 | 5 | **0** | `BusFault_Handler` | `Src/main.c` — reports and halts |
-| UsageFault | −10 | 6 | **0** | `UsageFault_Handler` | `Src/main.c` — reports and halts |
+| MemManage | −12 | 4 | **0** | `MemManage_Handler` | `main.c` — reports and halts |
+| BusFault | −11 | 5 | **0** | `BusFault_Handler` | `main.c` — reports and halts |
+| UsageFault | −10 | 6 | **0** | `UsageFault_Handler` | `main.c` — reports and halts |
 | SVC | −5 | 11 | **15** | `SVC_Handler` | unused — resolves to `Default_Handler` |
 | PendSV | −2 | 14 | **15** | `PendSV_Handler` | ThreadX `tx_thread_schedule.S` |
-| SysTick | −1 | 15 | **4** | `SysTick_Handler` | `Startup/tx_initialize_low_level.S` — **ours** |
+| SysTick | −1 | 15 | **4** | `SysTick_Handler` | `startup/tx_initialize_low_level.S` — **ours** |
 | **ETH** | 106 | 122 | **7** | `ETH_IRQHandler` | `eth_drv_netxduo.c` |
 | **USART3** | 60 | 76 | **12** | `USART3_IRQHandler` | `serial_io.c` |
 | **GPDMA1 Ch0** | 27 | 43 | **12** | `GPDMA1_Channel0_IRQHandler` | `serial_io.c` |
@@ -435,7 +397,7 @@ no ceiling for kernel calls, and PendSV at 15 cannot preempt the ETH ISR whateve
 The handler itself is `HAL_IncTick` plus `_tx_timer_interrupt`.
 
 **`HardFault`, `MemManage`, `BusFault` and `UsageFault` report and halt** — they are naked
-handlers in `Src/main.c` that recover the exception frame, print `CFSR`, `HFSR`, the faulting
+handlers in `main.c` that recover the exception frame, print `CFSR`, `HFSR`, the faulting
 `PC` and `LR` through the polled UART writer, and decode the causes this port has actually
 hit. Every other vector still resolves to `Default_Handler`, an infinite loop.
 
@@ -445,7 +407,7 @@ hardware** (`UFSR.STKOF`) on the offending push. This was equally true under Fre
 the same reason — it is a property of the architecture, not of the kernel.
 
 The software check is therefore the backstop, not the primary: `TX_ENABLE_STACK_CHECKING` is
-defined in `Inc/tx_user.h` **in Debug only**, and `app_stack_error_handler()` is registered with
+defined in `tx_user.h` **in Debug only**, and `app_stack_error_handler()` is registered with
 `tx_thread_stack_error_notify()` in `main()` unconditionally. It only catches what the hardware
 cannot — a stack overrun *and then unwound* before the next context switch. In the ordinary case
 `UsageFault_Handler` gets there first, in both configurations. Measured:
@@ -459,7 +421,9 @@ cannot — a stack overrun *and then unwound* before the next context switch. In
 
 Three switches are conditional on `DEBUG`, each individually reasoned where it is defined, and
 worth collecting in one place because together they mean the two images do not behave
-identically at the API boundary:
+identically at the API boundary. `DEBUG` is defined by `--config=dbg` (in `toolchain/BUILD.bazel`,
+for every compile action, so NetX Duo and the application agree on `NX_PACKET`'s layout); plain
+`bazel build` is fastbuild, `-O0` *without* it, and is neither configuration:
 
 | Switch | Debug | Release | Consequence |
 |---|---|---|---|
@@ -470,9 +434,13 @@ identically at the API boundary:
 `TX_DISABLE_ERROR_CHECKING` is **not** defined in either: ST's CMSIS-RTOS2 wrapper `#error`s on
 it, because it translates ThreadX's return codes into `osStatus_t`.
 
-Both configurations are hardware-tested, and the HIL suite runs against either. The point of
-the table is that "Release is Debug with optimisation" is not true here, and the difference is
-on the error paths — which are the paths least likely to be exercised before they matter.
+Both configurations are hardware-tested, every time: the verification matrix runs S8 and every
+scenario on each ([testing_architecture.md](testing_architecture.md#build-configurations-what-debug-and-release-mean)).
+The point of the table is that "Release is Debug with optimisation" is not true here, and the
+difference is on the error paths — which are the paths least likely to be exercised before they
+matter. The Bazel migration once lost `DEBUG`, and for a while `--config=dbg` built none of these;
+the symbol table is how to tell — a debug image links NetX Duo's `_nxe_*` checks, a release
+image does not.
 
 ### Interrupt priorities: the FreeRTOS constraint no longer applies
 
@@ -494,7 +462,7 @@ unchanged and still deliberate: **ETH (7) preempts the console (12)**, so heavy 
 cannot delay Ethernet servicing.
 
 If an interrupt with hard latency requirements is ever added, define `TX_PORT_USE_BASEPRI` and
-`TX_PORT_BASEPRI` together in `Inc/tx_user.h` and re-derive the priorities; the ceiling
+`TX_PORT_BASEPRI` together in `tx_user.h` and re-derive the priorities; the ceiling
 behaviour then returns.
 
 > **What replaced the rule is a different one, and it caught this port twice.** The constraint
@@ -502,7 +470,7 @@ behaviour then returns.
 > CMSIS-RTOS2 forbids a non-zero timeout from an ISR, and ThreadX additionally forbids one from
 > its **timer thread** (`txe_queue_send.c` returns `TX_WAIT_ERROR` for `&_tx_timer_thread`).
 > flexPTP's CMSIS-RTOS2 binding violates both — on the transmit-timestamp path and on the
-> heartbeat path. See `Src/flexptp_nsd/ptp_tx_timestamp.c` and
+> heartbeat path. See `ptp/ptp_tx_timestamp.c` and
 > [F80](port_review.md#f80--flexptps-heartbeat-cannot-be-enqueued-from-threadxs-timer-thread-resolved).
 
 ### Handler responsibilities
@@ -627,17 +595,17 @@ accurate its inputs are.
 
 ## Memory Layout
 
-Regions from `stm32h563zitx_FLASH.ld`; usage from the current Debug build.
+Regions from `lib/startup/stm32h563zitx_FLASH.ld`; usage measured on the 2026-11-27 debug and release images.
 
-| Region | Base | Size | Contents | Used |
-|---|---|---|---|---|
-| FLASH | `0x08000000` | 2 MB | `.isr_vector`, `.text`, `.rodata`, `.data` LMA | 207 864 B (9.91%) |
-| SRAM1 | `0x20000000` | 256 KB | `.data`, `.bss`, main stack, C heap, **ThreadX byte pools** | 88 584 B (33.79%) |
-| SRAM2 | `0x20040000` | 64 KB | *(unallocated — deliberate spare capacity)* | 0 B |
-| SRAM3 | `0x20050000` | 320 KB | Ethernet DMA descriptors + buffers, **NetX Duo packet pool and IP thread stack** | 89 704 B (27.38%) |
+| Region | Base | Size | Contents | Debug | Release |
+|---|---|---|---|---|---|
+| FLASH | `0x08000000` | 2 MB | `.isr_vector`, `.text`, `.rodata`, `.data` LMA | 224 704 B (10.71%) | 151 376 B (7.22%) |
+| SRAM1 | `0x20000000` | 256 KB | `.data`, `.bss`, main stack, C heap, **ThreadX byte pools** | 88 816 B (33.88%) | 88 576 B (33.79%) |
+| SRAM2 | `0x20040000` | 64 KB | *(unallocated — deliberate spare capacity)* | 0 B | 0 B |
+| SRAM3 | `0x20050000` | 320 KB | Ethernet DMA descriptors + buffers, **NetX Duo packet pool and IP thread stack** | 89 704 B (27.38%) | 89 608 B (27.35%) |
 
-Both smaller than the FreeRTOS/lwIP build they replace (217 160 B FLASH, 133 168 B SRAM1),
-despite SRAM3 growing: lwIP's heap and the 30 KB `ucHeap` are gone, and NetX Duo's packet pool
+Smaller than the FreeRTOS/lwIP build this firmware replaced (217 160 B FLASH, 133 168 B SRAM1,
+measured then), despite SRAM3 growing: lwIP's heap and the 30 KB `ucHeap` are gone, and NetX Duo's packet pool
 moved to SRAM3 alongside the DMA buffers it feeds.
 
 - `_estack` = `0x20040000`, the top of SRAM1 — confirmed as vector word 0 in the linked image.

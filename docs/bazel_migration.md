@@ -1,6 +1,9 @@
 # Bazel migration plan
 
-Status: **phases 0–4 landed and verified on hardware; phases 5–7 outstanding.**
+Status: **complete — every phase has landed** (table below). This is the record of the plan as it
+was executed; where it says "today" or names `CMakeLists.txt`, `build.sh` or a submodule, it
+describes the starting point, which no longer exists. For the build as it is now, see the
+README and [`bazel_decisions.md`](bazel_decisions.md).
 
 | Phase | State |
 |---|---|

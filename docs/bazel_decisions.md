@@ -13,6 +13,10 @@ Decisions are numbered D1–D18 and the table lives in
 [bazel_migration.md §0](bazel_migration.md#0-decisions-taken). Sections here are cross-referenced
 from it.
 
+The migration is complete. This record was written while it ran, so its present tense — "`build.sh`
+pins…", "as `Modules/CMakeLists.txt` does today" — describes the CMake build being replaced, and
+those references are kept as written: they are the evidence the decisions were taken against.
+
 ## Contents
 
 - [1. What was verified, and what it costs](#1-what-was-verified-and-what-it-costs)

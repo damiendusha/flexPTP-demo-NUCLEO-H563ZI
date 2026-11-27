@@ -1,5 +1,10 @@
 # Comprehensive review — ThreadX / NetX Duo port
 
+> **Historical — a review of the tree as it stood on 2026-08-15.** Its findings (NX-, TS-, AR-,
+> CX-, GI- series) are tracked, with their resolution, in [port_review.md](port_review.md); file
+> paths below are the pre-Bazel layout (`Src/`, `Inc/`, `Drivers/`, `Modules/`). For the current
+> firmware see [architecture.md](architecture.md).
+
 **Reviewer:** Claude Opus 5.0 · **Date:** 2026-08-15 · **Tree:** `threadx-port` @ `581c25a`
 · **Document:** `docs/review_v1_opus_5p0.md`
 

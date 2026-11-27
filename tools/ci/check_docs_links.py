@@ -17,28 +17,16 @@ LINE_FRAG = re.compile(r"L\d+(?:-L\d+)?")
 
 # Source files the ThreadX/NetX Duo port deleted, which historical documents still reference.
 #
-# docs/reviews/ is an archive of reviews of the FreeRTOS/lwIP firmware, and port_review.md
-# records findings against it. Their links to these paths were correct on the day they were
-# written; the files were removed later, by S3 of the ThreadX port. Rewriting the archive to
-# hide that would falsify the record, and deleting the links would lose the reference.
+# port_review.md records findings against the FreeRTOS/lwIP firmware (as did the review archive
+# that fed it, removed 2026-11-27 and kept in git history). Its links to these paths were correct
+# on the day they were written; the files were removed later, by S3 of the ThreadX port. Rewriting
+# the record to hide that would falsify it, and deleting the links would lose the reference.
 #
 # So they are accepted here instead, by exact path. The checker still catches every other
 # broken link, including a typo in one of these names -- which is the property that matters.
 # Remove an entry if the file ever comes back.
 REMOVED_BY_THREADX_PORT = {
     "Drivers/CMSIS/CMSIS_RTOS_V2/cmsis_os2.c",
-    "Drivers/CMSIS/CMSIS_RTOS_V2/freertos_os2.h",
-    "Drivers/CMSIS/CMSIS_RTOS_V2/freertos_mpool.h",
-    "Drivers/EthDrv/eth_drv_lwip.c",
-    "Drivers/EthDrv/eth_drv_lwip.h",
-    "Src/ethernet/ethernet_lwip.c",
-    "Src/ethernet/ethernet_lwip.h",
-    "Inc/FreeRTOSConfig.h",
-    "Inc/lwipopts.h",
-    "Modules/lwip_port/arch/cc.h",
-    "Modules/lwip_port/arch/cpu.h",
-    "Modules/lwip_port/arch/sys_arch.h",
-    "Modules/lwip_port/sys_arch.c",
 }
 
 # Source files removed with EtherLib, in the Bazel migration (decision D9 in
@@ -47,38 +35,23 @@ REMOVED_BY_THREADX_PORT = {
 # correct when written, and rewriting the archive to hide the removal would falsify the record.
 REMOVED_WITH_ETHERLIB = {
     "Drivers/EthDrv/eth_drv_etherlib.c",
-    "Drivers/EthDrv/eth_drv_etherlib.h",
-    "Inc/etherlib_options.h",
-    "Src/etherlib_options.c",
     "Src/ethernet/ethernet_etherlib.c",
-    "Src/ethernet/ethernet_etherlib.h",
-    "Modules/etherlib",
 }
 
-# The CMake build, and the submodule trees, removed in phase 7 of the Bazel migration.
-#
-# Two groups, and the second is the interesting one:
-#
-#   - the build files themselves. Documents that describe how the firmware was built were
-#     correct when written, and the reasoning in them -- the -Og measurements, finding H-3's
-#     --gc-sections, the LINK_DEPENDS trap -- is why several decisions in
-#     docs/bazel_decisions.md are defensible. Rewriting those references to point at BUILD.bazel
-#     would attribute the wrong file.
-#   - paths under Modules/. Those trees were git submodules and are now git repositories
-#     fetched by Bazel, so they no longer exist in a checkout at all. A reader can still reach
-#     them: `bazel fetch @flexptp` puts the patched tree in the repository cache.
+# The CMake build, removed in phase 7 of the Bazel migration. Documents that describe how the
+# firmware was built were correct when written, and the reasoning in them -- the -Og
+# measurements, finding H-3's --gc-sections, the LINK_DEPENDS trap -- is why several decisions in
+# docs/bazel_decisions.md are defensible. Rewriting those references to point at BUILD.bazel
+# would attribute the wrong file. (The submodule trees under Modules/ went at the same time;
+# nothing links into them any more.)
 REMOVED_WITH_CMAKE = {
     "build.sh",
     "cmake/gcc-arm-none-eabi.cmake",
     "CMakeLists.txt",
-    "CMakePresets.json",
     ".gitmodules",
     "Drivers/CMakeLists.txt",
     "Middlewares/CMakeLists.txt",
     "Middlewares/netxduo.cmake",
-    "Middlewares/threadx.cmake",
-    "Modules/CMakeLists.txt",
-    "projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/CMakeLists.txt",
     "projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/test/CMakeLists.txt",
 }
 

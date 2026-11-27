@@ -7,20 +7,24 @@
 Still not clear what is it useful for? No worries, it's a behind-the-scenes support technology that you use unaware every day if you have a smartphone or when you are connected to the internet. Modern telecommunication and measurement systems often rely on precise time synchronization down to the nanoseconds' scale. Methods got standardized by the IEEE and now it's known by the name of the Precision Time Protocol. This software project is an evaluation environment to showcase the capabilities of our IEEE 1588 PTP implementation named `flexPTP` on the STMicroelectronics NUCLEO-H563ZI board.
 
 This project is a port of [flexPTP-demo-NUCLEO-H743ZI](https://github.com/epagris/flexPTP-demo-NUCLEO-H743ZI)
-from the STM32H743 (Cortex-M7) to the STM32H563 (Cortex-M33). It has since been ported a
-second time, from FreeRTOS and lwIP to **Eclipse ThreadX and Eclipse NetX Duo**, which is what
-it runs today.
+from the STM32H743 (Cortex-M7) to the STM32H563 (Cortex-M33). It was then ported a second time,
+from FreeRTOS and lwIP to **Eclipse ThreadX and Eclipse NetX Duo**, and today it builds **two
+firmwares** for the same board, one on each stack (see [Software structure](#software-structure)).
 
-Documentation is **per project**: each firmware's design, defect record and testing notes live
-beside its sources, in `projects/<name>/docs/`. Only repository-level documents — the Bazel
-migration [plan](docs/bazel_migration.md) and its
-[rationale](docs/bazel_decisions.md) — are at the top.
+The firmware documentation lives in
+[`projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/architecture.md),
+beside the ThreadX firmware it was written for; the host setup, profile, performance and testing
+documents there cover both firmwares. Repository-level documents — the Bazel migration
+[plan](docs/bazel_migration.md) and its [rationale](docs/bazel_decisions.md), and the
+[flexPTP upstream review](docs/flexptp_upstream_review.md) — are in `docs/`. The full list is
+under [Documentation](#documentation).
 
-For the ThreadX + NetX Duo firmware, start with
-[`architecture.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/architecture.md) for how it fits
-together, or
+Start with
+[`architecture.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/architecture.md) for how the
+firmware fits together, or
 [`testing_architecture.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/testing_architecture.md)
-for how it is verified — including what each tier of testing *cannot* tell you.
+for how it is verified and how to repeat that — including what each layer of testing *cannot*
+tell you.
 
 ### Get the sources
 
@@ -35,9 +39,9 @@ Both used to be required, and getting them wrong was dangerous rather than merel
 the vendored trees were git submodules, two of them carried local bug fixes that a submodule
 cannot record — the parent repository stores only a commit pointer, so a working-tree change was
 invisible to a clone and destroyed by `git submodule update` — and **skipping a patch did not
-break the build, it produced a firmware that was silently wrong.** Patch 0004 is the sharp case:
-without it the firmware builds, links, gets an address and never synchronises, because every
-heartbeat is rejected and the BMCA never leaves INITIALIZING.
+break the build, it produced a firmware that was silently wrong.** The flexPTP heartbeat patch of
+that time was the sharp case: without it the firmware built, linked, got an address and never
+synchronised, because every heartbeat was rejected and the BMCA never left INITIALIZING (F80).
 
 The trees are now git repositories declared in
 [`bazel/repositories.bzl`](bazel/repositories.bzl), pinned by commit, and the patches in
@@ -60,10 +64,20 @@ There are two firmwares for the same board. `bazel build //...` builds both. The
 their code — the MAC driver, the flexPTP hardware port, the CLI, the console — and differ in the
 RTOS, the network stack and the glue between them.
 
-That produces the `.elf`, `.map`, `.hex` and `.bin`. No `--platforms` flag is needed — the
-target carries a transition onto the board's platform, so it cannot silently produce a host
-build. `--config=opt` gives `-O2` and `--config=dbg` gives `-O0 -g3` (the CMake build this
-replaced shipped `-Og`; see D8 in the decisions document for why that changed).
+That produces the `.elf`, `.elf.map`, `.hex` and `.bin` in `bazel-bin/projects/<project>/`. No
+`--platforms` flag is needed — the target carries a transition onto the board's platform, so it
+cannot silently produce a host build.
+
+Three compilation modes, and only two of them are what ships:
+
+| | Command | Flags |
+|---|---|---|
+| development (fastbuild) | `bazel build …` | `-O0 -g` |
+| **release** | `bazel build --config=opt …` | `-O2 -g0` (the CMake build this replaced shipped `-Og`; see D8 in the [decisions](docs/bazel_decisions.md)) |
+| **debug** | `bazel build --config=dbg …` | `-O0 -g3`, and `DEBUG`, which turns on ThreadX's stack check and NetX Duo's API error checking |
+
+Release and debug are both verified on the board; the plain `bazel build` image is neither. See
+[Testing](#testing).
 
 To flash. ST's OpenOCD fork is built from source the first time (a few minutes); upstream
 OpenOCD cannot program an STM32H5 — see [Flashing](#flashing):
@@ -79,32 +93,25 @@ If you already have ST's fork on the machine — in `toolchains/openocd`, on `PA
 bazel run //projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:flash --//tools/flash:openocd=local
 ```
 
-Tests — the host suite, the C++ rules asserted against the linked image, and the OpenOCD
-capability check, all in one invocation:
-
-```bash
-bazel test //...
-```
-
 ## Testing
 
-Two suites. The host suite needs nothing but a compiler; the hardware suite needs the board.
-What each one can and — just as importantly — **cannot** prove is set out in
-[`docs/testing_architecture.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/testing_architecture.md).
+Two halves. The host half needs nothing but Bazel; the hardware half needs the board. What each
+one can and — just as importantly — **cannot** prove, and the procedures that repeat a full
+verification, are in
+[`testing_architecture.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/testing_architecture.md).
 
-### Host unit tests — no board required
-
-73 `ctest` entries (77 GoogleTest cases) covering the Ethernet descriptor rings, the flexPTP
-network-stack driver's logic units, and the ThreadX context rules against a real kernel. The
-whole suite runs in about a quarter of a second and gates every push in CI.
+### Host tests — no board required
 
 ```bash
 bazel test //...
 ```
 
-That covers the host suite, the C++ rules asserted against the linked image, and the OpenOCD
-capability check. Host and target are two platforms in one graph, so there is no separate test
-root to configure and no need to choose between them.
+24 targets in one invocation: the Ethernet descriptor rings and the flexPTP network-stack
+driver's logic units; the console FIFO, the CLI and the RTOS context rules against real ThreadX
+and FreeRTOS kernels; flexPTP's own engine, patched as the firmware fetches it, against the
+defects the patches fix; the C++ rules asserted against the linked images; and the HIL tools'
+own parsers. It runs in seconds and gates every push in CI. Host and target are two platforms in
+one graph, so there is no separate test root to configure.
 
 To run one binary, or the target-image checks alone:
 
@@ -123,8 +130,9 @@ bazel test //tools/ci:cxx_rules_test
 
 ### Hardware in the loop — board required
 
-Drives the board's serial CLI from the host, with OpenOCD for flash and reset. Thirteen checks,
-from PHY identification through DHCP and ping to a bounded PTP offset in `SLAVE`.
+Drives the board's serial CLI from the host, with OpenOCD for flash and reset. Fourteen checks,
+from the build ID through PHY identification, DHCP and ping to a settled PTP offset in `SLAVE`
+and a 120-second saturation flood:
 
 ```bash
 tools/hil/run.py --flash bazel-bin/projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/flexptp-demo.elf --stage S8
@@ -149,7 +157,21 @@ tools/hil/baseline.json` diffs against golden values captured from the pre-port 
 Exit status is `0` pass · `1` fail · `2` board unreachable · `3` passed but incomplete —
 **a skip is not a pass**, and conflating the two is how one finding survived for days.
 
-Details, including the network setup for a direct cable, are in
+Then the long tests — twenty scenarios covering each upstream fix, floods as slave and as
+master, malformed PTP traffic, stack headroom and the console, about an hour per firmware:
+
+```bash
+tools/hil/scenario.py --firmware threadx --elf bazel-bin/projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/flexptp-demo.elf all
+```
+
+And the whole verification — both firmwares, release and debug, host suites, S8 and every
+scenario — in one command, about four and a half hours:
+
+```bash
+tools/hil/matrix.sh
+```
+
+Details, including the one-time host setup for a direct cable, are in
 [`tools/hil/README.md`](tools/hil/README.md).
 
 ## Deploying
@@ -160,11 +182,21 @@ Details, including the network setup for a direct cable, are in
 bank, which names a *compiled-in* driver; upstream OpenOCD 0.12.0 has no such driver and
 rejects the declaration outright, so copying ST's `.cfg` files onto a distro build does not
 help. `bazel run //projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:flash` builds the fork from source and
-flashes in one step; the raw invocation, against a fork you already have, is:
+flashes in one step. To have the fork outside Bazel — for the HIL harness, or by hand — copy
+Bazel's build of it into `toolchains/openocd`, where the harness and the VS Code launch
+configurations look:
+
+```bash
+bazel build //tools/flash:openocd_binary
+mkdir -p toolchains && cp -rL --no-preserve=mode bazel-bin/external/+openocd+openocd_src/openocd_build toolchains/openocd
+chmod +x toolchains/openocd/bin/openocd
+```
+
+The raw invocation is then:
 
 ```bash
 toolchains/openocd/bin/openocd -f board/st_nucleo_h5.cfg \
-    -c init -c halt -c "program build/flexptp-demo.elf verify reset" -c exit
+    -c init -c halt -c "program bazel-bin/projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/flexptp-demo.elf verify reset" -c exit
 ```
 
 Note the board file is **`st_nucleo_h5.cfg`** — generic across H5 Nucleos. There is no
@@ -173,7 +205,7 @@ Note the board file is **`st_nucleo_h5.cfg`** — generic across H5 Nucleos. The
 > [!NOTE]
 > On Linux, non-root access to the ST-Link needs udev rules:
 > ```bash
-> sudo cp toolchains/openocd-src/contrib/60-openocd.rules /etc/udev/rules.d/
+> sudo cp "$(bazel info output_base)/external/+openocd+openocd_src/contrib/60-openocd.rules" /etc/udev/rules.d/
 > sudo udevadm control --reload-rules && sudo udevadm trigger
 > ```
 
@@ -181,13 +213,13 @@ Note the board file is **`st_nucleo_h5.cfg`** — generic across H5 Nucleos. The
 enumerates as a USB drive; copy the `.bin` onto it and it reprograms and resets itself:
 
 ```bash
-cp build/flexptp-demo.bin /run/media/$USER/NOD_H563ZI/ && sync
+cp bazel-bin/projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/flexptp-demo.bin /run/media/$USER/NOD_H563ZI/ && sync
 ```
 
 **With `st-flash`** from [stlink-tools](https://github.com/stlink-org/stlink):
 
 ```bash
-st-flash write build/flexptp-demo.bin 0x08000000
+st-flash write bazel-bin/projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/flexptp-demo.bin 0x08000000
 ```
 
 **With [STM32CubeProgrammer](https://www.st.com/en/development-tools/stm32cubeprog.html)**, which recognises the MCU once connected.
@@ -223,7 +255,7 @@ Two things that cost days here and are worth reading before you start:
 
 - **The board loads the `default` profile at startup** — plain IEEE 1588 over UDP/IPv4 with
   E2E delay measurement — which a stock `ptp4l` with no config file already matches. The
-  other presets (`gPTP`, `defp2p`) need the host matched to them, and `gPTP` additionally
+  other presets (`gPTP`, `defp2p`, `PUP`) need the host matched to them, and `gPTP` additionally
   needs a direct cable or 802.1AS-capable bridges throughout. Profiles are not persisted, so
   any runtime `ptp profile preset …` is lost on reset. See
   **[`docs/ptp_profiles.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/ptp_profiles.md)** for the trade-offs.
@@ -257,10 +289,18 @@ extensions. [clangd](https://marketplace.visualstudio.com/items?itemName=llvm-vs
 and clang-format are highly recommended.
 
 The project has predefined *Launch* and *Attach* tasks. The OpenOCD ones point at
-`toolchains/openocd/bin/openocd`; `--//tools/flash:openocd=local` makes the Bazel flash target
-use the same binary, so the two agree. The ST-Link GDB-server configurations and the register (`.SVD`) views still resolve
+`toolchains/openocd/bin/openocd` (see [Flashing](#flashing) for putting ST's fork there);
+`--//tools/flash:openocd=local` makes the Bazel flash target use the same binary, so the two
+agree. The ST-Link GDB-server configurations and the register (`.SVD`) views still resolve
 through [STM32CubeCLT](https://www.st.com/en/development-tools/stm32cubeclt.html); it is
 optional, and without it only the register view is lost.
+
+> [!WARNING]
+> **The `.vscode/` configuration predates the Bazel migration.** Its build task, the CMakeTools
+> recommendation and every launch configuration's `"executable": "${command:cmake.launchTargetPath}"`
+> assume the CMake build, which is gone, so they do not work as shipped. Until they are updated,
+> build with `bazel build --config=dbg …` and point the launch configuration's `executable` at the
+> ELF in `bazel-bin/projects/<project>/` — a debug image, so the debugger has `-g3` information.
 
 ### Software structure
 
@@ -308,59 +348,64 @@ behaviour.
 > that port and is now the network stack of the FreeRTOS firmware instead, which is a much better
 > home for it. There is no `ETH_STACK` switch any more; choosing a stack means choosing a project.
 
-The project is organized the following way:
+The repository is organized the following way:
 
 ```
-ROOT
-  Drivers
-    CMSIS: ARM CMSIS-related files (CMSIS RTOS V2 and device headers)
-    EthDrv: a custom Ethernet driver (with PTP timestamp support), a PHY-interface and network stack interfaces
-    stm32h5xx-hal-driver: ST's STM32H5xx HAL driver files (submodule)
-  Inc: headers for compile-time library configuration (tx_user.h, nx_user.h, flexptp_options.h)
-  Middlewares: CMake glue for ThreadX, the CMSIS-RTOS2 wrapper and NetX Duo
-  Modules
-    flexptp: our PTP implementation (submodule)
-    threadx: the Eclipse ThreadX kernel (submodule)
-    netxduo: the Eclipse NetX Duo Ethernet stack (submodule)
-    cmsis_rtos_threadx: ST's CMSIS-RTOS2 wrapper for ThreadX (submodule)
-    lwip: the LwIP Ethernet stack -- no longer built, pinned so pre-port commits still build (submodule)
-    etherlib: our in-house developed Ethernet stack (submodule)
-    embfmt: a printf()-like formatted printer implementation for embedded systems (submodule)
-    blocking_io: a simple blocking FIFO implementation
-  Src
-    cliutils: CLI-interface implementation
-    ethernet: Ethernet stack initialization
-    flexptp_port: the STM32H5 PTP hardware port, supplied by this project
-    flexptp_nsd: the NetX Duo network-stack driver for flexPTP, also supplied by this project
-    standard_output: MSG() backend and the USART3 serial driver
-
-    cmds.c: custom CLI commands
-  Startup: vector table, reset handler and ThreadX low-level init
-  test: host unit tests -- no board required
-  docs: porting documentation, design decisions and the review log
-  patches: changes to submodules, which git cannot record for us
-  tools
-    hil: hardware-in-the-loop test harness
-    ci: documentation link checker
+bazel/              how each vendored tree is fetched and built: repositories.bzl pins them by
+                    commit and attaches the patches; one .BUILD file per tree
+docs/               repository-level documents: the Bazel migration, its decisions, the flexPTP review
+patches/
+  flexptp/          nine fixes filed upstream, applied by the fetch, deleted as each merges;
+    test/           and the host tests that run flexPTP's real engine against them
+  embfmt/           one patch, four formatting defects
+projects/flexptp_demo_stm32h563/
+  lib/              shared by both firmwares:
+    eth/              the MAC driver (mac_drv.c), PHY driver, framer, link state, and their host tests
+    ptp/              flexPTP's STM32H563 port and the NSD logic units, with their host tests
+    cli/ io/ blocking_io/   the command line, MSG() and the console, the blocking FIFO
+    runtime/ startup/ the syscalls, heap, C++ support, SystemInit(), reset vector, linker script, HAL config
+    host/             the shims that let the driver compile for the host
+  flexptp_threadx_netx_demo/    the ThreadX + NetX Duo firmware
+    main.c cmds.c tx_user.h nx_user.h flexptp_options.h
+    eth/              the NetX Duo link driver and stack bring-up
+    ptp/              the NetX Duo network-stack driver for flexPTP, and the TX-timestamp deferral
+    startup/          ThreadX's low-level init
+    test/             FIFO, CLI and context-rule tests against real ThreadX
+    docs/             the firmware documentation
+  flexptp_freertos_lwip_demo/   the FreeRTOS + lwIP firmware
+    main.c cmds.c FreeRTOSConfig.h lwipopts.h flexptp_options.h
+    eth/              the lwIP link driver and stack bring-up
+    lwip_port/        lwIP's sys_arch over FreeRTOS
+    test/             context-rule tests against real FreeRTOS
+third_party/CMSIS/  ARM's CMSIS Core and RTOS2 headers, ST's device headers (in-tree, not fetched)
+toolchain/          the pinned arm-none-eabi toolchain and its flags per compilation mode
+tools/
+  hil/              hardware-in-the-loop: the checks, the scenarios, the SWD tools, the matrix
+  ci/               link checker, C++ rules and seeding checks
+  flash/            the flash rule and the OpenOCD it uses
+  upstream/         filing the flexPTP fixes
+  linuxptp/         the host grandmaster's gPTP configuration
 ```
 
 > [!NOTE]
-> The flexPTP parameters are defined in the [flexptp_options.h](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/flexptp_options.h) header.
+> The flexPTP parameters are defined in each firmware's `flexptp_options.h` — the ThreadX one is
+> [here](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/flexptp_options.h).
 
-Two submodules carry local changes, kept in [`patches/`](patches/) because the parent
-repository records only submodule commit pointers — **four patch files in total**:
+The build carries patches to two of the vendored trees, kept in [`patches/`](patches/) and
+**applied as part of fetching the dependency** — see [Get the sources](#get-the-sources) for why
+that matters:
 
-- **flexPTP, three.** A servo NaN-latch fix ([F59](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/port_review.md)); a generic
-  network-stack extension point for the two IGMP group addresses; and a non-blocking heartbeat
-  enqueue, without which the BMCA never leaves `INITIALIZING` ([F80](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/port_review.md)).
+- **flexPTP, nine**, each a fix filed upstream and deleted as its pull request merges:
+  U1 (#20), U6 (#26), U8–U10 (#34–#36), U11–U14 (#37–#40). What each fixes and how it was
+  verified is in [`patches/flexptp/README.md`](patches/flexptp/README.md), and the review that
+  found them in [`docs/flexptp_upstream_review.md`](docs/flexptp_upstream_review.md). The first
+  three this project carried — the servo NaN latch (F59), the IGMP extension point and the
+  non-blocking heartbeat enqueue (F80) — were taken upstream in `RC1.0-17`.
 - **embfmt, one** — carrying **four** defects across **two** findings: `%ll` conversions
   dropped and NaN rendered as `0.0000` ([F60](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/port_review.md)), plus small `%e` values
   swallowed by a pre-normalisation rounding constant and a `%f`/`%e` rounding carry that
   subtracted 10 instead of 10^precision ([F66](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/port_review.md)).
-
-All are described in [`docs/port_review.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/port_review.md) and all are worth reporting
-upstream. **The build applies them as part of fetching the dependency** — see
-[Get the sources](#get-the-sources) for why that matters.
+  See [`patches/embfmt/README.md`](patches/embfmt/README.md).
 
 ### Printing and logging
 
@@ -371,44 +416,47 @@ In this project the memory-heavy `printf()` is replaced by the more embedded-opt
 The software offers you with the following multitude, most flexPTP-related of commands:
 
 ```
-?                                                  Print this help (25/64)
-hist                                               Print command history
-osinfo                                             Print OS-related information
-flexptp                                            Start flexPTP daemon
-ethinfo                                            Print Ethernet driver state and counters
-ethstat                                            Print the same counters as key=value, for tooling
-ptp reset                                          Reset PTP subsystem
-ptp servo offset [offset_ns]                       Set or query clock offset
-ptp log {def|corr|ts|info|locked|bmca} {on|off}    Turn on or off logging
-time [ns]                                          Print time
-ptp master [[un]prefer] [clockid]                  Master clock settings
-ptp info                                           Print PTP info
-ptp domain [domain]                                Print or set PTP domain
-ptp addend [addend]                                Print or set addend
-ptp transport [{ipv4|802.3}]                       Set or get PTP transport layer
-ptp delmech [{e2e|p2p}]                            Set or get PTP delay mechanism
-ptp transpec [{def|gPTP}]                          Set or get PTP transportSpecific field (majorSdoId)
-ptp profile [preset [<name>]]                      Print or set PTP profile, or list available presets
-ptp tlv [preset [name]|unload]                     Print or set TLV-chain, or list available TLV presets
-ptp pflags [<flags>]                               Print or set profile flags
-ptp period <delreq|sync|ann> [<lp>|matched]        Print or set log. periods
-ptp coarse [threshold]                             Print or set coarse correction threshold
-ptp priority [<p1> <p2>]                           Print or set clock priority fields
-ptp pps {freq}                                     Set or query PPS signal frequency [Hz]
-ptp servo st [var|default]                         Set or get sigma_theta^2 (s^2)
-ptp servo sg [var|default]                         Set or get sigma_gamma^2 (s^2)
-ptp servo stm [var|default]                        Set or get sigma_theta_m^2 (s^2)
+?                                                        Print this help (26/64)
+hist                                                     Print command history
+osinfo                                                   Print OS-related information
+flexptp [stop]                                           Start flexPTP, or stop it with `stop`
+ethinfo                                                  Print Ethernet driver state and counters
+ethstat                                                  Print the same counters as key=value, for tooling
+ptpcfg {store|show|load}                                 Exercise flexPTP's retained-config round trip
+ptp reset                                                Reset PTP subsystem
+ptp servo offset [offset_ns]                             Set or query clock offset
+ptp log {def|corr|ts|info|locked|bmca|logid} {on|off}    Turn on or off logging
+time [ns]                                                Print time
+ptp master [[un]prefer] [clockid]                        Master clock settings
+ptp info                                                 Print PTP info
+ptp domain [domain]                                      Print or set PTP domain
+ptp addend [addend]                                      Print or set addend
+ptp transport [{ipv4|802.3}]                             Set or get PTP transport layer
+ptp delmech [{e2e|p2p}]                                  Set or get PTP delay mechanism
+ptp transpec [{def|gPTP}]                                Set or get PTP transportSpecific field (majorSdoId)
+ptp profile [preset [<name>]]                            Print or set PTP profile, or list available presets
+ptp tlv [preset [name]|unload]                           Print or set TLV-chain, or list available TLV presets
+ptp pflags [<flags>]                                     Print or set profile flags
+ptp period <delreq|sync|ann> [<lp>|matched]              Print or set log. periods
+ptp coarse [threshold]                                   Print or set coarse correction threshold
+ptp priority [<p1> <p2>]                                 Print or set clock priority fields
+ptp pps {freq}                                           Set or query PPS signal frequency [Hz]
+ptp servo st [var|default]                               Set or get sigma_theta^2 (s^2)
+ptp servo sg [var|default]                               Set or get sigma_gamma^2 (s^2)
+ptp servo stm [var|default]                              Set or get sigma_theta_m^2 (s^2)
 ```
 
-Listed in the order the firmware emits them, captured from the running board. The `(25/64)`
-on the first line is the CLI's own registered/available slot count.
+Listed in the order the firmware emits them, captured from the running ThreadX board on
+2026-11-27. The `(26/64)` on the first line is the CLI's own registered/available slot count.
+`flexptp stop` stops PTP again (it exercises `unreg_task_ptp()`, which U9 and U11 fixed), and
+`ptpcfg` exercises flexPTP's retained-configuration round trip (U2).
 
 `ethinfo` is this project's own, added by the NetX Duo port. It prints the driver's state and
 its receive/transmit counters, and it is how four of the five defects in that port were
 actually diagnosed — counters, not code-reading.
 
-Both firmwares register the same 25 commands, but `ethinfo` and `osinfo` report **less** on the
-FreeRTOS + lwIP one, and the output says where the gaps are rather than leaving them to be
+Both firmwares register the same 26 commands — the FreeRTOS one's `ethstat` also takes `clear` —
+but `ethinfo` and `osinfo` report **less** on the FreeRTOS + lwIP one, and the output says where the gaps are rather than leaving them to be
 inferred. `ethinfo` there has no driver drop counters — the NetX Duo driver grew those while the
 ThreadX port was chasing where frames were going, and adding them to the lwIP driver means
 touching a working receive path — and lwIP is built with `LWIP_STATS 0`, so the stack keeps no
@@ -436,21 +484,41 @@ PID servo expose `ptp servo params` instead.
 
 ## Documentation
 
+**The firmware** — in [`projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/architecture.md); written for the ThreadX firmware, and where
+marked, covering both:
+
 | Document | Contents |
 |---|---|
-| [`docs/architecture.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/architecture.md) | Module inventory and versions, layering, boot sequence, threads and priorities, interrupts, clocking, the PTP timestamp path, memory layout |
-| [`docs/testing_architecture.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/testing_architecture.md) | The three test tiers, what each one reaches, the mutation-testing discipline, and the gaps stated plainly |
-| [`docs/design_doc.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/design_doc.md) | Porting decisions and their rationale, submodule pinning, clock tree, pin map, the EtherLib and TrustZone guides, stage-by-stage log |
-| [`docs/ptp_clock.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/ptp_clock.md) | Full derivation of the PTP timestamp clock, and why a 4 ns increment is possible but not adopted |
-| [`docs/ptp_profiles.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/ptp_profiles.md) | The three profile presets, the transport and delay-mechanism trade-offs, and what a switched network costs |
-| [`docs/host_ptp_setup.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/host_ptp_setup.md) | Running a PTP master on a Linux host, and what to check when nothing happens |
-| [`docs/l4_performance.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/l4_performance.md) | Measured layer 4 accuracy of both firmwares against a hardware-timestamping master, and what a single run cannot establish |
-| [`docs/port_review.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/port_review.md) | Every finding of the port review, with evidence — including the ones that cost days |
-| [`docs/implementation_plan.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/implementation_plan.md) | The staged plan for the **first** port (H743 → H563). Closed and historical; ends with a table of what changed afterwards |
-| [`docs/threadx_netxduo_feasibility.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/threadx_netxduo_feasibility.md) | What porting to Eclipse ThreadX and NetX Duo would cost, and the one flexPTP defect that would break it silently |
-| [`docs/threadx_porting_plan.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/threadx_porting_plan.md) | The staged execution plan for that port — hardware checkpoints, the host test tree, and progress tracking |
-| [`docs/threadx_s5e_plan.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/threadx_s5e_plan.md) | The one stage left undone: running the real stack on the host, what it would and would not have caught, and a cheaper alternative |
-| [`docs/reviews/`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/reviews/README.md) | Archive of the independent reviews that fed `port_review.md` — historical, superseded by it where they disagree |
+| [`architecture.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/architecture.md) | Module inventory and versions, layering, boot sequence, threads and priorities, interrupts, Debug vs Release, clocking, the PTP timestamp path, memory layout |
+| [`testing_architecture.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/testing_architecture.md) | **Both firmwares.** The test layers and what each reaches, debug vs release, the bench, the procedures that repeat a full verification, mutation testing, the gaps stated plainly, the latest results |
+| [`host_ptp_setup.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/host_ptp_setup.md) | **Both firmwares.** Running a PTP master on a Linux host, and what to check when nothing happens |
+| [`ptp_profiles.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/ptp_profiles.md) | **Both firmwares.** The four profile presets, the transport and delay-mechanism trade-offs, and what a switched network costs |
+| [`l4_performance.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/l4_performance.md) | **Both firmwares.** Measured layer 4 accuracy against a hardware-timestamping master, and what a single run cannot establish |
+| [`ptp_clock.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/ptp_clock.md) | Full derivation of the PTP timestamp clock, and why a 4 ns increment is possible but not adopted |
+| [`design_doc.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/design_doc.md) | Porting decisions and their rationale, clock tree, pin map, the TrustZone guide, the custom MAC driver, and the first port's stage log |
+| [`port_review.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/port_review.md) | Every finding of the port reviews, F1–F80 and the NX/TS/AR/CX/GI series, with evidence — including the ones that cost days |
+
+**The repository** — in [`docs/`](docs/), and the READMEs beside what they describe:
+
+| Document | Contents |
+|---|---|
+| [`docs/flexptp_upstream_review.md`](docs/flexptp_upstream_review.md) | The flexPTP review, U1–U14: each finding, its fix and pull request, and every hardware campaign since, dated |
+| [`docs/bazel_decisions.md`](docs/bazel_decisions.md) | Why the build is what it is: D1–D18, with the experiments behind them |
+| [`docs/bazel_migration.md`](docs/bazel_migration.md) | The completed CMake → Bazel migration plan, phase by phase, and the two-firmware layout it arrived at |
+| [`tools/hil/README.md`](tools/hil/README.md) | The hardware harness: host setup, the checks, the scenarios, the fuzzer, the SWD tools |
+| [`projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/test/README.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/test/README.md) | How the driver and a real RTOS run on the host |
+| [`patches/flexptp/README.md`](patches/flexptp/README.md), [`patches/embfmt/README.md`](patches/embfmt/README.md) | What each carried patch fixes, how it was verified, how to regenerate and retire them |
+| [`tools/upstream/README.md`](tools/upstream/README.md) | The flexPTP fixes' branches, pull requests and status, and how they are filed |
+
+**History** — kept as the record of how the firmware got here, not as a description of it:
+
+| Document | Contents |
+|---|---|
+| [`implementation_plan.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/implementation_plan.md) | The staged plan for the **first** port (H743 → H563). Closed; ends with a table of what changed afterwards |
+| [`threadx_netxduo_feasibility.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/threadx_netxduo_feasibility.md) | What porting to Eclipse ThreadX and NetX Duo would cost, written before it was done |
+| [`threadx_porting_plan.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/threadx_porting_plan.md) | The staged execution plan for that port — hardware checkpoints, the host test tree, and the measured reach of mocks |
+| [`threadx_s5e_plan.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/threadx_s5e_plan.md) | The one stage left undone: running the real stack on the host, and why it was not |
+| [`review_v1_opus_5p0.md`](projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/review_v1_opus_5p0.md) | The first comprehensive review of the ThreadX port (August 2026); its findings are tracked in `port_review.md` |
 
 ## Related papers and references
 

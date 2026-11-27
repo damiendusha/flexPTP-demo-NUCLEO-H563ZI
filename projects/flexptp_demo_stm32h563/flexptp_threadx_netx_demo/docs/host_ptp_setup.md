@@ -28,7 +28,7 @@ How to set up a Linux host as a PTP grandmaster for this demo, using `linuxptp`.
 ## Two routes
 
 The board loads the `default` profile at startup (`FLEXPTP_INITIAL_PROFILE` in
-[`Src/main.c`](../main.c)), but it will run either profile. Pick one and match both ends:
+[`main.c`](../main.c)), but it will run either profile. Pick one and match both ends:
 
 | | **`default`** — plain IEEE 1588 | **`gPTP`** — 802.1AS |
 |---|---|---|
@@ -38,7 +38,7 @@ The board loads the `default` profile at startup (`FLEXPTP_INITIAL_PROFILE` in
 | Script shortcut | `setup_host_net.sh --with-ptp4l` | `setup_host_net.sh --gptp` |
 | Board command | loaded at boot, nothing to do | **`ptp profile preset gPTP`** |
 | Through ordinary switches | **possible** — ordinary UDP multicast, but one switch here silently dropped `Delay_Resp` (F42) | **no, by design** — the 802.1AS destination MAC is in the reserved range bridges must not forward |
-| Status | **proven on this port** | not yet exercised end to end |
+| Status | **proven**, both firmwares | **proven**, both firmwares, with a hardware-timestamping host (the HIL `gptp` scenario) |
 
 The `default` route is the one below in [Command](#command); the gPTP route is
 [further down](#alternative-the-gptp-profile). They do not interoperate in any combination —
@@ -172,17 +172,17 @@ profile's numbers. **That is the route this bench now takes** — the i226 does 
 If a hardware-timestamped link still fails to become `asCapable`, the measurement is real and
 the threshold is doing its job: 802.1AS budgets 800 ns, and a 100BASE-TX PHY pair can eat a
 meaningful part of that. Check what is actually being measured before overriding it —
-`pmc -u -b 0 -f /etc/linuxptp/flexptp-gm.cfg 'GET PORT_DATA_SET'` reports the peer mean path
+`sudo pmc -u -b 0 -f /etc/linuxptp/flexptp-gm.cfg 'GET PORT_DATA_SET'` reports the peer mean path
 delay. The override, if you want it, goes through the script too:
 
 ```bash
 sudo tools/hil/setup_host_net.sh --gptp -- --neighborPropDelayThresh 100000
 ```
 
-> Note the asymmetry this creates in what can be claimed. The `default` profile is proven end to
-> end here. `gPTP` has its transmit path, its receive path and its peer-delay state machine all
-> proven — but its *Announce/Sync* half cannot be exercised on a software-timestamping host at
-> the default threshold.
+> Note the asymmetry this creates on a **software-timestamping** host: `gPTP`'s transmit path,
+> receive path and peer-delay state machine can all be exercised, but its *Announce/Sync* half
+> cannot, at the default threshold. With a PHC, as on this bench, it can — see the tested route
+> below.
 
 ## Alternative: the gPTP profile
 
@@ -200,9 +200,11 @@ sudo tools/hil/setup_host_net.sh --gptp -- --neighborPropDelayThresh 100000
 > ```
 >
 > ptp4l logs `assuming the grand master role` within ~5 s. The board selects
-> `00a0c9fffe2621e4` as master within seconds and runs 8 Sync/s; steady-state offset measured
-> **52–85 ns** (ThreadX) and **60–96 ns** (FreeRTOS) across two runs, the second with the units as
-> installed. Return to the default profile with
+> `00a0c9fffe2621e4` as master within seconds and runs 8 Sync/s. Converged — 60–120 s after
+> slaving — the offset measured median **32 ns**, max 119 ns (ThreadX) and median 32–135 ns, max
+> 100–225 ns (FreeRTOS, two runs), 2026-11-26. The figure moves by a factor of four from run to
+> run on the same image, so treat any single number as an example; the HIL `gptp` scenario
+> asserts convergence (max < 1 µs), not a figure. Return to the default profile with
 > `systemctl start flexptp-ptp4l-default` and `ptp profile preset default`. Without the install,
 > `sudo tools/hil/setup_host_net.sh --gptp` does the same in the foreground.
 

@@ -1,6 +1,14 @@
-# Review — flexPTP `RC1.0-11` → `RC1.0-17`
+# flexPTP upstream review — `RC1.0-11` to `RC1.0-26`
 
-Reviewed at pin `494e644a3218c5867ee7397c1e9c019667b664b1` (`RC1.0-17`, 2026-09-07), against the
+> **Status, 2026-11-27.** Pinned at `fe4b071` (`RC1.0-26`), upstream head. Fourteen findings,
+> U1–U14: five merged upstream (U2–U5, U7); the other nine are filed (#20, #26, #34–#40) and
+> carried as [`//patches/flexptp`](../patches/flexptp/README.md) until they merge. The current
+> table is [`tools/upstream/README.md`](../tools/upstream/README.md). This document is the record
+> of how each was found and verified, in dated sections: §1–§5 the review of `RC1.0-17`
+> (September), §6 the move to `RC1.0-26`, §7 three more fixes and the final campaign, §8 U11–U14
+> and the release/debug verification.
+
+**§1–§5: the review of `RC1.0-17`.** Reviewed at pin `494e644a3218c5867ee7397c1e9c019667b664b1` (`RC1.0-17`, 2026-09-07), against the
 previous pin `76aaf67` (`RC1.0-11`). Six commits, 23 files, +600/−237.
 
 Everything this repository carried as a patch is now upstream, so the original
@@ -364,13 +372,13 @@ compete, the tie-break on identity picks the wrong one. That is live, not latent
 
 It was shown by someone else. In [issue #32](https://github.com/epagris/flexPTP/issues/32), Michael
 (`emb4fun`) ran two flexPTP masters with MACs `06:CA:FE:33:44:55` and `02:CA:FE:33:44:55`. Without
-#20 the device with the *larger* identity stayed master; with it the smaller one correctly won. He
-notes he did not at first see why #20 fixed anything, and tested it to find out.
+#20 the device with the *larger* identity stayed master; with it the smaller one correctly won.
+Michael notes not having seen at first why #20 fixed anything, and testing it to find out.
 
 ### PR #33 (emb4fun)
 
 [#33](https://github.com/epagris/flexPTP/pull/33) carries #20's change verbatim, credits it, and adds
-`ptp_slave_reset()` before `ptp_slave_enable()` on the transition into SLAVE. His symptom: after
+`ptp_slave_reset()` before `ptp_slave_enable()` on the transition into SLAVE. The symptom: after
 SLAVE → MASTER → SLAVE the servo printed `26810515154010112000.0000` and the offset walked away.
 
 Tested on this board, FreeRTOS + lwIP firmware, host master stopped so the board takes over, ~65 s
@@ -384,8 +392,8 @@ as master, host master restarted. Two runs each:
 So **Michael's failure does not reproduce here**, and #33 costs this configuration a re-acquisition
 transient roughly ten times larger by discarding servo state that was not stale. It is harmless in
 steady state. The likely difference is configuration: his log has two servo columns, i.e. flexPTP's
-HLT clock interface; this board uses the addend interface with the Kalman servo. Worth telling him
-— a reset scoped to the state that actually goes stale might fix his case without costing ours —
+HLT clock interface; this board uses the addend interface with the Kalman servo. Worth telling
+Michael — a reset scoped to the state that actually goes stale might fix his case without costing ours —
 but that is a hypothesis; nothing here identifies which state that is.
 
 A note on method, because the first attempt at this test was wrong. The host master unit then
@@ -444,8 +452,8 @@ been slaved for 60 s, and reads ~100–150 ns either way.
 
 ### Three more fixes, carried as `0008`–`0010`
 
-Each is a branch of its own off `fe4b071` in the working clone, ready to file and **not filed**.
-Each was measured on the board with and without the change.
+Each is a branch of its own off `fe4b071` in the working clone. Each was measured on the board
+with and without the change. Filed 2026-11-26: U9 as #34, U10 as #35, U8 as #36.
 
 | | Branch | Defect | Without | With |
 |---|---|---|---|---|
@@ -523,7 +531,9 @@ old dependency pins).
   answers in 0.2 s. A property of this lwIP port, not of the bumps.
 - **The baseline ThreadX image, not the current one, lost PTP after a gPTP flood:** it made
   itself master (`56001efffe000451`) and the following master-mode probe got no offsets. Seen
-  once; the current ThreadX image passed the same probes.
+  once; the current ThreadX image passed the same probes. *Corrected in §8:* the current image
+  does it too — five times out of five once the probe was repeated — and so does every flexPTP
+  binding. It is U14, a flexPTP defect, and it is fixed by `0014`.
 
 ### The FreeRTOS wedge: three bugs of ours, all older than this session
 
@@ -634,12 +644,15 @@ so in every port:
   while BMCA still reports the right master. Now and then the mixture completes a cycle instead,
   from the wrong messages: one such Sync cycle on ThreadX reported a 417 µs offset to the servo.
 
+## 8. Update — U11–U14 fixed and filed; release and debug verified (2026-11-27)
+
 ### U11–U13: fixed, and tested on the host and the board
 
 All three are now patches (`0011`–`0013`) and branches off `fe4b071`, each with a test of flexPTP's
 real engine on the host -- its own sources, patched as the firmware fetches them -- in
 [`//patches/flexptp/test`](../patches/flexptp/test). Each fix's tests fail without it, and only its
-own, whichever of the others is present.
+own, whichever of the others is present — except that the two slave controls also need `0001`:
+without U1 the BMCA records a byte-reversed grandmaster, so on bare `fe4b071` they fail too.
 
 **U13**, slave filters by parent port. The BMCA records the `sourcePortIdentity` from the header
 of the Announce that won -- the parent port, not the grandmaster, so it is right behind a boundary
@@ -747,9 +760,9 @@ pairs. The FreeRTOS + lwIP board did not get there under the same floods (queues
 both, without the fix). With `--elf`, the flood scenarios now read the queues over SWD
 (`queues_in_step()`), and `swd.py ptpq` reads them by hand.
 
-The fix (`0014`, branch `fix/u14-notification-fifo`, filed as #40) makes the notification FIFO as long as the
-four together, so a notification push cannot fail once its item push has succeeded: 42 more
-entries, 168 bytes. The test, `notification_test`, starves the OS-less task while heartbeats and a
+The fix (`0014`, branch `fix/u14-notification-fifo`, filed as #40) makes the notification FIFO
+as long as the four together, so a notification push cannot fail once its item push has
+succeeded: 42 more entries. The test, `notification_test`, starves the OS-less task while heartbeats and a
 peer's Pdelay_Reqs arrive, then has the peer send one a second: without the fix the first two are
 answered with a stale request's sequenceId and the rest not at all; with it, all ten at once.
 
@@ -766,5 +779,30 @@ On the board (ThreadX, `u13` images without the fix, `u14` with it; build IDs `0
 | all 18 scenarios | 5 checks fail (`gptp_flood`, `master_flood`) | **105/105** |
 
 FreeRTOS with `0014`: S8 13 passed (1 not applicable), all 20 scenarios **113/113**. Free heap 40 B
-lower on FreeRTOS, 132 B on ThreadX. The board was left on the ThreadX image with all nine
-patches.
+lower on FreeRTOS, 132 B on ThreadX.
+
+### Release and debug, both firmwares
+
+Every campaign above ran on **fastbuild** images — plain `bazel build`, `-O0 -g` — which is
+neither configuration that ships. So the whole set was run again on the two that do: release
+(`--config=opt`, `-O2 -g0`) and debug (`--config=dbg`, `-O0 -g3`), with all nine patches.
+
+**That found the debug build was not one.** `DEBUG` is what turns on ThreadX's software stack
+check and keeps NetX Duo's API error checking (`tx_user.h`, `nx_user.h`); CMake applied it to
+Debug builds, and the Bazel migration lost it, so `--config=dbg` had built neither — no `_nxe_*`
+symbol in the image. `toolchain/BUILD.bazel` now defines it for every compile action in `dbg`
+mode, vendored libraries included, since `NX_ENABLE_PACKET_DEBUG_INFO` changes `NX_PACKET`'s
+layout. The ThreadX debug image gains 26 `_nxe_*` checks and 10.7 KB of code; the FreeRTOS one
+is unchanged in every loaded byte, since nothing there reads `DEBUG`.
+
+| Image | Build ID | Text | S8 | Scenarios |
+|---|---|---|---|---|
+| release ThreadX | `1363dd8b` | 148 640 B | 14/14 | 18, **105/105** |
+| release FreeRTOS | `208f134e` | 162 656 B | 13/14, `threads` SKIP | 20, **113/113** |
+| debug ThreadX, with `DEBUG` | `0f906149` | 221 840 B | 14/14 | 18, **105/105** |
+| debug FreeRTOS | `d0e1f0e3` | 224 432 B | 13/14, `threads` SKIP | 20, **113/113** |
+
+Host suites 24/24 in all three modes. Every SWD check passed on all four images. The whole run is
+now one command, `tools/hil/matrix.sh`, and the procedure is written down in
+[`testing_architecture.md`](../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/testing_architecture.md).
+The board was left on the release ThreadX image.

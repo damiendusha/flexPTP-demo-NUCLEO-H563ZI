@@ -15,17 +15,18 @@ Nothing to do: `bazel build` applies them. There is no longer a working tree tha
 pristine, patched, or -- the state `build.sh` had to detect and refuse -- neither, which is what
 retired the old `--check-patches` gate.
 
-To inspect the patched sources:
+To inspect the patched sources — they are in Bazel's repository cache, not in the checkout:
 
 ```bash
-bazel fetch @embfmt
+bazel build //projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:flexptp-demo   # or any target that uses it
+ls "$(bazel info output_base)/external/+vendored+embfmt"
 ```
 
-## Reverting
+## Building without it
 
-```bash
-git -C Modules/embfmt checkout -- embformat.c
-```
+There is no working tree to revert. To build against unpatched embfmt — to see a defect come
+back, say — remove the patch from the `patches` list of `@embfmt` in `//bazel/repositories.bzl`,
+run `bazel mod deps --lockfile_mode=update`, and rebuild; put it back the same way.
 
 ## Contents
 

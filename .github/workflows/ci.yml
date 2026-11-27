@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 # No `submodules: recursive` anywhere below. The vendored trees are git repositories declared in
-# //bazel/repositories.bzl and fetched by Bazel, and the four patches that used to be
+# //bazel/repositories.bzl and fetched by Bazel, and the patches that used to be
 # working-tree edits are attached to the fetch. That also retires the old `--check-patches` job:
 # there is no longer a working tree that can be pristine, patched, or -- the state build.sh had
 # to detect and refuse -- neither.
