@@ -1,9 +1,11 @@
 # Hardware-in-the-loop harness
 
-Drives the board's serial CLI from the host so that every stage of a port can be verified on
-real hardware without re-typing commands. Built for the ThreadX/NetX Duo port
-([`docs/threadx_porting_plan.md`](../../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/threadx_porting_plan.md)), but it is not specific
-to it — it is a regression suite for this firmware.
+Drives the board's serial CLI from the host so that every change can be verified on real
+hardware without re-typing commands. Built for the ThreadX/NetX Duo port
+([`docs/threadx_porting_plan.md`](../../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/threadx_porting_plan.md)),
+it is now the regression suite for **both** firmwares. How it fits with the host tests, and the
+procedures that use it, are in
+[`testing_architecture.md`](../../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/testing_architecture.md).
 
 ```
 hil.py               Board: serial session, cmd(), expect(), reset() over SWD
@@ -13,6 +15,7 @@ scenarios.py         long-running scenarios: fix regressions, floods, robustness
 scenario.py          the runner for the scenarios
 ptp_fuzz.py          malformed and foreign PTP traffic classes, used by the `fuzz` scenario
 swd.py               look inside a running or dead board over SWD: snapshot, heap, stacks, fault, console, ptpq
+matrix.sh            the full verification: both firmwares x release and debug, host suites, S8, every scenario
 flood.py             the saturation flooder (no root)
 setup_host_net.sh    privileged host-side network setup (direct cable)
 privileged/          the systemd units and polkit rule that make the above sudo-free
@@ -63,8 +66,16 @@ conflating them is how F42 survived for days. The runner reports incomplete and 
 | | |
 |---|---|
 | `pyserial` | `pip install pyserial` |
-| ST's OpenOCD | `./build.sh --with-openocd` — builds it into `toolchains/openocd`. Upstream 0.12.0 **cannot** program an STM32H5 |
-| udev rule for non-root ST-Link | `sudo cp toolchains/openocd-src/contrib/60-openocd.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger` |
+| ST's OpenOCD | found at `$OPENOCD`, `toolchains/openocd/bin/openocd`, or on `PATH`. Upstream 0.12.0 **cannot** program an STM32H5. Bazel builds ST's fork; copy it into `toolchains/` once, below |
+| udev rule for non-root ST-Link | `sudo cp "$(bazel info output_base)/external/+openocd+openocd_src/contrib/60-openocd.rules" /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger` |
+
+```bash
+bazel build //tools/flash:openocd_binary
+mkdir -p toolchains && cp -rL --no-preserve=mode bazel-bin/external/+openocd+openocd_src/openocd_build toolchains/openocd
+chmod +x toolchains/openocd/bin/openocd
+```
+
+The copy finds its own scripts directory, so nothing else needs configuring.
 
 The network checks additionally need the host set up as described below.
 
@@ -298,10 +309,14 @@ tools/hil/scenario.py --firmware threadx  --elf <elf> gptp stopstart  # named sc
 tools/hil/scenario.py --firmware freertos --elf <elf> --flash all --save run.json
 ```
 
-`all` takes about 75 minutes per firmware. With `--elf` the board's build ID is compared with the
-image first, and **the run refuses to start on a mismatch** -- an hour against the wrong firmware
-is the most expensive way there is to learn nothing. `--elf` also enables the SWD parts of
-`console_flood`, `stacks` and `health`. Exit status is 0 only if no assertion failed.
+`all` takes about 50 minutes on ThreadX (18 scenarios; `u4` and `pup` are lwIP-only) and 60 on
+FreeRTOS (20). With `--elf` the board's build ID is compared with the image first, and **the run
+refuses to start on a mismatch** -- an hour against the wrong firmware is the most expensive way
+there is to learn nothing. `--elf` also enables the SWD parts of `console_flood`, `stacks`,
+`health`, `gptp_flood` and `master_flood`. Exit status is 0 only if no assertion failed.
+
+To run everything — the host suites, then S8 and `all` on both firmwares in release and in debug —
+use `matrix.sh`; see [below](#the-full-matrix).
 
 ### PASS, FAIL and OBSERVED
 
@@ -385,8 +400,8 @@ host's own ptp4l never sees any of it.
 ## Looking inside the board: `swd.py`
 
 The firmware's only diagnostic channel is its console, and the failures that matter most take the
-console down with them. `swd.py` reads the target over SWD instead, from symbols alone -- the
-images carry no debug info:
+console down with them. `swd.py` reads the target over SWD instead, from symbols alone -- it needs
+no debug info, so it works on a release image, which has none:
 
 ```bash
 tools/hil/swd.py --elf <elf> snapshot   # PC, exception, task sampled 40x; tick; scheduler state
@@ -440,6 +455,25 @@ HardFault above stacked T clear, because a `blx` to an even address clears it.
   flexPTP pushes an item, then its notification, and the task takes one item per notification, so
   the items queued may exceed the notifications by at most a producer or the task caught between
   its two steps. `ptpq` flags more than that in all three of its reads, a second apart.
+
+## The full matrix
+
+```bash
+tools/hil/matrix.sh                     # ~4.5 h: both firmwares x release (opt) and debug (dbg)
+tools/hil/matrix.sh --build-only        # host suites in three modes, the four images, their build IDs
+tools/hil/matrix.sh --skip-host --configs opt --firmwares threadx --stage S0 --scenarios health
+```
+
+The full verification in one command. It runs `bazel test //...` in fastbuild, `opt` and `dbg`;
+builds the four images and records each one's build ID and size; then, for each image, flashes it,
+runs S8, and runs every scenario — skipping the scenarios for an image that failed S8. Everything
+lands in `build/matrix-<date>/`: the ELFs (keep them; `swd.py` needs the exact image), every log and
+JSON report, and `summary.txt`. Exit 0 only if every step passed. FreeRTOS's S8 is incomplete by
+design, its one `threads` SKIP, and that skip alone is accepted.
+
+Why both configurations, and what each one catches that the other cannot, is in
+[`testing_architecture.md`](../../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/testing_architecture.md#build-configurations-what-debug-and-release-mean).
+A plain `bazel build` image is neither: fastbuild is `-O0` without `DEBUG`.
 
 ## Unit tests
 
