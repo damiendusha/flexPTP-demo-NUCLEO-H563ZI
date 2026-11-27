@@ -59,7 +59,7 @@ class FindOpenocd(unittest.TestCase):
         )
 
     def test_vendored_is_preferred_over_path(self):
-        """The order matters: build.sh's copy is the one the project pins."""
+        """The order matters: toolchains/openocd is a copy of the build the project pins."""
         vendored = self._make("toolchains/openocd/bin/openocd")
         self._make("bin/openocd")
         self.assertEqual(

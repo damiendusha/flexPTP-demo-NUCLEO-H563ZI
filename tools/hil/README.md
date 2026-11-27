@@ -71,6 +71,7 @@ conflating them is how F42 survived for days. The runner reports incomplete and 
 
 ```bash
 bazel build //tools/flash:openocd_binary
+rm -rf toolchains/openocd    # cp would nest a second copy inside an existing one, and keep the old binary
 mkdir -p toolchains && cp -rL --no-preserve=mode bazel-bin/external/+openocd+openocd_src/openocd_build toolchains/openocd
 chmod +x toolchains/openocd/bin/openocd
 ```

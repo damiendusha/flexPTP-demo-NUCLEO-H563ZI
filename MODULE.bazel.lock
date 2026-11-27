@@ -223,7 +223,7 @@
   "moduleExtensions": {
     "//bazel:openocd.bzl%openocd": {
       "general": {
-        "bzlTransitiveDigest": "NzKj1X5MFsr60v3WMM12ReJQIOXxU70ob6PJM20dalI=",
+        "bzlTransitiveDigest": "aYngsAxkVt/hqnKt0LhGxi3yTqdPnNFvPqXKgycyDdw=",
         "usagesDigest": "s5mSdbUOtz9Jy8XoDMeeOvx01EcejOyxfjnXaV8Q00k=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"

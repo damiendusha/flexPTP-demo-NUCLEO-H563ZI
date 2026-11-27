@@ -9,7 +9,7 @@ http_archive.
 This repository rule finds a local one. It probes, in order:
 
     $OPENOCD                                  an explicit override
-    toolchains/openocd/bin/openocd            what build.sh --with-openocd produces
+    toolchains/openocd/bin/openocd            Bazel's source build, copied out (README.md, "Flashing")
     openocd on PATH
 
 and then VERIFIES it is ST's fork rather than merely present, by matching "STMicroelectronics"
@@ -34,9 +34,15 @@ Looked at, in order:
   toolchains/openocd/bin/openocd
   openocd on PATH
 {detail}
-An STM32H5 needs ST's fork: upstream has no compiled-in stm32h5x flash driver. Build it with
+An STM32H5 needs ST's fork: upstream has no compiled-in stm32h5x flash driver. Either drop
+--//tools/flash:openocd=local and let Bazel build the fork from source (the default), or build
+it once and copy it to where local mode looks, from the repository root:
 
-    ./build.sh --with-openocd
+    bazel build --//tools/flash:openocd=source //tools/flash:openocd_binary
+    rm -rf toolchains/openocd
+    mkdir -p toolchains
+    cp -rL --no-preserve=mode bazel-bin/external/+openocd+openocd_src/openocd_build toolchains/openocd
+    chmod +x toolchains/openocd/bin/openocd
 
 or set OPENOCD to one you already have."""
 
@@ -108,9 +114,10 @@ _openocd_repository = repository_rule(
     local = True,
 )
 
-# ST's fork, built from source. The pin is the commit tag openocd-cubeide-v2.1.0 resolves to,
-# which is also what build.sh builds -- and a COMMIT rather than imu's `branch =
-# "openocd-cubeide-r7"`, because a branch moves and a pin should not.
+# ST's fork, built from source. The pin is the commit tag openocd-cubeide-v2.1.0 resolves to, and
+# a COMMIT rather than imu's `branch = "openocd-cubeide-r7"`, because a branch moves and a pin
+# should not. It is also what local mode finds in toolchains/openocd: README.md's "Flashing"
+# section populates that directory by copying this build out of bazel-bin.
 #
 # init_submodules + "nosubmodule" is the important pair: ./bootstrap normally git-clones jimtcl
 # and libjaylink, which would be a network fetch inside a build action. Fetching them

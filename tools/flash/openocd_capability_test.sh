@@ -38,8 +38,9 @@ check "has the st-link adapter" "st-link" "${help}${strings_out}"
 
 if [ "${fail}" -ne 0 ]; then
     echo
-    echo "This OpenOCD cannot program an STM32H5. Build ST's fork with:"
-    echo "    ./build.sh --with-openocd"
+    echo "This OpenOCD cannot program an STM32H5. Bazel builds ST's fork from source by default;"
+    echo "if --//tools/flash:openocd=local is set, drop it, or replace toolchains/openocd (or"
+    echo "\$OPENOCD) with a copy of that build, as README.md's \"Flashing\" section describes."
     exit 1
 fi
 echo "OpenOCD is usable for this board."

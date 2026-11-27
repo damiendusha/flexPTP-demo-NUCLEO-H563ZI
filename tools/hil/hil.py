@@ -34,7 +34,7 @@ def find_openocd(env: "dict[str, str] | None" = None,
     """Locate an OpenOCD, in the same order //bazel/openocd.bzl uses.
 
         $OPENOCD
-        toolchains/openocd/bin/openocd     (what ./build.sh --with-openocd produces)
+        toolchains/openocd/bin/openocd     (Bazel's source build, copied out; see README.md)
         openocd on PATH
 
     This used to be a single hardcoded path into toolchains/, which the Bazel migration breaks
@@ -78,7 +78,8 @@ class OpenOcd:
     """Minimal OpenOCD wrapper.
 
     ST's fork is required: `target/stm32h5x.cfg` names a compiled-in `stm32h5x` flash
-    driver that upstream 0.12.0 does not have. `./build.sh --with-openocd` builds it.
+    driver that upstream 0.12.0 does not have. Bazel builds it; README.md says how to copy
+    that build into toolchains/openocd, where find_openocd() looks.
     """
 
     binary: "Path | None" = DEFAULT_OPENOCD
@@ -89,8 +90,8 @@ class OpenOcd:
             raise BoardError(
                 "No OpenOCD found. Looked at $OPENOCD, toolchains/openocd/bin/openocd, and "
                 "PATH. An STM32H5 needs ST's fork -- upstream has no compiled-in stm32h5x "
-                "flash driver. Get one with `bazel run //projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:flash`, "
-                "or set OPENOCD to a build you already have."
+                "flash driver. Bazel builds it -- copy that build into toolchains/openocd as "
+                "tools/hil/README.md describes, or set OPENOCD to a build you already have."
             )
         argv = [str(self.binary), "-f", self.board_cfg]
         for c in commands:
