@@ -193,10 +193,17 @@ cc_args(
             "-O2",
             "-g0",
         ],
+        # DEBUG is what makes a Debug image a Debug image, not the -O0: tx_user.h turns on
+        # ThreadX's software stack check, nx_user.h keeps NetX Duo's API error checking and adds
+        # per-packet owner tracking. CMake applied it as $<$<CONFIG:Debug>:DEBUG>; the migration
+        # lost it, so until this line --config=dbg was fastbuild with more debug info. It is set
+        # here, on every compile action, because nx_user.h's NX_ENABLE_PACKET_DEBUG_INFO changes
+        # NX_PACKET's layout: the application and NetX Duo must see the same definition.
         ":dbg_mode": [
             "-O0",
             "-g3",
             "-ggdb",
+            "-DDEBUG",
         ],
         "//conditions:default": [
             "-O0",
