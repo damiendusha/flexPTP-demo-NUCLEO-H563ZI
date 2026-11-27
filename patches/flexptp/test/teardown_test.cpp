@@ -14,6 +14,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -135,8 +136,17 @@ TEST(Teardown, U11_ATransmitTimestampAfterStopTouchesNoDeletedQueue) {
         ptp_receive_enqueue(sync, sizeof(sync), 0, 0, PTP_TP_IPv4);
         _exit(0);
     }
+    // This thread is a FreeRTOS task, and the POSIX port's tick is a SIGALRM sent to the running
+    // task every millisecond, with a handler installed without SA_RESTART: a tick that lands while
+    // the child is still running interrupts waitpid() with EINTR. The child is still there; wait
+    // again.
     int status = 0;
-    ASSERT_EQ(waitpid(pid, &status, 0), pid);
+    pid_t reaped;
+    do {
+        reaped = waitpid(pid, &status, 0);
+    } while (reaped < 0 && errno == EINTR);
+    const int err = errno;
+    ASSERT_EQ(reaped, pid) << "waitpid: " << std::strerror(err);
     EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
         << (WIFSIGNALED(status) && (WTERMSIG(status) == SIGSEGV || WTERMSIG(status) == SIGBUS)
                 ? "USE AFTER FREE: a TX timestamp after the stop was posted into a queue unreg_task_ptp() had deleted"
