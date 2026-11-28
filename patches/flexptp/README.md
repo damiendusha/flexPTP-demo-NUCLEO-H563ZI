@@ -1,6 +1,6 @@
 # flexPTP patches
 
-Nine patches against `fe4b071` (`RC1.0-26`), applied **by the Bazel fetch**.
+Ten patches against `fe4b071` (`RC1.0-26`), applied **by the Bazel fetch**.
 
 `//bazel/repositories.bzl` lists them in the `patches` attribute of the `new_git_repository`
 for `@flexptp`, so they are part of fetching the dependency: the patched tree is what lands in
@@ -23,6 +23,7 @@ are here because the firmware needs them now, not because they belong here.
 | `0012-u12-rx-length-version` | [#38](https://github.com/epagris/flexPTP/pull/38), open | `msg_utils.c`, `task_ptp.c` | Nothing compared the received length or `versionPTP` with the header: a short datagram was parsed partly from the previous message's bytes, a PTPv1 message as PTPv2. Now dropped in `ptp_receive_enqueue()` | host: `rx_validation_test` U12 5/5 (all fail without); board: `fuzz` |
 | `0013-u13-slave-parent-only` | [#37](https://github.com/epagris/flexPTP/pull/37), open | `bmca.c`, `slave.c`, `ptp_types.h` | The slave took Sync, Follow_Up and Delay_Resp from any sender, and ignored a new Sync while waiting for a Follow_Up. Now: the selected master's port only (recorded from its Announce header), and a new Sync restarts the cycle | host: `rx_validation_test` U13 5/5 (all fail without); board: `fuzz` |
 | `0014-u14-notification-fifo-length` | [#40](https://github.com/epagris/flexPTP/pull/40), open | `task_ptp.c` | Every producer pushes an item, then a notification, onto a notification FIFO of 16 shared by four FIFOs of 58 between them. A burst that leaves the PTP task behind fills it while an item FIFO has room: the item goes in, its notification is lost, and the task takes every later item late, for good -- a received message, once traffic is slow, past its TTL. A ThreadX board stopped answering Pdelay_Req after a flood and never recovered. Now the notification FIFO is as long as the four | host: `notification_test` 1/1 (fails without); board: `gptp_flood`, `master_flood` on ThreadX, which fail without |
+| `0015-u15-timestamp-unsigned-shifts` | not filed yet; drafted for review | `ptp_defs.h`, `msg_utils.c` | Writing and reading a timestamp shifts signed values into their sign bit -- `FLEXPTP_htonl()` on the `int32_t` nanoseconds, `<< 16` on the `int64_t` seconds -- which is undefined behaviour on nearly every timestamp. GCC produces the right bytes anyway, so nothing ever looked wrong; UBSan found it. Now shifted as `uint32_t` and `uint64_t` | host: `byte_order_test` 3/3, which under UBSan fails without it, as do `notification_test` and `rx_validation_test`; in a plain build all pass either way. Board: identical code but for register allocation in the two functions |
 
 `0001` is no longer only ours: another flexPTP user, Michael (`emb4fun`), reproduced it
 independently with two flexPTP masters in [issue #32](https://github.com/epagris/flexPTP/issues/32)
@@ -64,6 +65,7 @@ firmware fetches them -- with a fake port and network-stack driver (`fake_port.c
 |---|---|---|
 | `rx_validation_test` | flexPTP's own OS-less mode, driven synchronously against a simulated ptp4l-like master | U12 and U13: ten interference patterns, each placed before a Sync and between it and its Follow_Up, each checked by completed cycles, by Syncs accepted (exactly the master's), and by no clock step; three positive controls, including 2.0 and 2.1 version bytes and padded frames |
 | `notification_test` | OS-less, gPTP profile, a link peer sending Pdelay_Req | U14: the task starved while heartbeats and the peer's frames arrive, then running again: every later Pdelay_Req must be answered at once, with its own sequenceId; and the same with no starvation, as the control |
+| `byte_order_test` | OS-less, the timestamp codec alone | U15: nanosecond values either side of 2^23 and a seconds value whose last wire byte is `0xe0`, round-tripped and checked byte for byte. It needs UBSan to fail without the fix (`--config=asan`): a plain build gets the right bytes either way |
 | `teardown_test` | flexPTP's FreeRTOS binding on FreeRTOS's POSIX port, with an "electric fence" heap that makes freed memory inaccessible | U11: a TX timestamp after the stop touches no deleted queue; a stop while the PTP task is inside a log line leaves no lock held; three stop/start cycles leak nothing |
 
 ```bash
@@ -75,15 +77,17 @@ a patch with `--override_repository`. From the working clone's branches:
 
 ```bash
 C=~/git/flexPTP-fixes
-git -C $C checkout series/rc26~4      # everything but 0011-0014
+git -C $C checkout series/rc26~5      # everything but 0011-0015
 bazel test --override_repository=flexptp=$C //patches/flexptp/test:all   # 13 tests fail
-git -C $C checkout series/rc26~1      # everything but 0014
+git -C $C checkout series/rc26~2      # everything but 0014 and 0015
 bazel test --override_repository=flexptp=$C //patches/flexptp/test:all   # 1 fails: U14's
+git -C $C checkout series/rc26~1      # everything but 0015 -- UBSan is what fails it
+bazel test --features=ubsan --override_repository=flexptp=$C //patches/flexptp/test:all   # 3 targets fail: UBSan stops each at its first report
 git -C $C checkout series/rc26        # all of it
-bazel test --override_repository=flexptp=$C //patches/flexptp/test:all   # all pass
+bazel test --features=ubsan --override_repository=flexptp=$C //patches/flexptp/test:all   # all pass
 ```
 
-Each PR branch on its own (`fix/u11-…` to `fix/u14-…`, one commit on bare `fe4b071`) passes its
+Each PR branch on its own (`fix/u11-…` to `fix/u15-…`, one commit on bare `fe4b071`) passes its
 own tests and fails the others'. It also fails the two slave controls in `rx_validation_test`,
 `SlavesToTheMasterAndCompletesEveryCycle` and `FollowsABetterMasterWhenOneAppears`: without `0001`
 a remote master's clock identity is byte-reversed on receive (U1, #20), so the BMCA records the
@@ -103,7 +107,7 @@ does not tolerate drift, and an offset that `patch` forgives today is a failure 
 edit.
 
 The pull requests stay independent. Each fix is also a branch of its own, one commit off
-`fe4b071`, and the stack is the same nine changes cherry-picked in order onto branch
+`fe4b071`, and the stack is the same ten changes cherry-picked in order onto branch
 `series/rc26` in the working clone. `git patch-id --stable` matches each series commit to its PR
 branch, so what the firmware builds is what would be filed.
 
@@ -124,7 +128,8 @@ clone, one per commit, oldest first:
 C=~/git/flexPTP-fixes
 names=(0001-u1-gm-clock-identity-byte-order 0006-u6-pdelay-pcb-comment 0008-u8-delay-resp-interval
        0009-u9-teardown-unlock 0010-u10-chained-pbufs 0011-u11-teardown-order
-       0012-u12-rx-length-version 0013-u13-slave-parent-only 0014-u14-notification-fifo-length)
+       0012-u12-rx-length-version 0013-u13-slave-parent-only 0014-u14-notification-fifo-length
+       0015-u15-timestamp-unsigned-shifts)
 i=0; for c in $(git -C $C rev-list --reverse fe4b071..series/rc26); do
     git -C $C format-patch --stdout --no-signature -1 "$c" > "patches/flexptp/${names[i]}.patch"; i=$((i+1))
 done

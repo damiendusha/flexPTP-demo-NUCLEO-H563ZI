@@ -6,14 +6,15 @@ applied by the Bazel fetch; see [`patches/flexptp/README.md`](../../patches/flex
 
 ## The flexPTP fixes
 
-Fourteen, in four batches. U1–U7 are branches off `494e644` (`RC1.0-17`), filed on 2026-09-10.
-U8–U14 are branches off the current pin `fe4b071` (`RC1.0-26`); U8–U10 were filed on 2026-11-26,
-U11–U13 on 2026-11-27, after the tests below, and U14, found while testing them, the same day.
+Fifteen. U1–U7 are branches off `494e644` (`RC1.0-17`), filed on 2026-09-10. U8–U15 are branches
+off the current pin `fe4b071` (`RC1.0-26`); U8–U10 were filed on 2026-11-26, U11–U13 on 2026-11-27,
+after the tests below, and U14, found while testing them, the same day. U15, found on 2026-11-28 by
+running the host tests under UBSan, is drafted and **not filed yet**.
 Each is one commit, independent of the others, so they can be reviewed, merged or rejected
 in any combination. Full analysis and evidence in
 [`docs/flexptp_upstream_review.md`](../../docs/flexptp_upstream_review.md).
 
-| | Branch | PR | Status (2026-11-27) | What it fixes |
+| | Branch | PR | Status (2026-11-28) | What it fixes |
 |---|---|---|---|---|
 | U1 | `fix/u1-gm-clock-identity-byte-order` | [#20](https://github.com/epagris/flexPTP/pull/20) | **open** | A remote master's clock identity is byte-reversed, and the BMCA compares two byte conventions |
 | U2 | `fix/u2-logid-config-bit` | [#21](https://github.com/epagris/flexPTP/pull/21) | merged, comments trimmed | The `logid` flag is never stored, and storing it would make `ptp_load_config()` discard the whole record |
@@ -29,17 +30,19 @@ in any combination. Full analysis and evidence in
 | U12 | `fix/u12-rx-length-version` | [#38](https://github.com/epagris/flexPTP/pull/38) | **open** | A received message is parsed whatever its length and version: a 1-byte datagram is a "Sync" built from the previous message's bytes |
 | U13 | `fix/u13-slave-parent-only` | [#37](https://github.com/epagris/flexPTP/pull/37) | **open** | The slave takes Sync, Follow_Up and Delay_Resp from any sender: one foreign Sync per cycle stops synchronisation |
 | U14 | `fix/u14-notification-fifo` | [#40](https://github.com/epagris/flexPTP/pull/40) | **open** | The notification FIFO is shorter than the four FIFOs it notifies for: a burst strands items without notifications, and the PTP task then takes every later item late, a received one past its TTL -- for good. A ThreadX board stopped answering Pdelay_Req after a flood |
+| U15 | `fix/u15-timestamp-unsigned-shifts` | — | **not filed yet**; drafted for review | Writing and reading a timestamp shifts signed values into their sign bit: `FLEXPTP_htonl()` on the `int32_t` nanoseconds overflows for any value of 2^23 or more, and the `int64_t` seconds shift for half of all received timestamps. Undefined behaviour that GCC compiles to the right bytes, found by UBSan; on the board the fix changes register allocation only |
 
 Every one is verified on a NUCLEO-H563ZI, most with a before/after measurement rather than an
 argument. U7 was found while testing U4 — and is why U4's negative case was untestable, because
 the only way to reach 802.3 without the gPTP preset is the transport switch that U7 repairs.
 
 Five of the first seven are merged in `RC1.0-26` (`fe4b071`); #20 and #26 are open and
-mergeable. Those two and U8–U14 are carried as `//patches/flexptp` until they land.
+mergeable. Those two and U8–U15 are carried as `//patches/flexptp` until they land.
 
-U11–U14 have host tests that run flexPTP's real engine: `//patches/flexptp/test`, described in
+U11–U15 have host tests that run flexPTP's real engine: `//patches/flexptp/test`, described in
 [`patches/flexptp/README.md`](../../patches/flexptp/README.md#host-tests). Each fix's tests fail
-without it and pass with it; U12 and U13 also have the HIL `fuzz` scenario, U11 `stopstart_busy`,
+without it and pass with it -- U15's under UBSan, since its defect is undefined behaviour that GCC
+happens to compile correctly; U12 and U13 also have the HIL `fuzz` scenario, U11 `stopstart_busy`,
 and U14 `gptp_flood` and `master_flood`, which with `--elf` also read flexPTP's queues over SWD.
 
 U8 came from issue #30, which upstream's `9eefd95` did not fix (it changes the Delay_Req, not the
@@ -56,7 +59,7 @@ adds a separate fix (`ptp_slave_reset()` before `ptp_slave_enable()`).
 
 The PR branches for #20 and #26 on the fork are left at their original `494e644` base -- GitHub
 reports both as mergeable, so force-pushing would only churn the review. The patches are generated
-instead from the local `series/rc26` branch: all nine carried fixes cherry-picked in order onto
+instead from the local `series/rc26` branch: all ten carried fixes cherry-picked in order onto
 `RC1.0-26`, so each patch's context is exactly the tree it is applied to (see
 [`patches/flexptp/README.md`](../../patches/flexptp/README.md#order)).
 

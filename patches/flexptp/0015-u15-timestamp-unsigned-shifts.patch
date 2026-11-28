@@ -1,0 +1,107 @@
+From ff75c09dc95f3538b2a5bb05d04bc3de437177c6 Mon Sep 17 00:00:00 2001
+From: Damien Dusha <Damien Dusha>
+Date: Sat, 28 Nov 2026 16:05:17 +1000
+Subject: [PATCH] Timestamps: shift and byte-swap in unsigned types
+
+ptp_write_binary_timestamps() and ptp_extract_timestamps() -- every
+timestamp flexPTP sends or receives -- shift signed values into their sign
+bit, which is undefined behaviour, in two places:
+
+  - FLEXPTP_htonl() shifts its argument in the argument's own type, and
+    both functions pass it TimestampI.nanosec, an int32_t. `(a) << 8`
+    overflows for any nanosecond value of 2^23 or more, `(a) << 24` for
+    any of 2^7 or more: nearly every timestamp.
+  - The seconds are read by copying six bytes into the low end of
+    TimestampI.sec, an int64_t, and then `ts->sec << 16`. On a little-
+    endian target the last byte on the wire lands in the top byte, so
+    the shift overflows whenever that byte is 0x80 or more: half of all
+    received timestamps. Writing does the same shift, which overflows
+    only for a negative or out-of-range seconds value.
+
+GCC happens to produce the expected bytes, which is why nothing has ever
+looked wrong on the wire. But the compiler is entitled not to, and UBSan
+reports all three on the host:
+
+  msg_utils.c:214:28: runtime error: left shift of 968000000 by 8
+                      places cannot be represented in type 'int'
+  msg_utils.c:245:42: runtime error: left shift of 246377198714880 by 16
+                      places cannot be represented in type 'long int'
+  msg_utils.c:246:23: runtime error: left shift of 216003845 by 8
+                      places cannot be represented in type 'int'
+
+FLEXPTP_htonl() now converts to uint32_t before it shifts, and the
+seconds are shifted as uint64_t. Neither changes a value for any valid
+timestamp: the htonl expression was already unsigned int (the 0xff000000
+mask makes it so), its masks discard exactly the bits in which an
+arithmetic and a logical right shift differ, and FLEXPTP_ntohll() and
+FLEXPTP_htonll() take and return uint64_t anyway. The macro is still a
+constant expression.
+
+Not affected as used, so left alone: FLEXPTP_htons(), whose callers all
+pass a uint16_t (0xffff << 8 fits in an int once promoted), and the
+correctionField shift in the header, which is a uint64_t.
+
+On the board it changes nothing but register allocation. Built with
+arm-none-eabi-gcc 15.3 at -O2 for a Cortex-M33, every other function of
+two firmware images is byte-identical, and in these two the only
+difference is the operand order of one loop-exit `cmp`, which feeds a
+`bne`. The nanosecond swap is a single `rev` before and after.
+
+Found by running flexPTP's own engine on the host under ASan and UBSan.
+A host test round-trips nanosecond values either side of 2^23 (0, 1,
+127, 128, 2^23 - 1, 2^23, 968000000, 999999999) and a seconds value whose
+last byte is 0xe0, and checks the exact wire bytes, both written and
+read. Under UBSan it fails without this change and passes with it; in a
+plain build it passes either way, as the firmware always has.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/flexptp/msg_utils.c |  4 ++--
+ src/flexptp/ptp_defs.h  | 12 +++++++-----
+ 2 files changed, 9 insertions(+), 7 deletions(-)
+
+diff --git a/src/flexptp/msg_utils.c b/src/flexptp/msg_utils.c
+index 3419725..db26382 100644
+--- a/src/flexptp/msg_utils.c
++++ b/src/flexptp/msg_utils.c
+@@ -210,7 +210,7 @@ void ptp_write_binary_timestamps(void *pPayload, const TimestampI *ts, uint8_t n
+     uint8_t i;
+     for (i = 0; i < n; i++) {
+         // get timestamp data
+-        uint64_t sec = FLEXPTP_htonll(ts->sec << 16);
++        uint64_t sec = FLEXPTP_htonll((uint64_t)ts->sec << 16);
+         uint64_t nanosec = FLEXPTP_htonl(ts->nanosec);
+ 
+         // fill in time data
+@@ -242,7 +242,7 @@ void ptp_extract_timestamps(TimestampI *ts, void *pPayload, uint8_t n) {
+         p += 4;
+ 
+         // network->host
+-        ts->sec = FLEXPTP_ntohll(ts->sec << 16);
++        ts->sec = FLEXPTP_ntohll((uint64_t)ts->sec << 16);
+         ts->nanosec = FLEXPTP_ntohl(ts->nanosec);
+ 
+         // step to next timestamp
+diff --git a/src/flexptp/ptp_defs.h b/src/flexptp/ptp_defs.h
+index 30e5521..c65117a 100644
+--- a/src/flexptp/ptp_defs.h
++++ b/src/flexptp/ptp_defs.h
+@@ -219,11 +219,13 @@ extern const uint8_t PTP_ETHERNET_PEER_DELAY[6]; ///< PTP's L2 Peer_Delay Ethern
+ // ---- NETWORK-HOST CONVERSIONS ----
+ // -- These are STATICALLY COMPUTABLE macros! ---
+ 
+-#define FLEXPTP_htonl(a)          \
+-    ((((a) >> 24) & 0x000000ff) | \
+-     (((a) >> 8) & 0x0000ff00) |  \
+-     (((a) << 8) & 0x00ff0000) |  \
+-     (((a) << 24) & 0xff000000))
++// Shifted as uint32_t whatever the argument's type: TimestampI.nanosec is an int32_t, and shifting
++// a signed value into or past its sign bit is undefined.
++#define FLEXPTP_htonl(a)                      \
++    (((((uint32_t)(a)) >> 24) & 0x000000ff) | \
++     ((((uint32_t)(a)) >> 8) & 0x0000ff00) |  \
++     ((((uint32_t)(a)) << 8) & 0x00ff0000) |  \
++     ((((uint32_t)(a)) << 24) & 0xff000000))
+ 
+ #define FLEXPTP_ntohl(a) FLEXPTP_htonl((a))
+ 

@@ -1,12 +1,13 @@
 # flexPTP upstream review — `RC1.0-11` to `RC1.0-26`
 
-> **Status, 2026-11-27.** Pinned at `fe4b071` (`RC1.0-26`), upstream head. Fourteen findings,
-> U1–U14: five merged upstream (U2–U5, U7); the other nine are filed (#20, #26, #34–#40) and
-> carried as [`//patches/flexptp`](../patches/flexptp/README.md) until they merge. The current
+> **Status, 2026-11-28.** Pinned at `fe4b071` (`RC1.0-26`), upstream head. Fifteen findings,
+> U1–U15: five merged upstream (U2–U5, U7); nine are filed (#20, #26, #34–#40) and U15 is drafted,
+> not yet filed; all ten are carried as [`//patches/flexptp`](../patches/flexptp/README.md) until
+> they merge. The current
 > table is [`tools/upstream/README.md`](../tools/upstream/README.md). This document is the record
 > of how each was found and verified, in dated sections: §1–§5 the review of `RC1.0-17`
 > (September), §6 the move to `RC1.0-26`, §7 three more fixes and the final campaign, §8 U11–U14
-> and the release/debug verification.
+> and the release/debug verification, §9 U15.
 
 **§1–§5: the review of `RC1.0-17`.** Reviewed at pin `494e644a3218c5867ee7397c1e9c019667b664b1` (`RC1.0-17`, 2026-09-07), against the
 previous pin `76aaf67` (`RC1.0-11`). Six commits, 23 files, +600/−237.
@@ -806,3 +807,28 @@ Host suites 24/24 in all three modes. Every SWD check passed on all four images.
 now one command, `tools/hil/matrix.sh`, and the procedure is written down in
 [`testing_architecture.md`](../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/testing_architecture.md).
 The board was left on the release ThreadX image.
+
+## 9. Update — U15, found by the sanitizers (2026-11-28)
+
+The first run of the host suites under ASan and UBSan
+([static_analysis_plan.md](static_analysis_plan.md)) put flexPTP's own engine through UBSan for
+the first time, and it reported undefined behaviour on every timestamp flexPTP writes or reads.
+`ptp_write_binary_timestamps()` and `ptp_extract_timestamps()` shift signed values into their sign
+bit in two places: `FLEXPTP_htonl()` shifts its argument in its own type, and the nanoseconds are
+an `int32_t`, so `<< 8` overflows for any value of 2^23 or more; and the seconds are read into the
+low end of an `int64_t` and shifted left by 16, which overflows whenever the last byte on the wire
+is `0x80` or more. The second was hidden behind the first: UBSan stops at its first report, and
+only a test written for the first reached it.
+
+GCC compiles both to the right bytes, which is why nothing had looked wrong on the wire, on either
+firmware. The fix (`0015`, branch `fix/u15-timestamp-unsigned-shifts`) shifts as `uint32_t` and
+`uint64_t`; it changes no value for any valid timestamp. On the board it changes register
+allocation only: of 830 functions in the ThreadX image and 869 in the FreeRTOS one, all but the two
+timestamp functions are byte-identical, and those two differ in the operand order of one loop-exit
+`cmp`, which feeds a `bne`.
+
+Host test: `byte_order_test`, three cases. Under UBSan they fail without the fix, as do
+`notification_test` and `rx_validation_test`, and pass with it; in a plain build everything
+passes either way. The pull request is drafted and not yet filed:
+`tools/upstream/file_flexptp_prs.sh --dry-run --only u15` shows it.
+

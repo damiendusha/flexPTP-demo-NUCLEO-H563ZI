@@ -44,8 +44,10 @@ die() { echo "error: $*" >&2; exit 1; }
 # read the two that break synchronisation outright -- any foreign Sync, or one malformed
 # datagram, stops it; u14 next, which stops it for good after a burst. All are filed -- u13, u12
 # and u11 as #37-#39, u14 as #40, u9, u10 and u8 as #34-#36, u1 and u6 from the first batch as
-# #20 and #26 -- and listed so a re-run reports them as such. u6 is a comment and goes last on
-# purpose. U2-U5 and U7 are merged and their branches deleted.
+# #20 and #26 -- and listed so a re-run reports them as such. u15 is not filed yet: undefined
+# behaviour that UBSan found and no board has shown, so it comes after every fix with a measured
+# symptom. u6 is a comment and goes last on purpose. U2-U5 and U7 are merged and their branches
+# deleted.
 #
 #   tag | branch | one-line PR title
 FIXES=(
@@ -57,6 +59,7 @@ FIXES=(
   "u10|fix/u10-chained-pbufs|lwIP NSD: pass a chained pbuf's whole message, not its first segment"
   "u8|fix/u8-delay-resp-interval|master: Delay_Resp carries logMinDelayReqInterval, not the Delay_Req's 0x7F"
   "u1|fix/u1-gm-clock-identity-byte-order|Announce: stop byte-swapping the grandmaster clock identity on receive"
+  "u15|fix/u15-timestamp-unsigned-shifts|Timestamps: shift and byte-swap in unsigned types"
   "u6|fix/u6-pdelay-pcb-comment|lwIP NSD: say that the PDelay pcbs are receive-only"
 )
 

@@ -6,7 +6,7 @@
 # fix's test fail without it; patches/flexptp/README.md has the commands.
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 
-# ---- OS-less: the engine driven synchronously (U12, U13, U14) -------------------------------------
+# ---- OS-less: the engine driven synchronously (U12, U13, U14, U15) -------------------------------------
 
 cc_library(
     name = "osless_options",
@@ -54,6 +54,15 @@ cc_test(
         "notification_test.cpp",
         "ptp_wire.h",
     ],
+    deps = [
+        ":flexptp_osless",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "byte_order_test",
+    srcs = ["byte_order_test.cpp"],
     deps = [
         ":flexptp_osless",
         "@googletest//:gtest_main",

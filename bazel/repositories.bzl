@@ -108,6 +108,7 @@ def _vendored_impl(_mctx):
             "//patches/flexptp:0012-u12-rx-length-version.patch",
             "//patches/flexptp:0013-u13-slave-parent-only.patch",
             "//patches/flexptp:0014-u14-notification-fifo-length.patch",
+            "//patches/flexptp:0015-u15-timestamp-unsigned-shifts.patch",
         ],
         remote = "https://github.com/epagris/flexPTP.git",
     )
