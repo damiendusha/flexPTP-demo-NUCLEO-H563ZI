@@ -174,9 +174,13 @@ run refuses to start. Record the build ID with every result.
 
 ```bash
 bazel test //...
+bazel test --config=asan $(bazel query 'kind(cc_test, //...)')     # ASan, LSan, UBSan
 bazel build //projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:flexptp-demo \
             //projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo:flexptp-demo-freertos
 ```
+
+The sanitizer run is the only thing that sees undefined behaviour GCC happens to compile
+correctly — U15 and the `sysmem_bounds` negation were both invisible to every other test here.
 
 If the change touches firmware, also run S8 on each affected firmware, on the image just built:
 
@@ -571,6 +575,7 @@ What this exercise taught, each lesson of which changed the code:
 |---|---|
 | **Build** (both firmwares × `dbg`, `opt`) | all four images compile and link, with **zero first-party warnings** (`-Werror`) |
 | **Tests** | `bazel test //...`: layers 1–5, including building ST's OpenOCD from source — a clean clone can flash |
+| **Sanitizers** | the C/C++ tests again under AddressSanitizer, LeakSanitizer and UBSan (`--config=asan`), each fatal on its first report |
 | **Static analysis** | `cppcheck` over each firmware's own directory and over the shared `lib/`; GCC's `-fanalyzer` compiles the first-party host code inside **Tests**, as warnings |
 | **Docs cross-references** | every relative link and in-document anchor in the Markdown resolves |
 

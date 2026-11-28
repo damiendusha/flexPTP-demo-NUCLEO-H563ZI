@@ -84,6 +84,32 @@ jobs:
       - name: Test
         run: bazel test //...
 
+  # The C/C++ tests again, under AddressSanitizer, LeakSanitizer and UBSan (--config=asan in
+  # .bazelrc), each fatal on its first report. Its own job, so a sanitizer finding and a functional
+  # failure read as different things. See docs/static_analysis_plan.md, phase 1.
+  sanitizers:
+    name: Sanitizers (ASan, LSan, UBSan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Its own key: actions/cache saves a key once, so sharing the Tests job's would leave the
+      # sanitizer builds, which are different actions, never cached.
+      - name: Cache Bazel
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bazel
+          key: bazel-asan-${{ runner.os }}-${{ hashFiles('MODULE.bazel.lock', 'MODULE.bazel') }}
+          restore-keys: bazel-asan-${{ runner.os }}-
+
+      # The C/C++ tests only. //... would also rebuild an ASan OpenOCD for the capability test,
+      # which gains nothing and costs minutes. The query is its own line so that a failure there
+      # fails the step instead of leaving bazel test with nothing to run.
+      - name: Test under the sanitizers
+        run: |
+          targets=$(bazel query 'kind(cc_test, //...)')
+          bazel test --config=asan --test_output=errors $targets
+
   static-analysis:
     name: Static analysis (${{ matrix.project }})
     runs-on: ubuntu-latest
