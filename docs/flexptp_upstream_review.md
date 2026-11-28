@@ -844,8 +844,12 @@ entries where 2 belong, the earlier application command gone, and a stop and a s
 20 belong, 7 of them twice. With the fix (`0016`, branch `fix/u16-cli-remove-handles`): 2, and 20
 once each. Host test `cli_hooks_test`.
 
-Neither firmware reached this code: both leave `CLI_REMOVE_CMD` undefined. That is its own defect,
-in this project — every `flexptp stop` leaves flexPTP's commands registered, pointing into a
-stopped engine, and every `flexptp start` registers them again — and U16 is what makes defining
-it safe.
+Neither firmware reached this code: both leave `CLI_REMOVE_CMD` undefined. What that costs was
+measured on the board (ThreadX, release): after `flexptp stop`, all of flexPTP's commands are still
+registered and still answer — `ptp info` and `ptp master` report the last master, `ptp reset`
+prints "PTP reset!" to an engine that is not running — without crashing anything; and each
+`flexptp` start registers them again, which this project's CLI absorbs by replacing every old entry
+with its new one (26 commands after each of three restarts). Misleading rather than harmful.
+Defining `CLI_REMOVE_CMD` would make them disappear while flexPTP is stopped, and U16 is what makes
+that safe; it is not done, because it changes what the console offers.
 

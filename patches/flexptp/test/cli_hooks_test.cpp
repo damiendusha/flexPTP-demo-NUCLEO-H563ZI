@@ -7,9 +7,10 @@
 // and, against a CLI whose handles are positions, removing first to last made every handle after
 // the first name the entry after its own.
 //
-// The table here behaves as lib/cli/cli.c does (fake_cli.h). Both firmwares leave CLI_REMOVE_CMD
-// undefined today, which is what kept this path dark -- and is why a stop and a start registered
-// flexPTP's commands a second time.
+// The table here keeps cli.c's handles (fake_cli.h). Both firmwares leave CLI_REMOVE_CMD undefined
+// today, which is what kept this path dark: a stop leaves flexPTP's commands registered, answering
+// from the stopped engine, and a start registers them again -- which cli.c absorbs by replacing
+// each old entry, and a CLI without that would accumulate.
 
 #include <gtest/gtest.h>
 

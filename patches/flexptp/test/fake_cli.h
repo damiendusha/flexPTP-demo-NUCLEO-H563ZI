@@ -1,9 +1,14 @@
 /* A command table with the firmware CLI's semantics, for flexPTP's CLI hooks: finding U16.
  *
  * lib/cli/cli.c hands out a command's position in its table as the handle, and removing a command
- * moves every later one down a slot. This reproduces exactly that, and nothing else -- no
- * tokenizer, no help, no mutex -- so a test can watch what flexPTP registers and removes. The
- * types are cli.h's own, the ones flexPTP's callbacks are compiled against in the firmware. */
+ * moves every later one down a slot. This reproduces that, so a test can watch what flexPTP
+ * registers and removes. The types are cli.h's own, the ones flexPTP's callbacks are compiled
+ * against in the firmware.
+ *
+ * One thing it deliberately does not reproduce: cli.c replaces a command registered again with the
+ * same tokens, dropping the old entry. That would hide the second registration a missed removal
+ * causes, which is what U16_ARestartRegistersEachCommandOnce looks for -- and it is why, on the
+ * board, the firmware's 26 commands stay 26 however often flexPTP restarts. */
 #ifndef FLEXPTP_TEST_FAKE_CLI_H
 #define FLEXPTP_TEST_FAKE_CLI_H
 
