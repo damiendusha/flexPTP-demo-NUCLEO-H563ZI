@@ -1,7 +1,7 @@
 # Static analysis and sanitizers — a coverage plan
 
-**Status: decided 2026-11-28; phase 1 in progress.** Nothing below is built yet except what §1
-lists as in place. The measurements in §2 are from a spike run that day on `74c2702`; they were
+**Status: decided 2026-11-28; phase 1 done the same day, awaiting review before it merges.**
+Phases 2–7 are not started. §1 lists what was in place before phase 1. The measurements in §2 are from a spike run that day on `74c2702`; they were
 not committed. The maintainer's decisions are in [§5](#5-decisions-taken) and are folded into the
 phases.
 
