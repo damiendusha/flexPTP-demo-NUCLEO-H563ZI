@@ -491,6 +491,15 @@ advantages over a transition:
   do in [`Modules/CMakeLists.txt`](../Modules/CMakeLists.txt) today — and the `alwayslink`
   subtlety goes away.
 
+  **Revisited 2026-11-28: it brought the `-w` with it.** Compiled into flexPTP's library, the
+  port and the NSD got flexPTP's `-w`, which inhibits every warning wherever it sits on the
+  command line — so they were outside the `-Werror` gate (D13) the whole time, and an unused
+  variable added to `nsd_netxduo.c` built. The macro now makes two libraries: flexPTP's own
+  sources with `-w`, and the project's port and NSD as first-party code, `alwayslink`. That is
+  plan §5.4's shape after all; the `alwayslink` subtlety was the price of the warnings. Every
+  object of both firmwares compiles byte-identically either way (`opt`), or identically but for
+  the object path recorded in the debug info (`dbg`).
+
 The same macro shape covers `@stm32h5_hal` if the two projects ever want different
 `stm32h5xx_hal_conf.h` values (D12 currently assumes they do not).
 

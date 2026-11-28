@@ -473,6 +473,10 @@ is first-party but gets compiled into flexPTP's library and so inherited its `-w
 `set_source_files_properties(... TARGET_DIRECTORY flexptp ...)` incantation to warn at all.
 In Bazel it is simply a first-party `cc_library` with the feature on ([§5.4](#54-flexptp)).
 
+**It was not, until 2026-11-28.** [Decisions §5](bazel_decisions.md#for-flexptp-instantiate-per-project-do-not-transition)
+compiled the port and the NSD into flexPTP's library after all, `-w` and all, so they were outside
+the gate; `bazel/flexptp.bzl` now builds them as a first-party library of their own.
+
 ### 3.4 Registration
 
 ```python
