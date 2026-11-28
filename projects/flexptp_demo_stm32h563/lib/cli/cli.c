@@ -310,11 +310,12 @@ static void put_onto_cmd_hist_stk(const char *pLine) {
         return;
     }
 
-    // push elements one slot deeper
-    int16_t i = 0;
-    for (i = HISTORY_STACK_DEPTH - 2; i >= 0; i--) {
-        strcpy(sppCmdHistStk[i + 1], sppCmdHistStk[i]);
-    }
+    // push elements one slot deeper: every row down by one, the oldest falling off the end.
+    // Whole rows, in one memmove, rather than a strcpy per row: strcpy reads its source to the
+    // terminator, so copying row i into row i+1 -- the next 192 bytes -- was only free of
+    // overlap because get_line() never lets a line reach the end of its row. memmove asks
+    // nothing of the contents (-Wanalyzer-overlapping-buffers, on the ARM build).
+    memmove(sppCmdHistStk[1], sppCmdHistStk[0], sizeof(sppCmdHistStk) - sizeof(sppCmdHistStk[0]));
 
     // copy the new data
     strcpy(sppCmdHistStk[0], pLine);
@@ -609,7 +610,7 @@ static void cli_remove_command_locked(int cmdIdx) {
         ptrdiff_t hintOff = (src->pHint != NULL) ? (src->pHint - src->pHelp) : -1;
         ptrdiff_t padOff = (src->pPadding != NULL) ? (src->pPadding - src->pHelp) : -1;
 
-        memcpy(&spCliCmds[i], src, sizeof(struct CliCommand));
+        spCliCmds[i] = *src;
 
         spCliCmds[i].pHint = (hintOff >= 0) ? (spCliCmds[i].pHelp + hintOff) : NULL;
         spCliCmds[i].pPadding = (padOff >= 0) ? (spCliCmds[i].pHelp + padOff) : NULL;

@@ -39,6 +39,13 @@ void cli_uut_clear_output(void);
 /* tokenize_cli_line() is a file-static; cli_uut.c forwards to it. */
 void cli_uut_tokenize(char *pLine, CliToken_Type ppTok[], uint32_t tokMaxLen,
                       uint32_t tokMaxCnt, uint32_t *pTokCnt);
+
+/* The command history, likewise. */
+void cli_uut_push_history(const char *pLine);
+const char *cli_uut_history(int i);
+int cli_uut_history_level(void);
+int cli_uut_linebuf_length(void);
+void cli_uut_clear_history(void);
 }
 
 namespace {
@@ -275,6 +282,95 @@ TEST_F(Cli, HelpListsRegisteredCommands) {
     EXPECT_NE(out().find("Shows up in help"), std::string::npos);
 
     cli_remove_command(h);
+}
+
+TEST_F(Cli, RemovingACommandFromTheMiddleLeavesTheRestWhole) {
+    /* A handle is the command's index in the table, and removing one compacts the table: every
+     * later entry moves down a slot, by a struct copy whose hint and padding pointers are then
+     * rebased onto the destination. Every other test here removes only the last entry, which
+     * moves nothing -- so this is the one test of the compaction itself. The slot the last
+     * entry vacates is then reused, so that a hint still pointing into it would read the
+     * newcomer's text. */
+    int a = cli_register_command((char *)"alpha \tfirst hint", 1, 0, record<20>);
+    int b = cli_register_command((char *)"bravo \tsecond hint", 1, 0, record<21>);
+    int c = cli_register_command((char *)"charlie \tthird hint", 1, 0, record<22>);
+    ASSERT_GE(a, 0);
+    ASSERT_EQ(b, a + 1);
+    ASSERT_EQ(c, a + 2);
+    run("?");  /* format the help first: that is what splits each entry into its hint */
+
+    cli_remove_command(a);
+    int d = cli_register_command((char *)"delta \tfourth hint", 1, 0, record<23>);
+    ASSERT_EQ(d, c) << "the slot charlie left was not the one reused";
+
+    run("bravo");
+    EXPECT_EQ(g_last.which, "21");
+    run("charlie");
+    EXPECT_EQ(g_last.which, "22");
+    g_last = Dispatch{};
+    run("alpha");
+    EXPECT_EQ(g_last.argc, -1) << "a removed command still dispatched";
+
+    cli_uut_clear_output();
+    run("?");
+    const auto line = [](const std::string &text, const std::string &cmd) {
+        const auto at = text.find(cmd);
+        if (at == std::string::npos) return std::string();
+        const auto begin = text.rfind('\n', at);
+        return text.substr(begin == std::string::npos ? 0 : begin, text.find('\n', at) - begin);
+    };
+    EXPECT_NE(line(out(), "bravo").find("second hint"), std::string::npos) << line(out(), "bravo");
+    EXPECT_NE(line(out(), "charlie").find("third hint"), std::string::npos) << line(out(), "charlie");
+    EXPECT_NE(line(out(), "delta").find("fourth hint"), std::string::npos) << line(out(), "delta");
+
+    /* Handles shift as entries go, so take them from the top down. */
+    cli_remove_command(d);
+    cli_remove_command(c - 1);
+    cli_remove_command(b - 1);
+}
+
+/* --- the command history ------------------------------------------------------------------
+ *
+ * Eight rows, newest first. A push moves every row down by one -- once a strcpy per row, which
+ * was free of overlap only because no row fills its 192 bytes, now one memmove of whole rows --
+ * so these pin what a push must leave, including for a line as long as get_line() allows. */
+
+class History : public ::testing::Test {
+  protected:
+    void SetUp() override { cli_uut_clear_history(); }
+    void TearDown() override { cli_uut_clear_history(); }
+};
+
+TEST_F(History, KeepsTheNewestFirstAndDropsTheOldest) {
+    for (int i = 1; i <= 9; i++) {
+        cli_uut_push_history(("cmd" + std::to_string(i)).c_str());
+    }
+    EXPECT_EQ(cli_uut_history_level(), 8) << "eight rows, and the level stops there";
+    for (int row = 0; row < 8; row++) {
+        EXPECT_EQ(std::string(cli_uut_history(row)), "cmd" + std::to_string(9 - row)) << "row " << row;
+    }
+}
+
+TEST_F(History, DoesNotPushARepeatOfTheNewest) {
+    cli_uut_push_history("ping");
+    cli_uut_push_history("ping");
+    EXPECT_EQ(cli_uut_history_level(), 1);
+    cli_uut_push_history("pin");  /* a prefix of the newest is a different command */
+    EXPECT_EQ(cli_uut_history_level(), 2);
+    EXPECT_EQ(std::string(cli_uut_history(0)), "pin");
+    EXPECT_EQ(std::string(cli_uut_history(1)), "ping");
+}
+
+TEST_F(History, AFullLengthLineMovesDownWhole) {
+    /* CLI_LINEBUF_LENGTH characters: as long as get_line() lets a line be, so its terminator is
+       the last byte of its row -- the case the per-row strcpy depended on most. */
+    const std::string full(static_cast<std::size_t>(cli_uut_linebuf_length()), 'x');
+    cli_uut_push_history(full.c_str());
+    for (int i = 0; i < 7; i++) {
+        cli_uut_push_history(("short" + std::to_string(i)).c_str());
+    }
+    EXPECT_EQ(std::string(cli_uut_history(7)), full) << "the full-length line, now the oldest row";
+    EXPECT_EQ(std::string(cli_uut_history(6)), "short0");
 }
 
 /* --- kernel bring-up: the CLI's mutex is a real one ---------------------------------------- */

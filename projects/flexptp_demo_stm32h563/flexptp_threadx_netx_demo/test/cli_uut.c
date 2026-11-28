@@ -87,3 +87,13 @@ void cli_uut_tokenize(char *pLine, CliToken_Type ppTok[], uint32_t tokMaxLen,
                       uint32_t tokMaxCnt, uint32_t *pTokCnt) {
     tokenize_cli_line(pLine, ppTok, tokMaxLen, tokMaxCnt, pTokCnt);
 }
+
+/* The command history: put_onto_cmd_hist_stk() and the stack it pushes are file-statics too. */
+void cli_uut_push_history(const char *pLine) { put_onto_cmd_hist_stk(pLine); }
+const char *cli_uut_history(int i) { return sppCmdHistStk[i]; }
+int cli_uut_history_level(void) { return sHistStkLevel; }
+int cli_uut_linebuf_length(void) { return CLI_LINEBUF_LENGTH; }
+void cli_uut_clear_history(void) {
+    memset(sppCmdHistStk, 0, sizeof(sppCmdHistStk));
+    sHistStkLevel = 0;
+}
