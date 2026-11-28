@@ -25,6 +25,11 @@
  * building with -m32 is strictly better and this arena becomes unnecessary.
  *
  * MAP_32BIT is Linux/x86-64 specific. On another host, allocate low memory some other way.
+ *
+ * Under AddressSanitizer the arena poisons everything it has not handed out and leaves a
+ * poisoned gap in front of each allocation, so running off the end of one is reported at the
+ * access; ASan watches malloc(), not mmap(), and would otherwise see nothing here. A plain build
+ * lays memory out exactly as before.
  */
 #ifndef HOST_ARENA_H
 #define HOST_ARENA_H

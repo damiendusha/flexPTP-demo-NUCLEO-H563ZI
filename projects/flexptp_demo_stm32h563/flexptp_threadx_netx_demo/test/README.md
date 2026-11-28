@@ -85,6 +85,15 @@ is. On x86-64 those casts truncate. Two things make the round-trip lossless:
 guard both. If either regresses the driver tests would not fail cleanly — they would corrupt
 memory or jump into nowhere — so those two fail first and say why.
 
+Under `--config=asan` the arena also poisons everything it has not handed out, with a gap in
+front of each allocation, and the model gives the TX ring an allocation of its own — the driver
+takes it by its own pointer, so only the state block and the RX ring have to be adjacent. A
+driver that runs off the end of either ring, or of the frame buffers, is then reported at the
+access. Before, writing one descriptor past the RX ring landed on the first TX descriptor, which
+initialisation clears a few lines later, and every test passed. The frame buffers themselves
+stay back to back, because the driver strides through one block, so a frame overrunning into the
+next buffer is still not caught.
+
 `-m32` would be strictly better, matching the target's whole ABI rather than just pointer width,
 but it needs `gcc-multilib`.
 

@@ -48,15 +48,21 @@ EthModel::EthModel(std::uint16_t rx_len, std::uint16_t tx_len)
     /* ETHHW_GetState() recovers the state block as ((ETHHW_State *)DMACRDLAR) - 1, so it
      * must sit immediately below the RX ring with no padding. The firmware guarantees this
      * with a _Static_assert on a struct that holds both; here it is done by allocating one
-     * block and carving it, which reproduces the same layout contract. */
+     * block and carving it, which reproduces the same layout contract.
+     *
+     * That is the whole contract: the TX ring is handed over by its own pointer, so it gets its
+     * own allocation. Under ASan the arena then puts a poisoned gap between the rings, and a
+     * driver that runs off the end of the RX ring is reported -- in one block, that write
+     * landed on the first TX descriptor, which the driver clears a few lines later, and no test
+     * could see it. */
     const std::size_t state_sz = sizeof(ETHHW_State);
     const std::size_t rx_sz = sizeof(ETHHW_DescFull) * rx_len_;
     const std::size_t tx_sz = sizeof(ETHHW_DescFull) * tx_len_;
 
-    auto *block = static_cast<std::uint8_t *>(host_arena_alloc(state_sz + rx_sz + tx_sz, 16));
+    auto *block = static_cast<std::uint8_t *>(host_arena_alloc(state_sz + rx_sz, 16));
     state_ = reinterpret_cast<ETHHW_State *>(block);
     rx_ring_ = reinterpret_cast<ETHHW_DescFull *>(block + state_sz);
-    tx_ring_ = reinterpret_cast<ETHHW_DescFull *>(block + state_sz + rx_sz);
+    tx_ring_ = static_cast<ETHHW_DescFull *>(host_arena_alloc(tx_sz, 16));
 
     buffers_ = static_cast<std::uint8_t *>(
         host_arena_alloc(static_cast<std::size_t>(kBufSize) * (rx_len_ + tx_len_), 16));

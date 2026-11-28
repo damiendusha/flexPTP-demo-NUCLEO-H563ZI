@@ -151,10 +151,19 @@ DMA overrun inside the arena is not caught. That is the memory the driver tests 
 `ASAN_POISON_MEMORY_REGION`. The same applies, less urgently, to any custom pool a host test
 exercises.
 
+*Done, 2026-11-28, and measured before and after.* The arena poisons all it has not handed out,
+with a 64-byte gap in front of each allocation, and the model gives the TX ring an allocation of
+its own (only the state block and the RX ring must be adjacent). The probe: the driver's RX-ring
+loop changed from `<` to `<=`, writing one descriptor past the ring. Before, every driver test
+passed it, under ASan too — the write landed on the first TX descriptor, which the driver clears
+a few lines later. After, all three report `use-after-poison`, a 4-byte write in
+`ETHHW_InitPeripheral`. What it cannot reach: the frame buffers stay back to back, because the
+driver strides through one block, so a frame overrunning into the next buffer is still invisible.
+
 **Acceptance.** The CI job is green. These probes each turn it red: a heap overflow in a unit
-test; a one-byte overrun of a receive buffer in `mac_drv_rx_ring_test` (this one needs 1b); a
-signed overflow in a first-party unit; and a leaked allocation in a first-party test. The
-firmware build IDs are unchanged.
+test; the driver writing past the end of a descriptor ring (this one needs 1b); a signed
+overflow in a first-party unit; and a leaked allocation in a first-party test. The firmware
+build IDs are unchanged. *All met on 2026-11-28; see the phase's commits.*
 
 **Risk.** `-fsanitize=address` uses the host's shadow memory below 2 GB, the same region
 `MAP_32BIT` draws from. It worked in the spike; an arena large enough to collide would fail at
@@ -362,9 +371,10 @@ Asked and answered on 2026-11-28.
 
 ## 6. What stays uncovered
 
-- **Custom allocators hide memory errors from ASan**: ThreadX byte pools, NetX Duo packet pools,
-  FreeRTOS heap_4 and, until Phase 1b, the `MAP_32BIT` arena. The guard-page heap covers one
-  class in one test.
+- **Custom allocators hide memory errors from ASan**: ThreadX byte pools, NetX Duo packet pools
+  and FreeRTOS heap_4, and inside the `MAP_32BIT` arena an overrun from one frame buffer into the
+  next (Phase 1b guards the ends of each allocation, not the buffers within one). The guard-page
+  heap covers one class in one test.
 - **Codegen defects** such as F70 and F62 remain bench-only. Phase 6's UBSan image catches the
   UB-shaped subset on the real code generation, not the rest.
 - **Concurrency**: interrupt-versus-thread races are a bench problem, as testing_architecture.md
