@@ -61,8 +61,12 @@ static inline bool sysmem_bounds_next(uintptr_t heap_end, uintptr_t base, uintpt
         return true;
     }
 
-    /* incr <= 0. Negate in an unsigned type: -PTRDIFF_MIN is not representable as ptrdiff_t. */
-    const uintptr_t back = (uintptr_t)(-(intmax_t)incr);
+    /* incr <= 0. Negate in an unsigned type: -PTRDIFF_MIN is not representable as ptrdiff_t.
+       Nor, on a 64-bit host, as intmax_t, which is no wider there -- this negated in intmax_t
+       until UBSan caught it, and the test written for exactly this case passed by luck.
+       Unsigned arithmetic wraps by definition, so 0 - (uintptr_t)incr is |incr| for every
+       incr <= 0, PTRDIFF_MIN included. */
+    const uintptr_t back = (uintptr_t)0 - (uintptr_t)incr;
     if (back > (heap_end - base)) {
         return false;
     }
