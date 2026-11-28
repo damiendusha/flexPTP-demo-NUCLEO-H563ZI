@@ -13,5 +13,20 @@ build:opt --compilation_mode=opt
 build --cxxopt=-std=c++20
 build --host_cxxopt=-std=c++20
 
+# Host sanitizers: AddressSanitizer (LeakSanitizer comes with it on Linux) and UBSan, each fatal on
+# its first report. Features rather than --copt, because a feature only takes effect in a
+# toolchain that declares it: rules_cc's autoconfigured host toolchain declares asan and ubsan, the
+# ARM toolchain declares neither, so the firmware is untouched. rules_cc's sanitizer features
+# already add -fno-sanitize-recover=all and -fno-omit-frame-pointer. See
+# docs/static_analysis_plan.md, phase 1.
+#
+# Run it over the C/C++ tests rather than //...: //tools/flash:openocd_capability_test would
+# otherwise rebuild an ASan OpenOCD, for nothing.
+#
+#   bazel test --config=asan $(bazel query 'kind(cc_test, //...)')
+build:asan --features=asan --features=ubsan
+test:asan --test_env=ASAN_OPTIONS=detect_leaks=1:detect_stack_use_after_return=1:strict_string_checks=1:check_initialization_order=1
+test:asan --test_env=UBSAN_OPTIONS=print_stacktrace=1
+
 # Keep the lockfile honest: a resolution that would change it is an error, not a silent update.
 common --lockfile_mode=error

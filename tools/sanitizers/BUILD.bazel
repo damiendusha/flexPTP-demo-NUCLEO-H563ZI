@@ -1,0 +1,15 @@
+# Support for the host sanitizer configuration, --config=asan in .bazelrc. See
+# docs/static_analysis_plan.md, phase 1.
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+# For every test that runs on FreeRTOS's POSIX port. Harmless without --config=asan: nothing
+# calls the function unless LeakSanitizer is linked in.
+cc_library(
+    name = "freertos_posix_lsan",
+    testonly = True,
+    srcs = ["freertos_posix_lsan.c"],
+    # Into the executable itself, not a shared library -- see the comment in the source.
+    linkstatic = True,
+    visibility = ["//visibility:public"],
+    alwayslink = True,
+)

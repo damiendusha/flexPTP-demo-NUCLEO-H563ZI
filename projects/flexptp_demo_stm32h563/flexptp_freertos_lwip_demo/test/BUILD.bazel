@@ -80,6 +80,7 @@ cc_test(
     copts = ["-Iprojects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo/test/host"],
     deps = [
         ":host_cmsis_rtos",
+        "//tools/sanitizers:freertos_posix_lsan",
         "@googletest//:gtest",
     ],
 )

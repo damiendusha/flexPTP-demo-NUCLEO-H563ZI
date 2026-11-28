@@ -109,6 +109,7 @@ cc_test(
     srcs = ["teardown_test.cpp"],
     deps = [
         ":flexptp_freertos",
+        "//tools/sanitizers:freertos_posix_lsan",
         "@googletest//:gtest",
     ],
 )
