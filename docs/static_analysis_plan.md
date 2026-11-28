@@ -1,7 +1,7 @@
 # Static analysis and sanitizers — a coverage plan
 
 **Status: decided 2026-11-28. Phase 1 done and merged; phase 2 done the same day, awaiting
-review before it merges. Phases 3–7 are not started.** §1 lists what was in place before phase 1. The measurements in §2 are from a spike run that day on `74c2702`; they were
+review before it merges. Phases 3–9 are not started.** §1 lists what was in place before phase 1. The measurements in §2 are from a spike run that day on `74c2702`; they were
 not committed. The maintainer's decisions are in [§5](#5-decisions-taken) and are folded into the
 phases.
 
@@ -17,11 +17,13 @@ generation, which is the one place none of the host tools reach.
 - [3. The phases](#3-the-phases)
   - [Phase 1 — ASan, LSan and UBSan on the host suite, gated](#phase-1--asan-lsan-and-ubsan-on-the-host-suite-gated)
   - [Phase 2 — `-fanalyzer` on the code that only exists cross-compiled](#phase-2---fanalyzer-on-the-code-that-only-exists-cross-compiled)
-  - [Phase 3 — clang-tidy, as a Bazel aspect](#phase-3--clang-tidy-as-a-bazel-aspect)
-  - [Phase 4 — cppcheck, as a Bazel aspect, with the real headers](#phase-4--cppcheck-as-a-bazel-aspect-with-the-real-headers)
-  - [Phase 5 — MSan, with our own instrumented libc++](#phase-5--msan-with-our-own-instrumented-libc)
-  - [Phase 6 — on the board: UBSan in trap mode, and stack bounds](#phase-6--on-the-board-ubsan-in-trap-mode-and-stack-bounds)
-  - [Phase 7 — fuzzing the parsers (optional)](#phase-7--fuzzing-the-parsers-optional)
+  - [Phase 3 — compiler warnings: where they apply, where they are silenced, what more they could say](#phase-3--compiler-warnings-where-they-apply-where-they-are-silenced-what-more-they-could-say)
+  - [Phase 4 — clang-tidy, as a Bazel aspect](#phase-4--clang-tidy-as-a-bazel-aspect)
+  - [Phase 5 — cppcheck, as a Bazel aspect, with the real headers](#phase-5--cppcheck-as-a-bazel-aspect-with-the-real-headers)
+  - [Phase 6 — MSan, with our own instrumented libc++](#phase-6--msan-with-our-own-instrumented-libc)
+  - [Phase 7 — on the board: UBSan in trap mode, and stack bounds](#phase-7--on-the-board-ubsan-in-trap-mode-and-stack-bounds)
+  - [Phase 8 — fuzzing the parsers (optional)](#phase-8--fuzzing-the-parsers-optional)
+  - [Phase 9 — the ARM compiler: `15.3.rel1` to `15.3.rel2`](#phase-9--the-arm-compiler-153rel1-to-153rel2)
 - [4. Not planned, and why](#4-not-planned-and-why)
 - [5. Decisions taken](#5-decisions-taken)
 - [6. What stays uncovered](#6-what-stays-uncovered)
@@ -37,11 +39,12 @@ findings waiting for it.
 |---|---|---|---|---|
 | 1 | ASan + LSan + UBSan over `bazel test //...` | S | **yes** | Works today through features `rules_cc` already ships; 17 of 17 C/C++ test targets pass their assertions under it; **three real UB sites found** (§2) |
 | 2 | `-fanalyzer` on the ARM build of first-party code | S | **yes** (see the phase) | 18 first-party files are only ever compiled for the board — both network drivers, the NetX Duo NSD, both `main.c` and `cmds.c`, the console, the runtime — and have never been through it. GI-03 assumed they could not be; the pinned ARM GCC runs it |
-| 3 | clang-tidy, curated, as a `rules_lint` aspect; clang-tidy from `toolchains_llvm` | M | yes, on a curated list | A second path-sensitive engine (the Clang Static Analyzer) plus the `bugprone-`/`cert-` families; the editor already runs it, CI does not |
-| 4 | cppcheck as a `rules_lint` aspect, from BCR's `cppcheck` with a carried patch | M | yes (as now) | Pinned at last, sees the HAL and the kernels' headers it never has, and deletes two workarounds |
-| 5 | MSan over the whole suite: `toolchains_llvm`, our own instrumented libc++ | L | yes, once clean | Uninitialised reads are the one class no current tool checks at run time |
-| 6 | UBSan in trap mode on the `dbg` firmware; static stack bounds | M | HIL | The only items here that check the code the board actually runs |
-| 7 | Fuzz the PTP and Ethernet parsers | M | no | Optional. Network-facing parsers are where the sanitizers pay most |
+| 3 | Compiler warnings: close the holes, measure more flags, look under vendored `-w` | M | yes, as each flag is adopted | They have already cost real defects here: U9 is a comparison `-Wextra` calls always false, hidden by flexPTP's `-w`; the port and NSD were outside `-Werror` for the same reason |
+| 4 | clang-tidy, curated, as a `rules_lint` aspect; clang-tidy from `toolchains_llvm` | M | yes, on a curated list | A second path-sensitive engine (the Clang Static Analyzer) plus the `bugprone-`/`cert-` families; the editor already runs it, CI does not |
+| 5 | cppcheck as a `rules_lint` aspect, from BCR's `cppcheck` with a carried patch | M | yes (as now) | Pinned at last, sees the HAL and the kernels' headers it never has, and deletes two workarounds |
+| 6 | MSan over the whole suite: `toolchains_llvm`, our own instrumented libc++ | L | yes, once clean | Uninitialised reads are the one class no current tool checks at run time |
+| 7 | UBSan in trap mode on the `dbg` firmware; static stack bounds | M | HIL | The only items here that check the code the board actually runs |
+| 8 | Fuzz the PTP and Ethernet parsers | M | no | Optional. Network-facing parsers are where the sanitizers pay most |
 
 TSan is not planned; see [§4](#4-not-planned-and-why).
 
@@ -224,7 +227,58 @@ Probes: a NULL dereference added to `cmds.c` or `nsd_netxduo.c` fails the analys
 plain build. A lookup that can return NULL, dereferenced unchecked, is caught at both levels; a
 dereference inside `if (p == NULL)` is caught at `-O2` only.
 
-### Phase 3 — clang-tidy, as a Bazel aspect
+### Phase 3 — compiler warnings: where they apply, where they are silenced, what more they could say
+
+**Why.** Warnings have already cost this project real defects, each time by their absence:
+
+- **U9** (#34): flexPTP compares a short enum with `-1`, which the arm-none-eabi ABI makes always
+  false, so GCC deletes the shutdown branch. `-Wextra`'s `-Wtype-limits` says exactly that —
+  "comparison is always false due to limited range of data type", checked with the pinned
+  compiler; `-Wall` alone does not — but flexPTP compiles with `-w`.
+- **The port and the NetX Duo NSD** were outside the `-Werror` gate because they were compiled
+  into flexPTP's library, under its `-w` (found in Phase 2, fixed in `4dfffe0`).
+- **The host tests** compile with `-Wall` only. The CMake suite had `-Wall -Wextra`; the migration
+  lost it, the same way it lost `-fanalyzer`.
+- **The `dbg` image is built at `-O0`**, where the flow-dependent warnings — `-Wmaybe-uninitialized`,
+  `-Wnull-dereference`, `-Warray-bounds`, `-Wstringop-*` — mostly do not run. Only the `opt` build
+  sees them, and Phase 2 measured the same kind of difference for the analyzer.
+
+**What.**
+
+1. **Audit where warnings apply, and make it a check.** From `bazel aquery`, every compile of
+   both firmwares (`dbg`, `opt`) and of the host tests, classified by origin and flags. A
+   first-party compile without `-Werror` on the board, or without `-Wextra` on the host, is a
+   hole; so is a vendored one without `-w`. A script over that output in CI fails on a hole.
+   Probe: put `-w` back on the port's compile — it must go red.
+2. **Measure more flags on first-party code**, each one counted on both firmwares in both
+   configurations, then adopted (clean, or worth the fixes) or rejected with its numbers:
+   `-Wcast-align=strict` (F62 was an access the silicon rejects), `-Wdouble-promotion` (the FPU
+   is single-precision, so an accidental `double` is a software-emulated call), `-Wundef` (an
+   `#if` on a misspelt configuration macro is silently 0), `-Wshadow`, `-Wformat=2`,
+   `-Wformat-truncation=2` and `-Wformat-overflow=2` (the console is printf-shaped),
+   `-Wstrict-prototypes` and `-Wmissing-prototypes`, `-Wnull-dereference`, `-Wduplicated-cond`,
+   `-Wduplicated-branches`, `-Wlogical-op`, `-Wvla`, and `-Wconversion`/`-Wsign-conversion`
+   (expected to be noisy on register code; measure before deciding, and consider them per
+   library rather than everywhere). `-Wstack-usage=` belongs with Phase 7's stack bounds.
+3. **Look under the vendored `-w`, once.** Compile flexPTP, NetX Duo, ThreadX, the HAL, lwIP,
+   FreeRTOS and embfmt with `-Wall -Wextra`, without `-Werror`, and triage what appears. flexPTP
+   first, since U9 is exactly this kind of finding and the upstream route exists. A report, not
+   a gate: the warnings are not this project's to fix, but the defects behind them might be.
+4. **The host.** Restore `-Wextra` on first-party host code, as warnings. Whether the host can
+   gate is a separate decision: its compiler is the distro's and floats, which is the reason it
+   does not today — Phase 4's pinned LLVM would remove that reason, if the host builds moved
+   onto it.
+5. **The linker and the assembler.** A link warning today is printed and ignored. Audit what the
+   links say (`--print-memory-usage` aside), and consider `-Wl,--fatal-warnings`; likewise the
+   startup assembly.
+6. **The optimisation level of `dbg` and fastbuild**, because it decides which of the above can
+   fire at all in a debug build. Measured separately; see the decision it leads to.
+
+**Acceptance.** The audit runs in CI and goes red on the probe; every adopted flag is clean on
+both firmwares in both configurations and has a probe of its own; the vendored survey is
+triaged, with anything real taken upstream by the U-process.
+
+### Phase 4 — clang-tidy, as a Bazel aspect
 
 **What.** clang-tidy over first-party targets, run by `aspect_rules_lint`'s clang-tidy aspect with
 the clang-tidy from a `toolchains_llvm` LLVM distribution, both from BCR and pinned. The aspect
@@ -233,7 +287,7 @@ analyses each target with that target's own compile context, so there is no
 `clang-analyzer-*` checks are the Clang Static Analyzer: a second path-sensitive engine with
 different strengths from `-fanalyzer`, so it is worth having both. Separate `scan-build` runs are
 therefore unnecessary. `toolchains_llvm` supplies the binary only; it is not registered as a C++
-toolchain here (MSan's opt-in config in Phase 5 is the one place that does).
+toolchain here (MSan's opt-in config in Phase 6 is the one place that does).
 
 **Checks**, in a root `.clang-tidy`. That file also configures the editor, which already runs
 clang-tidy through clangd, so the editor and CI would finally agree:
@@ -259,7 +313,7 @@ first-party file's host build where one exists.
 **Acceptance.** The CI job is green on the curated set. A NULL dereference and an unchecked
 `snprintf` truncation, each added to a first-party file, are both reported.
 
-### Phase 4 — cppcheck, as a Bazel aspect, with the real headers
+### Phase 5 — cppcheck, as a Bazel aspect, with the real headers
 
 **What.** `aspect_rules_lint`'s cppcheck aspect, with the cppcheck from BCR's `cppcheck` module
 (2.20.0, built from source and pinned). Each target is analysed with its own include paths, so
@@ -290,7 +344,7 @@ and the checks run with rule numbers only.
 the current job cannot see at all; and an out-of-bounds write is reported through the
 Bazel-built binary. The second is the check that it actually started.
 
-### Phase 5 — MSan, with our own instrumented libc++
+### Phase 6 — MSan, with our own instrumented libc++
 
 **The gap.** No current tool checks uninitialised reads at run time. Statically there is
 `-Wanalyzer-use-of-uninitialized-value` on the host units and cppcheck's `uninitvar`. GCC's
@@ -330,7 +384,7 @@ first-party unit, through a branch, is reported with its origin. The job gates o
 (`--run_under=valgrind`) for that part, and `-ftrivial-auto-var-init=pattern`, which makes
 uninitialised stack reads deterministic so existing assertions trip over them.
 
-### Phase 6 — on the board: UBSan in trap mode, and stack bounds
+### Phase 7 — on the board: UBSan in trap mode, and stack bounds
 
 [testing_architecture.md](../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/testing_architecture.md#known-gaps)'s
 first known gap is that the host tools never see the ARM code generation. These checks do.
@@ -349,16 +403,39 @@ first known gap is that the host tools never see the ARM code generation. These 
 - **`-fstack-protector-strong` on `dbg` images**, with `__stack_chk_guard` and
   `__stack_chk_fail` supplied in `runtime/`. Optional.
 
-### Phase 7 — fuzzing the parsers (optional)
+### Phase 8 — fuzzing the parsers (optional)
 
 Run coverage-guided fuzzers under ASan and UBSan over the network-facing parsers: flexPTP's
 receive path (`rx_validation_test`'s engine harness is most of a fuzz target already),
 `eth_framer` and `ptp_ts_codec`. `tools/hil/ptp_fuzz.py` throws chosen malformed packets at the
 board; a host fuzzer explores far more of the input space. `rules_fuzzing` is on BCR but is a
 new module under D2 ([§0](bazel_migration.md#0-decisions-taken)), and libFuzzer wants clang —
-which Phase 5's `toolchains_llvm` config provides.
+which Phase 6's `toolchains_llvm` config provides.
 
 ---
+
+### Phase 9 — the ARM compiler: `15.3.rel1` to `15.3.rel2`
+
+Added 2026-11-28; its position in the order is still to be decided. Arm's newest release is
+`15.3.rel2` (2026-10-12); there is no GCC 16 from Arm yet. The two source manifests differ in one
+line: **binutils** (`e046e539…`, was `609397ff…`). GCC (`7909a9f8…`), newlib and glibc are the same
+commits, so the compiler's code generation and diagnostics should not move; the assembler and
+linker do. The x86-64 archive is published with sha256 `463df966…5d572d25215`, which is checked
+against Arm's `.sha256asc` before it is pinned.
+
+**What.** Bump the `http_archive` in `MODULE.bazel` (URL, `strip_prefix`, sha256). Then:
+
+- every first-party object of both firmwares in `dbg` and `opt` should be byte-identical, because
+  GCC is unchanged — measured the way Phase 2 measured the `flexptp_library` split; a difference
+  is the finding;
+- the linked images are expected to differ (a new linker): compare them function by function,
+  and read the link output for new warnings (Phase 3, item 5);
+- the `-Werror` and `-fanalyzer` gates, the C++ rules and `bazel test //...` in all three modes;
+- the board: S8 on both firmwares, release and debug (`tools/hil/matrix.sh`), because a linker is
+  part of what the image is.
+
+**Acceptance.** All of the above green, the measurements recorded in the commit, and
+testing_architecture.md's latest-verification section updated.
 
 ## 4. Not planned, and why
 
@@ -369,7 +446,7 @@ which Phase 5's `toolchains_llvm` config provides.
   `--features=tsan` run over the three real-kernel targets would confirm that and could be
   recorded here; it is not worth a job.
 - **`scan-build` on its own.** It is the same analyser as clang-tidy's `clang-analyzer-*`
-  (Phase 3).
+  (Phase 4).
 - **CodeQL and Coverity.** Both trace the compiler, which Bazel's sandbox and cache get in the way
   of (it would need `--spawn_strategy=local` and no cache). Reconsider if the repository's CI
   moves to a setup they support natively.
@@ -385,13 +462,13 @@ Asked and answered on 2026-11-28.
 
 1. **The analysers are pinned through BCR**, not installed from `apt`. That means
    `aspect_rules_lint` to run them, `toolchains_llvm` for clang-tidy, and BCR's `cppcheck` with a
-   carried patch (Phase 4). This is **a change to D2**
+   carried patch (Phase 5). This is **a change to D2**
    ([bazel_migration.md §0](bazel_migration.md#0-decisions-taken)), which allowed six modules, all
    rule sets except `googletest`. `aspect_rules_lint` and `toolchains_llvm` are rule sets, and
    `cppcheck` is a development dependency like `googletest`. D2's entry is amended when the first
    of them lands, not before.
 2. **MSan over the whole suite, with an instrumented libc++ built here from the start**, rather
-   than a third-party prebuilt or Valgrind first (Phase 5).
+   than a third-party prebuilt or Valgrind first (Phase 6).
 3. **The flexPTP UB becomes U15**: a carried patch with a host test, and an upstream branch and
    pull request prepared for review before anything is pushed or opened (Phase 1).
 4. **Order:** this plan is committed, then Phase 1 starts. Each phase stops for review before
@@ -403,7 +480,7 @@ Asked and answered on 2026-11-28.
   and FreeRTOS heap_4, and inside the `MAP_32BIT` arena an overrun from one frame buffer into the
   next (Phase 1b guards the ends of each allocation, not the buffers within one). The guard-page
   heap covers one class in one test.
-- **Codegen defects** such as F70 and F62 remain bench-only. Phase 6's UBSan image catches the
+- **Codegen defects** such as F70 and F62 remain bench-only. Phase 7's UBSan image catches the
   UB-shaped subset on the real code generation, not the rest.
 - **Concurrency**: interrupt-versus-thread races are a bench problem, as testing_architecture.md
   already says.
