@@ -45,6 +45,7 @@ void cli_uut_push_history(const char *pLine);
 const char *cli_uut_history(int i);
 int cli_uut_history_level(void);
 int cli_uut_linebuf_length(void);
+int cli_uut_command_count(void);
 void cli_uut_clear_history(void);
 }
 
@@ -71,7 +72,17 @@ class Cli : public ::testing::Test {
     void SetUp() override {
         g_last = Dispatch{};
         cli_uut_clear_output();
+        commands_ = cli_uut_command_count();
     }
+
+    /* Every test leaves the table as it found it. Handles are indices that shift as commands go,
+       so a removal by a stale handle removes the wrong entry or none -- and the leftover would
+       only show up in some later test, as a confusing failure there. */
+    void TearDown() override {
+        EXPECT_EQ(cli_uut_command_count(), commands_) << "this test left the command table changed";
+    }
+
+    int commands_ = 0;
 
     static std::string out() { return std::string(cli_uut_output, cli_uut_output_len); }
 
@@ -224,8 +235,9 @@ TEST_F(Cli, DoesNotConfuseACommandWithALongerOneSharingItsPrefix) {
     EXPECT_EQ(g_last.which, "10") << "`ptp servo stm` dispatched to `ptp servo st`";
     EXPECT_EQ(g_last.first_arg, "6");
 
-    cli_remove_command(a);
+    /* b first: removing a would move b down a slot, and b's handle would then name nothing. */
     cli_remove_command(b);
+    cli_remove_command(a);
 }
 
 TEST_F(Cli, ReportsAnUnknownCommandRatherThanDispatchingAnything) {
@@ -327,6 +339,38 @@ TEST_F(Cli, RemovingACommandFromTheMiddleLeavesTheRestWhole) {
     cli_remove_command(d);
     cli_remove_command(c - 1);
     cli_remove_command(b - 1);
+}
+
+TEST_F(Cli, RemovingAnArrayOfCommandsRemovesExactlyThose) {
+    /* cli_remove_command_array() with handles in the order they were handed out, between a
+       command registered before them and one registered after -- both must survive. Removed first
+       to last, the second handle already pointed one entry too far: this array lost x, then z in
+       place of y, then `after` in place of z, and kept y. */
+    int keep = cli_register_command((char *)"keep \tregistered before", 1, 0, record<30>);
+    int handles[] = {
+        cli_register_command((char *)"x \tin the array", 1, 0, record<31>),
+        cli_register_command((char *)"y \tin the array", 1, 0, record<32>),
+        cli_register_command((char *)"z \tin the array", 1, 0, record<33>),
+        -1,
+    };
+    int after = cli_register_command((char *)"after \tregistered after", 1, 0, record<34>);
+    ASSERT_GE(keep, 0);
+    ASSERT_EQ(after, keep + 4);
+
+    cli_remove_command_array(handles);
+
+    for (const char *gone : {"x", "y", "z"}) {
+        g_last = Dispatch{};
+        run(gone);
+        EXPECT_EQ(g_last.argc, -1) << "`" << gone << "` is still registered";
+    }
+    run("keep");
+    EXPECT_EQ(g_last.which, "30");
+    run("after");
+    EXPECT_EQ(g_last.which, "34") << "a command registered after the array was removed with it";
+
+    cli_remove_command(keep + 1);  /* `after`, moved down three slots */
+    cli_remove_command(keep);
 }
 
 /* --- the command history ------------------------------------------------------------------

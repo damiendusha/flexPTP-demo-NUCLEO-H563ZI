@@ -636,12 +636,26 @@ void cli_remove_command(int cmdIdx) {
 }
 
 // removes bunch of commands, terminated by -1
+//
+// From the last handle back to the first, under one hold of the mutex. A handle is the command's
+// index, and removing one moves every later command down a slot. Removed first to last, the second
+// handle of an array in registration order already points one entry too far: each removal after
+// the first took the wrong command, and the last ones took none. Last to first, every handle still
+// names its own command when its turn comes -- given the array is in the order the handles were
+// handed out, which is how a caller builds one. Holding the mutex throughout means no registration
+// can shift the table between two removals.
 void cli_remove_command_array(int *pCmdHandle) {
-    int *pIter = pCmdHandle;
-    while (*pIter != -1) {
-        cli_remove_command(*pIter);
-        pIter++;
+    size_t n = 0;
+    while (pCmdHandle[n] != -1) {
+        n++;
     }
+
+    osMutexAcquire(modifyMtx, osWaitForever);
+    while (n > 0) {
+        n--;
+        cli_remove_command_locked(pCmdHandle[n]);
+    }
+    osMutexRelease(modifyMtx);
 }
 
 // -----------------------

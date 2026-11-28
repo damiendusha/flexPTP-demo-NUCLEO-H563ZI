@@ -93,6 +93,7 @@ void cli_uut_push_history(const char *pLine) { put_onto_cmd_hist_stk(pLine); }
 const char *cli_uut_history(int i) { return sppCmdHistStk[i]; }
 int cli_uut_history_level(void) { return sHistStkLevel; }
 int cli_uut_linebuf_length(void) { return CLI_LINEBUF_LENGTH; }
+int cli_uut_command_count(void) { return sCliCmdCnt; }
 void cli_uut_clear_history(void) {
     memset(sppCmdHistStk, 0, sizeof(sppCmdHistStk));
     sHistStkLevel = 0;
