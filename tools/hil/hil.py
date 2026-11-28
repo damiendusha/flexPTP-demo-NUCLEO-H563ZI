@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -29,21 +30,62 @@ DEFAULT_BAUD = 115200
 DEFAULT_BOARD_CFG = "board/st_nucleo_h5.cfg"
 
 
-def find_openocd(env: "dict[str, str] | None" = None,
-                 repo_root: Path = REPO_ROOT) -> "Path | None":
-    """Locate an OpenOCD, in the same order //bazel/openocd.bzl uses.
+# The OpenOCD every `bazel run ...:flash` uses, at a path outside Bazel. See tools/flash/BUILD.bazel.
+BAZEL_OPENOCD = "//tools/flash:openocd_exec"
 
-        $OPENOCD
-        toolchains/openocd/bin/openocd     (Bazel's source build, copied out; see README.md)
-        openocd on PATH
 
-    This used to be a single hardcoded path into toolchains/, which the Bazel migration breaks
-    twice over: Bazel supplies its own OpenOCD, and phase 7 deletes the build.sh that populates
-    that directory -- after which every HIL run would die on an error message naming a script
-    that no longer exists. Sharing the search ORDER with the Bazel side is what stops the two
-    disagreeing about which binary is in play.
+class BoardError(RuntimeError):
+    pass
 
-    Returns None if nothing is found; the caller reports it.
+
+def _bazel_openocd(repo_root: Path, env: "dict[str, str]") -> Path:
+    """Build BAZEL_OPENOCD and return where it is.
+
+    Built, not just queried: the build is what makes the answer current. A no-op once it is up
+    to date; the first time, it is ST's fork from source, which is minutes.
+    """
+    exe = shutil.which("bazel", path=env.get("PATH")) or shutil.which("bazelisk", path=env.get("PATH"))
+    if exe is None:
+        raise BoardError(
+            "No OpenOCD: OPENOCD is not set, and there is no bazel on PATH to build "
+            f"{BAZEL_OPENOCD} with. Set OPENOCD to ST's fork (upstream OpenOCD has no "
+            "stm32h5x flash driver and cannot program this board)."
+        )
+
+    def bazel(*args: str) -> str:
+        p = subprocess.run([exe, *args], cwd=repo_root, env=dict(env), capture_output=True, text=True)
+        if p.returncode != 0:
+            raise BoardError(
+                f"No OpenOCD: `bazel {' '.join(args)}` failed.\n{p.stderr[-2000:]}\n"
+                "If ST's fork will not build on this host, --//tools/flash:openocd=local uses one "
+                "you already have -- see tools/flash/BUILD.bazel -- or set OPENOCD."
+            )
+        return p.stdout.strip()
+
+    print(f"hil: OpenOCD from {BAZEL_OPENOCD} (building ST's fork the first time takes minutes)",
+          file=sys.stderr)
+    bazel("build", BAZEL_OPENOCD)
+    rel = bazel("cquery", "--output=files", BAZEL_OPENOCD).splitlines()[-1]
+    return Path(bazel("info", "execution_root")) / rel
+
+
+def find_openocd(env: "dict[str, str] | None" = None, repo_root: Path = REPO_ROOT,
+                 bazel=_bazel_openocd) -> Path:
+    """Locate the OpenOCD to use:
+
+        $OPENOCD                       an explicit override, if it exists
+        //tools/flash:openocd_exec     otherwise -- the OpenOCD `bazel run ...:flash` uses
+
+    Bazel decides the second, so the harness follows --//tools/flash:openocd like the flash
+    targets do: ST's fork built from source by default, or in local mode the one
+    //bazel/openocd.bzl finds and verifies -- in $OPENOCD, toolchains/openocd or on PATH.
+
+    This used to search toolchains/openocd and PATH itself, which needed Bazel's build copied
+    into toolchains/ by hand. The copy went stale, silently, the first time the pin moved: from
+    then on the harness flashed and read the target with one OpenOCD and `bazel run :flash` with
+    another.
+
+    Raises BoardError, saying why, if neither yields one.
     """
     env = os.environ if env is None else env
 
@@ -51,15 +93,20 @@ def find_openocd(env: "dict[str, str] | None" = None,
     if override and Path(override).exists():
         return Path(override)
 
-    vendored = repo_root / "toolchains" / "openocd" / "bin" / "openocd"
-    if vendored.exists():
-        return vendored
-
-    on_path = shutil.which("openocd", path=env.get("PATH"))
-    return Path(on_path) if on_path else None
+    return bazel(repo_root, env)
 
 
-DEFAULT_OPENOCD = find_openocd()
+_default_openocd: "Path | None" = None
+
+
+def default_openocd() -> Path:
+    """find_openocd(), resolved once per process -- it runs Bazel -- and only when first needed,
+    so that importing this module (the unit tests do, under `bazel test`) never does."""
+    global _default_openocd
+    if _default_openocd is None:
+        _default_openocd = find_openocd()
+    return _default_openocd
+
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
@@ -69,31 +116,23 @@ def strip_ansi(text: str) -> str:
     return _ANSI_RE.sub("", text)
 
 
-class BoardError(RuntimeError):
-    pass
-
-
 @dataclass
 class OpenOcd:
     """Minimal OpenOCD wrapper.
 
     ST's fork is required: `target/stm32h5x.cfg` names a compiled-in `stm32h5x` flash
-    driver that upstream 0.12.0 does not have. Bazel builds it; README.md says how to copy
-    that build into toolchains/openocd, where find_openocd() looks.
+    driver that upstream 0.12.0 does not have. `binary` defaults to default_openocd(): the
+    one Bazel builds for the flash targets.
     """
 
-    binary: "Path | None" = DEFAULT_OPENOCD
+    binary: "Path | None" = None
     board_cfg: str = DEFAULT_BOARD_CFG
 
     def _run(self, *commands: str, timeout: float = 120.0) -> subprocess.CompletedProcess:
-        if self.binary is None or not Path(self.binary).exists():
-            raise BoardError(
-                "No OpenOCD found. Looked at $OPENOCD, toolchains/openocd/bin/openocd, and "
-                "PATH. An STM32H5 needs ST's fork -- upstream has no compiled-in stm32h5x "
-                "flash driver. Bazel builds it -- copy that build into toolchains/openocd as "
-                "tools/hil/README.md describes, or set OPENOCD to a build you already have."
-            )
-        argv = [str(self.binary), "-f", self.board_cfg]
+        binary = Path(self.binary) if self.binary is not None else default_openocd()
+        if not binary.exists():
+            raise BoardError(f"No OpenOCD at {binary}.")
+        argv = [str(binary), "-f", self.board_cfg]
         for c in commands:
             argv += ["-c", c]
         return subprocess.run(argv, capture_output=True, text=True, timeout=timeout)

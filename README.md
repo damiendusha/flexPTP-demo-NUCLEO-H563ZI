@@ -182,21 +182,16 @@ Details, including the one-time host setup for a direct cable, are in
 bank, which names a *compiled-in* driver; upstream OpenOCD 0.12.0 has no such driver and
 rejects the declaration outright, so copying ST's `.cfg` files onto a distro build does not
 help. `bazel run //projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:flash` builds the fork from source and
-flashes in one step. To have the fork outside Bazel — for the HIL harness, or by hand — copy
-Bazel's build of it into `toolchains/openocd`, where the harness and the VS Code launch
-configurations look:
+flashes in one step. The tools that run OpenOCD themselves — the HIL harness and the VS Code
+OpenOCD configurations — use that same binary, through `//tools/flash:openocd_exec`: a symlink
+to whatever the flash targets run, so it follows the pin and `--//tools/flash:openocd` with
+nothing to copy. The harness builds it as it starts, and the debug configurations' pre-launch
+task does too. By hand:
 
 ```bash
-bazel build //tools/flash:openocd_binary
-rm -rf toolchains/openocd    # cp would nest a second copy inside an existing one, and keep the old binary
-mkdir -p toolchains && cp -rL --no-preserve=mode bazel-bin/external/+openocd+openocd_src/openocd_build toolchains/openocd
-chmod +x toolchains/openocd/bin/openocd
-```
-
-The raw invocation is then:
-
-```bash
-toolchains/openocd/bin/openocd -f board/st_nucleo_h5.cfg \
+bazel build //tools/flash:openocd_exec    # first: bazel-bin/ follows the LAST build, and the ELF is found through it
+bazel build //projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:flexptp-demo
+bazel-out/k8-fastbuild/bin/tools/flash/openocd_exec/openocd -f board/st_nucleo_h5.cfg \
     -c init -c halt -c "program bazel-bin/projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/flexptp-demo.elf verify reset" -c exit
 ```
 
@@ -204,7 +199,8 @@ Note the board file is **`st_nucleo_h5.cfg`** — generic across H5 Nucleos. The
 `st_nucleo_h563zi.cfg`.
 
 > [!NOTE]
-> On Linux, non-root access to the ST-Link needs udev rules:
+> On Linux, non-root access to the ST-Link needs udev rules — once per machine, and by hand,
+> because it is root-owned system configuration and no build should be running `sudo`:
 > ```bash
 > sudo cp "$(bazel info output_base)/external/+openocd+openocd_src/contrib/60-openocd.rules" /etc/udev/rules.d/
 > sudo udevadm control --reload-rules && sudo udevadm trigger
@@ -295,6 +291,8 @@ or debug through OpenOCD.
 |---|---|
 | `Bazel: build ThreadX (dbg)` / `(opt)` | `bazel build --config=dbg` / `--config=opt` `//projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo:flexptp-demo` |
 | `Bazel: build FreeRTOS (dbg)` / `(opt)` | the same for `//projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo:flexptp-demo-freertos` |
+| `Bazel: build OpenOCD` | `bazel build //tools/flash:openocd_exec` — the OpenOCD the flash targets run, for the debug configurations |
+| `Bazel: build ThreadX (dbg) + OpenOCD` / `FreeRTOS (dbg) + OpenOCD` | the two above, OpenOCD first — the OpenOCD debug configurations' pre-launch task |
 | `Bazel: flash ThreadX (dbg)` / `(opt)`, `Bazel: flash FreeRTOS (dbg)` / `(opt)` | `bazel run --config=… //…:flash` — build and program in one step (see [Flashing](#flashing)) |
 | `Bazel: test //...` | the whole test suite |
 | `Bazel: refresh compile_commands.json` | `tools/ide/refresh_compile_commands.py` — see *IntelliSense* below |
@@ -310,9 +308,10 @@ the **last** build's configuration, so after an `opt` build or a `bazel test //.
 there is a different image, or missing. An *Attach* therefore assumes the board is running the
 `dbg` build of the tree you have checked out.
 
-The OpenOCD configurations use `toolchains/openocd/bin/openocd`, which must be ST's fork;
-[Flashing](#flashing) shows how to put Bazel's build of it there. The flash tasks use Bazel's
-own build; add `--//tools/flash:openocd=local` to make them use that same binary. The ST-Link GDB-server
+The OpenOCD configurations run the same OpenOCD as the flash tasks,
+`//tools/flash:openocd_exec` ([Flashing](#flashing)), which their `build … (dbg) + OpenOCD`
+task builds before the firmware — minutes the first time, since it is ST's fork from source,
+and a no-op after that. `--//tools/flash:openocd=local` therefore moves both together. The ST-Link GDB-server
 configurations and the register (`.SVD`) view resolve through
 [STM32CubeCLT](https://www.st.com/en/development-tools/stm32cubeclt.html), located by the
 [STM32Cube for Visual Studio Code](https://marketplace.visualstudio.com/items?itemName=stmicroelectronics.stm32-vscode-extension)

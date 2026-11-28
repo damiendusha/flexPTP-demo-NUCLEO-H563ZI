@@ -1008,6 +1008,13 @@ The Bazel flash target passes `--openocd` explicitly, so Bazel is authoritative 
 from Bazel, while HIL still runs standalone — which matters, because it is a bench tool run
 repeatedly while chasing a fault, and `bazel run` indirection is friction exactly there.
 
+**Problem 2 was left open, and closed later.** The resolver fixed the dead path, but its second
+step was still a copy of Bazel's build into `toolchains/`, made by hand and pinned by nothing —
+exactly the unverified binary described above. The harness now asks Bazel instead: unless
+`$OPENOCD` is set, it builds `//tools/flash:openocd_exec`, a symlink to the OpenOCD the flash
+targets run, and uses that. It still runs standalone (`python3 tools/hil/run.py`, no `bazel run`);
+the build is a no-op under a second once it is current.
+
 **Rejected: running HIL under Bazel** (`bazel run //tools/hil:run -- --stage S8`, OpenOCD via
 runfiles). It is the tidiest answer on paper and would make problem 2 vanish, but it costs
 `rules_python` *plus* a pip dependency for `pyserial` — a larger BCR expansion than the OpenOCD

@@ -1,5 +1,6 @@
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load(":flash.bzl", "openocd_exec")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -45,6 +46,15 @@ alias(
         ":openocd_local": "@openocd//:scripts",
         "//conditions:default": "@openocd_src//:scripts",
     }),
+)
+
+# The OpenOCD every :flash target runs, for the tools that run OpenOCD themselves: the HIL harness
+# (tools/hil/hil.py builds this and asks cquery where it is) and the VS Code debug configurations
+# (bazel-out/k8-fastbuild/bin/tools/flash/openocd_exec/openocd: their preLaunchTask builds it with
+# no flags, before the firmware). Same binary as :flash in either mode, and never stale -- which a
+# copy into toolchains/ was, from the moment the pin moved.
+openocd_exec(
+    name = "openocd_exec",
 )
 
 # Asserts the SELECTED OpenOCD can program this board, whichever mode produced it. A build that

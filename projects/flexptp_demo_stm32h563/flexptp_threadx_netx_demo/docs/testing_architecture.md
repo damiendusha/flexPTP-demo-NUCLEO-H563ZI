@@ -124,17 +124,15 @@ switch: one silently discarded every Delay_Resp here (F42).
 | Bazel | the version in `.bazelversion`; everything else the build needs it fetches |
 | `pyserial` | `pip install pyserial` |
 | linuxptp | `sudo apt install linuxptp` — ptp4l 4.x |
-| ST's OpenOCD | built by Bazel; see below |
-| udev rule | non-root access to the ST-Link |
+| ST's OpenOCD | built by Bazel; nothing to install |
+| udev rule | non-root access to the ST-Link; below |
 
-The harness finds OpenOCD at `$OPENOCD`, then `toolchains/openocd/bin/openocd`, then on `PATH`,
-and it must be ST's fork — upstream 0.12.0 cannot program an STM32H5. Bazel builds the fork for
-the flash target; copy it out once for the harness:
+The harness uses `$OPENOCD` if it is set, and otherwise builds `//tools/flash:openocd_exec` — the
+OpenOCD `bazel run …:flash` uses — so the two cannot differ. It must be ST's fork: upstream
+0.12.0 cannot program an STM32H5. The first run builds the fork from source, which is minutes.
+What does need doing by hand, once per machine, is the udev rule:
 
 ```bash
-bazel build //tools/flash:openocd_binary
-mkdir -p toolchains && cp -rL --no-preserve=mode bazel-bin/external/+openocd+openocd_src/openocd_build toolchains/openocd
-chmod +x toolchains/openocd/bin/openocd
 sudo cp "$(bazel info output_base)/external/+openocd+openocd_src/contrib/60-openocd.rules" /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
@@ -389,7 +387,8 @@ compiler pinned by sha256, so a warning fails the build rather than a log scan (
 packet builders. `tools/hil:swd_test` (15) drives the SWD readers over synthetic target memory laid
 out by hand, including every corruption actually found: a stack overflowed into its own heap header,
 a looping free list, a stacked PC of `0xfffffe00` with T clear, and flexPTP's queues as the stuck
-ThreadX board had them. `tools/hil:find_openocd_test` (6) pins the OpenOCD search order, and
+ThreadX board had them. `tools/hil:find_openocd_test` (10) pins that the harness uses `$OPENOCD` or Bazel's OpenOCD, built
+before it is used, and never a stale copy; and
 `tools/flash:openocd_capability_test` asserts the selected OpenOCD is ST's fork with the
 `stm32h5x` driver — a build that "succeeded" does not imply a usable flasher.
 

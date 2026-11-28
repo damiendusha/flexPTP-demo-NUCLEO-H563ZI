@@ -66,17 +66,8 @@ conflating them is how F42 survived for days. The runner reports incomplete and 
 | | |
 |---|---|
 | `pyserial` | `pip install pyserial` |
-| ST's OpenOCD | found at `$OPENOCD`, `toolchains/openocd/bin/openocd`, or on `PATH`. Upstream 0.12.0 **cannot** program an STM32H5. Bazel builds ST's fork; copy it into `toolchains/` once, below |
-| udev rule for non-root ST-Link | `sudo cp "$(bazel info output_base)/external/+openocd+openocd_src/contrib/60-openocd.rules" /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger` |
-
-```bash
-bazel build //tools/flash:openocd_binary
-rm -rf toolchains/openocd    # cp would nest a second copy inside an existing one, and keep the old binary
-mkdir -p toolchains && cp -rL --no-preserve=mode bazel-bin/external/+openocd+openocd_src/openocd_build toolchains/openocd
-chmod +x toolchains/openocd/bin/openocd
-```
-
-The copy finds its own scripts directory, so nothing else needs configuring.
+| ST's OpenOCD | nothing to do. The harness uses `$OPENOCD` (or `--openocd`) if given, and otherwise builds `//tools/flash:openocd_exec`, the one `bazel run …:flash` uses — minutes the first time, a no-op after. Upstream 0.12.0 **cannot** program an STM32H5; `--//tools/flash:openocd=local` uses a fork you already have, and the harness follows it |
+| udev rule for non-root ST-Link, once per machine | `sudo cp "$(bazel info output_base)/external/+openocd+openocd_src/contrib/60-openocd.rules" /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger` |
 
 The network checks additionally need the host set up as described below.
 
@@ -482,7 +473,7 @@ A plain `bazel build` image is neither: fastbuild is `-O0` without `DEBUG`.
 bazel test //tools/hil/...
 ```
 
-`test_find_openocd.py` pins the OpenOCD search order; `test_swd.py` drives the SWD parsers over
+`test_find_openocd.py` pins where the harness's OpenOCD comes from -- `$OPENOCD`, else Bazel's, built before it is used; `test_swd.py` drives the SWD parsers over
 synthetic target memory, including the corruptions actually found -- a stack overflowed into its
 own heap header, a looping free list, a stacked PC of `0xfffffe00` with T clear, and flexPTP's
 queues as the stuck ThreadX board had them;

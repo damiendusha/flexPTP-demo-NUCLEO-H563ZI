@@ -1,5 +1,7 @@
 """stm32_flash_binary(): `bazel run` a firmware onto the board.
 
+openocd_exec(): the same OpenOCD, at a stable path, for tools that run it themselves.
+
 Pure Starlark. imu's equivalent wraps a Python flasher packaged as a PEX, which costs
 rules_python *and* rules_pex to build an argv and call subprocess.run; the rule already writes a
 shell script, so the Python layer is dropped and the BCR footprint stays where D2 put it.
@@ -65,6 +67,30 @@ def _stm32_flash_impl(ctx):
 
     runfiles = ctx.runfiles(files = [elf, openocd] + scripts)
     return [DefaultInfo(executable = out, runfiles = runfiles)]
+
+def _openocd_exec_impl(ctx):
+    # A symlink, not a copy: OpenOCD finds its scripts relative to the binary it resolves to, so
+    # this behaves exactly as the binary it points at -- and it follows that binary when the pin
+    # or the mode changes, which a copy does not.
+    out = ctx.actions.declare_file(ctx.label.name + "/openocd")
+    ctx.actions.symlink(output = out, target_file = ctx.file.openocd, is_executable = True)
+    return [DefaultInfo(files = depset([out]), executable = out)]
+
+# The OpenOCD stm32_flash_binary() runs -- same label, same exec configuration, same mode -- at a
+# path a tool outside Bazel can reach: tools/flash/<name>/openocd under the building configuration's
+# bin directory -- `bazel cquery --output=files` names it. It exists so the HIL
+# harness and the VS Code debug configurations do not need a copy of their own.
+openocd_exec = rule(
+    implementation = _openocd_exec_impl,
+    executable = True,
+    attrs = {
+        "openocd": attr.label(
+            allow_single_file = True,
+            cfg = "exec",
+            default = "//tools/flash:openocd_binary",
+        ),
+    },
+)
 
 stm32_flash_binary = rule(
     implementation = _stm32_flash_impl,

@@ -48,7 +48,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from hil import DEFAULT_BOARD_CFG, DEFAULT_OPENOCD
+from hil import DEFAULT_BOARD_CFG, default_openocd
 
 # --------------------------------------------------------------------------------------------
 # Toolchain and symbols
@@ -441,11 +441,19 @@ class Swd:
     def __init__(self, elf: Path, openocd: "Path | None" = None, board_cfg: str = DEFAULT_BOARD_CFG):
         self.elf = Path(elf)
         self.syms = Symbols.from_elf(self.elf)
-        self.openocd = Path(openocd or DEFAULT_OPENOCD or "openocd")
+        self._openocd = Path(openocd) if openocd else None
         self.board_cfg = board_cfg
         self._flash = None
 
     # -- transport ---------------------------------------------------------------------------
+
+    @property
+    def openocd(self) -> Path:
+        """--openocd if given, else the one Bazel builds for the flash targets. Resolved on first
+        use, not in __init__: building it runs Bazel, and constructing a Swd should not."""
+        if self._openocd is None:
+            self._openocd = default_openocd()
+        return self._openocd
 
     def tcl(self, body: "list[str]", timeout: float = 120.0) -> str:
         """Run `body` with the core halted. Whatever happens inside, the core is resumed."""

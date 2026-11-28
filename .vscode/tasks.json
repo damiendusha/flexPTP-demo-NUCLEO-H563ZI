@@ -1,6 +1,6 @@
 {
-    // Bazel tasks. The "build (dbg)" labels are the preLaunchTasks in launch.json: rename both
-    // together.
+    // Bazel tasks. The "build (dbg)" labels, and the "build (dbg) + OpenOCD" ones the OpenOCD
+    // configurations use, are the preLaunchTasks in launch.json: rename both together.
     //
     // dbg is -O0 -g3 -ggdb plus DEBUG -- ThreadX's stack check, NetX Duo's API error checking --
     // and opt is -O2 -g0 (toolchain/BUILD.bazel; README "Building"). They land in different
@@ -50,6 +50,35 @@
             "options": { "cwd": "${workspaceFolder}" },
             "group": "build",
             "problemMatcher": "$gcc"
+        },
+        // The OpenOCD configurations' server: the same OpenOCD `bazel run ...:flash` uses, at
+        // bazel-out/k8-fastbuild/bin/tools/flash/openocd_exec/openocd (tools/flash/BUILD.bazel).
+        // Built with no flags, so that path does not move with --config; the first time it builds
+        // ST's fork from source, which is minutes, and afterwards it is a no-op.
+        //
+        // Its own invocation, and BEFORE the firmware's, not one `bazel build` of both: with two
+        // top-level configurations bazel-bin/ points at neither firmware, and launch.json's
+        // "executable" is found through bazel-bin/.
+        {
+            "label": "Bazel: build OpenOCD",
+            "detail": "//tools/flash:openocd_exec -- ST's fork, the one the flash targets run",
+            "type": "shell",
+            "command": "bazel",
+            "args": ["build", "//tools/flash:openocd_exec"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": []
+        },
+        {
+            "label": "Bazel: build ThreadX (dbg) + OpenOCD",
+            "dependsOn": ["Bazel: build OpenOCD", "Bazel: build ThreadX (dbg)"],
+            "dependsOrder": "sequence",
+            "problemMatcher": []
+        },
+        {
+            "label": "Bazel: build FreeRTOS (dbg) + OpenOCD",
+            "dependsOn": ["Bazel: build OpenOCD", "Bazel: build FreeRTOS (dbg)"],
+            "dependsOrder": "sequence",
+            "problemMatcher": []
         },
         // Build and flash in one step, with ST's OpenOCD built from source by Bazel (README
         // "Flashing"). The debug configurations flash through GDB instead and need none of these.

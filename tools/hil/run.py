@@ -23,7 +23,7 @@ from checks import (ALL_CHECKS, EXPECTED_IRQ_PRIORITIES_FREERTOS,
                     EXPECTED_IRQ_PRIORITIES_THREADX, FREERTOS_MAX_SYSCALL_PRIO,
                     FREERTOS_SYSCALL_ISRS, STAGES, STAGES_WITHOUT_IP_THREAD,
                     STAGES_WITHOUT_PHY, CheckResult, Context, Status)
-from hil import DEFAULT_OPENOCD, Board, BoardError, OpenOcd
+from hil import Board, BoardError, OpenOcd
 
 GREEN, RED, YELLOW, DIM, RESET = (
     "\033[32m",
@@ -80,8 +80,9 @@ def parse_args() -> argparse.Namespace:
                    help="override --firmware's registered CLI command count. Rarely needed; "
                         "prefer --firmware, which sets this along with everything else.")
     p.add_argument("--openocd", type=Path,
-                   help="OpenOCD to use. Defaults to the search in hil.find_openocd(): "
-                        "$OPENOCD, then toolchains/openocd/bin/openocd, then PATH.")
+                   help="OpenOCD to use. Defaults to hil.find_openocd(): $OPENOCD, else the "
+                        "one `bazel run ...:flash` uses (//tools/flash:openocd_exec), built "
+                        "if it is not already.")
     p.add_argument("--iface", default="enp5s0", help="host interface facing the board")
     p.add_argument("--flash", type=Path, help="flash this ELF before running")
     p.add_argument("--elf", type=Path,
@@ -169,7 +170,7 @@ def main() -> int:
     if args.flash:
         print(f"{DIM}flashing {args.flash}{RESET}")
         try:
-            OpenOcd(binary=args.openocd or DEFAULT_OPENOCD).flash(args.flash)
+            OpenOcd(binary=args.openocd).flash(args.flash)
         except BoardError as e:
             print(f"{RED}flash failed:{RESET} {e}")
             return 2
@@ -180,7 +181,7 @@ def main() -> int:
         # default, so not threading the flag here would let one run flash with one binary and
         # reset with another.
         with Board(port=args.port,
-                   openocd=OpenOcd(binary=args.openocd or DEFAULT_OPENOCD)) as board:
+                   openocd=OpenOcd(binary=args.openocd)) as board:
             for name in names:
                 print(f"{DIM}· {name}…{RESET}", flush=True)
                 try:

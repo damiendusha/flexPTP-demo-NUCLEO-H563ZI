@@ -9,7 +9,7 @@ http_archive.
 This repository rule finds a local one. It probes, in order:
 
     $OPENOCD                                  an explicit override
-    toolchains/openocd/bin/openocd            Bazel's source build, copied out (README.md, "Flashing")
+    toolchains/openocd/bin/openocd            a fork placed there by hand
     openocd on PATH
 
 and then VERIFIES it is ST's fork rather than merely present, by matching "STMicroelectronics"
@@ -21,8 +21,8 @@ That check is a new safeguard, not a port of an existing one. Today, pointing th
 distro OpenOCD gets a confusing failure at flash time, when it rejects a flash bank declaration
 in a .cfg file. Checking at fetch time turns it into one message naming the fix.
 
-The search order is deliberately the same one tools/hil/hil.py uses, so the two cannot disagree
-about which binary is in play.
+tools/hil/hil.py does not search for itself: it asks Bazel for //tools/flash:openocd_exec, so in
+this mode the harness gets whatever this rule found, and cannot disagree with it.
 """
 
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "new_git_repository")
@@ -116,8 +116,7 @@ _openocd_repository = repository_rule(
 
 # ST's fork, built from source. The pin is the commit tag openocd-cubeide-v2.1.0 resolves to, and
 # a COMMIT rather than imu's `branch = "openocd-cubeide-r7"`, because a branch moves and a pin
-# should not. It is also what local mode finds in toolchains/openocd: README.md's "Flashing"
-# section populates that directory by copying this build out of bazel-bin.
+# should not.
 #
 # init_submodules + "nosubmodule" is the important pair: ./bootstrap normally git-clones jimtcl
 # and libjaylink, which would be a network fetch inside a build action. Fetching them

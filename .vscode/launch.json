@@ -14,9 +14,11 @@
     // relative to the execroot, and without it stepping into ThreadX, NetX Duo, FreeRTOS, lwIP or
     // the HAL finds no source. First-party files resolve against "cwd".
     //
-    // OpenOCD must be ST's fork, at toolchains/openocd/bin/openocd. README "Flashing" says how
-    // to put the one Bazel builds there. The ST-Link GDB server configurations and the register
-    // view (svdFile) need STM32CubeCLT; without it only the register view is lost.
+    // OpenOCD must be ST's fork. The OpenOCD configurations run the one the flash targets do,
+    // which their preLaunchTask builds first ("+ OpenOCD", in tasks.json): a symlink that follows
+    // --//tools/flash:openocd, so local mode needs nothing changed here. The ST-Link GDB server
+    // configurations and the register view (svdFile) need STM32CubeCLT; without it only the
+    // register view is lost.
     //
     // OpenOCD's RTOS awareness (-rtos ThreadX / FreeRTOS) lists the threads with their names and
     // states, and the CURRENT thread is exact. Every other thread's registers are not: OpenOCD
@@ -31,12 +33,12 @@
             "type": "cortex-debug",
             "request": "launch",
             "cwd": "${workspaceFolder}",
-            "preLaunchTask": "Bazel: build ThreadX (dbg)",
+            "preLaunchTask": "Bazel: build ThreadX (dbg) + OpenOCD",
             "executable": "${workspaceFolder}/bazel-bin/projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/flexptp-demo.elf",
             "armToolchainPath": "${workspaceFolder}/bazel-${workspaceFolderBasename}/external/+http_archive+arm_gnu_toolchain/bin",
             "preLaunchCommands": ["directory ${workspaceFolder}/bazel-${workspaceFolderBasename}"],
             "servertype": "openocd",
-            "serverpath": "${workspaceFolder}/toolchains/openocd/bin/openocd",
+            "serverpath": "${workspaceFolder}/bazel-out/k8-fastbuild/bin/tools/flash/openocd_exec/openocd",
             "configFiles": ["board/st_nucleo_h5.cfg"],
             "openOCDLaunchCommands": [
                 "init",
@@ -53,12 +55,12 @@
             "type": "cortex-debug",
             "request": "attach",
             "cwd": "${workspaceFolder}",
-            "preLaunchTask": "Bazel: build ThreadX (dbg)",
+            "preLaunchTask": "Bazel: build ThreadX (dbg) + OpenOCD",
             "executable": "${workspaceFolder}/bazel-bin/projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/flexptp-demo.elf",
             "armToolchainPath": "${workspaceFolder}/bazel-${workspaceFolderBasename}/external/+http_archive+arm_gnu_toolchain/bin",
             "preAttachCommands": ["directory ${workspaceFolder}/bazel-${workspaceFolderBasename}"],
             "servertype": "openocd",
-            "serverpath": "${workspaceFolder}/toolchains/openocd/bin/openocd",
+            "serverpath": "${workspaceFolder}/bazel-out/k8-fastbuild/bin/tools/flash/openocd_exec/openocd",
             "configFiles": ["board/st_nucleo_h5.cfg"],
             "openOCDLaunchCommands": [
                 "$_CHIPNAME.cpu configure -rtos ThreadX"
@@ -72,12 +74,12 @@
             "type": "cortex-debug",
             "request": "launch",
             "cwd": "${workspaceFolder}",
-            "preLaunchTask": "Bazel: build FreeRTOS (dbg)",
+            "preLaunchTask": "Bazel: build FreeRTOS (dbg) + OpenOCD",
             "executable": "${workspaceFolder}/bazel-bin/projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo/flexptp-demo-freertos.elf",
             "armToolchainPath": "${workspaceFolder}/bazel-${workspaceFolderBasename}/external/+http_archive+arm_gnu_toolchain/bin",
             "preLaunchCommands": ["directory ${workspaceFolder}/bazel-${workspaceFolderBasename}"],
             "servertype": "openocd",
-            "serverpath": "${workspaceFolder}/toolchains/openocd/bin/openocd",
+            "serverpath": "${workspaceFolder}/bazel-out/k8-fastbuild/bin/tools/flash/openocd_exec/openocd",
             "configFiles": ["board/st_nucleo_h5.cfg"],
             "openOCDLaunchCommands": [
                 "init",
@@ -94,12 +96,12 @@
             "type": "cortex-debug",
             "request": "attach",
             "cwd": "${workspaceFolder}",
-            "preLaunchTask": "Bazel: build FreeRTOS (dbg)",
+            "preLaunchTask": "Bazel: build FreeRTOS (dbg) + OpenOCD",
             "executable": "${workspaceFolder}/bazel-bin/projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo/flexptp-demo-freertos.elf",
             "armToolchainPath": "${workspaceFolder}/bazel-${workspaceFolderBasename}/external/+http_archive+arm_gnu_toolchain/bin",
             "preAttachCommands": ["directory ${workspaceFolder}/bazel-${workspaceFolderBasename}"],
             "servertype": "openocd",
-            "serverpath": "${workspaceFolder}/toolchains/openocd/bin/openocd",
+            "serverpath": "${workspaceFolder}/bazel-out/k8-fastbuild/bin/tools/flash/openocd_exec/openocd",
             "configFiles": ["board/st_nucleo_h5.cfg"],
             "openOCDLaunchCommands": [
                 "$_CHIPNAME.cpu configure -rtos FreeRTOS"
