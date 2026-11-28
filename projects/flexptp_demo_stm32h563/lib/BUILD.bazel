@@ -13,7 +13,10 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 
 package(default_visibility = ["//visibility:public"])
 
-FIRST_PARTY = ["first_party_warnings"]
+FIRST_PARTY = [
+    "first_party_analysis",
+    "first_party_warnings",
+]
 
 # GCC's -fanalyzer -- interprocedural double-free, use-after-free, NULL dereference, leak and
 # uninitialised-read checking -- on the HOST build of first-party code (finding GI-03). The host

@@ -1,7 +1,7 @@
 # Static analysis and sanitizers — a coverage plan
 
-**Status: decided 2026-11-28; phase 1 done the same day, awaiting review before it merges.**
-Phases 2–7 are not started. §1 lists what was in place before phase 1. The measurements in §2 are from a spike run that day on `74c2702`; they were
+**Status: decided 2026-11-28. Phase 1 done and merged; phase 2 done the same day, awaiting
+review before it merges. Phases 3–7 are not started.** §1 lists what was in place before phase 1. The measurements in §2 are from a spike run that day on `74c2702`; they were
 not committed. The maintainer's decisions are in [§5](#5-decisions-taken) and are folded into the
 phases.
 
@@ -36,7 +36,7 @@ findings waiting for it.
 | # | What | Effort | Gate? | Why this position |
 |---|---|---|---|---|
 | 1 | ASan + LSan + UBSan over `bazel test //...` | S | **yes** | Works today through features `rules_cc` already ships; 17 of 17 C/C++ test targets pass their assertions under it; **three real UB sites found** (§2) |
-| 2 | `-fanalyzer` on the ARM build of first-party code | S | advisory | 18 first-party files are only ever compiled for the board — both network drivers, the NetX Duo NSD, both `main.c` and `cmds.c`, the console, the runtime — and have never been through it. GI-03 assumed they could not be; the pinned ARM GCC runs it |
+| 2 | `-fanalyzer` on the ARM build of first-party code | S | **yes** (see the phase) | 18 first-party files are only ever compiled for the board — both network drivers, the NetX Duo NSD, both `main.c` and `cmds.c`, the console, the runtime — and have never been through it. GI-03 assumed they could not be; the pinned ARM GCC runs it |
 | 3 | clang-tidy, curated, as a `rules_lint` aspect; clang-tidy from `toolchains_llvm` | M | yes, on a curated list | A second path-sensitive engine (the Clang Static Analyzer) plus the `bugprone-`/`cert-` families; the editor already runs it, CI does not |
 | 4 | cppcheck as a `rules_lint` aspect, from BCR's `cppcheck` with a carried patch | M | yes (as now) | Pinned at last, sees the HAL and the kernels' headers it never has, and deletes two workarounds |
 | 5 | MSan over the whole suite: `toolchains_llvm`, our own instrumented libc++ | L | yes, once clean | Uninitialised reads are the one class no current tool checks at run time |
@@ -195,6 +195,34 @@ still enforces D13.
 findings triaged. A NULL dereference added to `cmds.c` is reported.
 
 **Cost.** `-fanalyzer` is slow, but only first-party files pay it.
+
+*Done, 2026-11-28 — with three changes from the above, each for a reason found on the way.*
+
+1. **The first finding was the plan's own premise.** `flexptp_library()` compiled the port and the
+   NetX Duo NSD *into* flexPTP's library, `-w` and all, and `-w` silences every warning wherever
+   it sits on the command line. So `ptp_port_stm32h563.c` and `nsd_netxduo.c` had been outside
+   the `-Werror` gate (D13) all along — an unused variable in `nsd_netxduo.c` built — and
+   `-fanalyzer` would have been silent on them too. The macro now builds them as a first-party
+   library of their own. Every object compiles byte-identically either way (`opt`; in `dbg` only
+   the object path recorded in the debug info differs), and nothing new warned.
+2. **A gate, not advisory.** The ARM compiler is pinned by sha256, so a new analyzer diagnostic
+   arrives only with a toolchain bump — D13's argument for `-Werror`, which applies here as it
+   does not to the host's distro GCC. And an advisory run cannot work under Bazel: a cached
+   compile prints nothing, so a finding would show in one CI run and vanish from every later
+   one. It runs as the last step of each Build job, both firmwares × `dbg` and `opt`; the two
+   optimisation levels find different things (only `-O0` reported the halt loops, only `-O2` the
+   command-table copy), so both are needed.
+3. **Triage.** 17 reports in all. 15 were `-Wanalyzer-infinite-loop` on the deliberate halts that
+   end every fatal path — fault handlers, the stack-overflow and malloc hooks, asserts, `_exit`,
+   `_sbrk`'s exhaustion halt — so that check is off for this build, with the list beside it. Two
+   were `-Wanalyzer-overlapping-buffers` in `cli.c`: false positives, but one rested on an
+   invariant held by another function, so both copies were rewritten rather than suppressed —
+   and the compaction of the command table turned out to have no test at all (deleting the copy
+   outright passed the whole suite). It has one now, and the history four.
+
+Probes: a NULL dereference added to `cmds.c` or `nsd_netxduo.c` fails the analysis and not the
+plain build. A lookup that can return NULL, dereferenced unchecked, is caught at both levels; a
+dereference inside `if (p == NULL)` is caught at `-O2` only.
 
 ### Phase 3 — clang-tidy, as a Bazel aspect
 

@@ -7,6 +7,7 @@
 
 load("@rules_cc//cc/toolchains:args.bzl", "cc_args")
 load("@rules_cc//cc/toolchains:feature.bzl", "cc_feature")
+load("@rules_cc//cc/toolchains:feature_set.bzl", "cc_feature_set")
 load("@rules_cc//cc/toolchains:tool.bzl", "cc_tool")
 load("@rules_cc//cc/toolchains:tool_map.bzl", "cc_tool_map")
 load("@rules_cc//cc/toolchains:toolchain.bzl", "cc_toolchain")
@@ -238,6 +239,53 @@ cc_feature(
     feature_name = "first_party_warnings",
 )
 
+# GCC's -fanalyzer on the ARM build of first-party code -- phase 2 of docs/static_analysis_plan.md.
+# The host build runs it already (HOST_ANALYZER in //projects/flexptp_demo_stm32h563/lib), but
+# 18 first-party files are only ever compiled for the board -- both network drivers and the NetX
+# Duo NSD, both main.c and cmds.c, the console, the runtime -- and had never been through it.
+#
+# Two features, so that asking for it reaches first-party code and nothing else. `analyze` is the
+# switch, set on the command line (--features=analyze), and does nothing by itself.
+# `first_party_analysis` is requested by every first-party target (FIRST_PARTY in each BUILD
+# file) and requires the switch, so it stays off until asked for -- and when asked for, it never
+# reaches NetX Duo, ThreadX or the HAL, which putting -fanalyzer on the command line would.
+#
+#   bazel build --config=opt --features=analyze <firmware>
+cc_feature(
+    name = "analyze_feature",
+    feature_name = "analyze",
+)
+
+cc_feature_set(
+    name = "analyze_requested",
+    all_of = [":analyze_feature"],
+)
+
+# Under first_party_warnings' -Werror, like every other first-party diagnostic. The host build
+# keeps -fanalyzer a warning because its compiler is the distro's and moves underneath; this one
+# is pinned by sha256, so a new analyzer diagnostic can only arrive in the commit that bumps it --
+# D13's reasoning, unchanged. A finding that is wrong is suppressed where it is, with
+# `#pragma GCC diagnostic ignored "-Wanalyzer-..."` and the reason.
+#
+# Less one check: -Wanalyzer-infinite-loop reports a loop that cannot exit, and on a bare-metal
+# target that is how every fatal path ends -- a fault handler, the stack-overflow and malloc
+# hooks, an assert, _exit, the heap-exhaustion halt. Measured: 15 reports, all of them that.
+cc_args(
+    name = "first_party_analysis",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-fanalyzer",
+        "-Wno-analyzer-infinite-loop",
+    ],
+)
+
+cc_feature(
+    name = "first_party_analysis_feature",
+    args = [":first_party_analysis"],
+    feature_name = "first_party_analysis",
+    requires_any_of = [":analyze_requested"],
+)
+
 cc_toolchain(
     name = "arm_none_eabi_cortex_m33",
     args = [
@@ -255,6 +303,8 @@ cc_toolchain(
     # operation letters at all.
     enabled_features = ["@rules_cc//cc/toolchains/args:experimental_replace_legacy_action_config_features"],
     known_features = [
+        ":analyze_feature",
+        ":first_party_analysis_feature",
         ":first_party_warnings_feature",
         # Produces the .map alongside the ELF, using the link action's own output path. This is
         # what makes -Wl,-Map= expressible at all: a cc_binary cannot declare the extra output

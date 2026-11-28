@@ -48,9 +48,11 @@ Specifically **not** reachable, and no amount of test writing changes it:
 Static analysis rides along. The first-party code these targets compile — the NSD units, the
 framer and link-state rules, the driver through `host_mac_drv` and the Ethernet model in `lib`,
 the FIFO and the CLI here — is built with GCC's `-fanalyzer`. The GoogleTest files beside it are
-not: analysing one takes minutes, and the time goes on gtest. A finding is a warning rather than a
-failure, and it appears in the run whose compile produces it. Why, and what it cannot see:
-`HOST_ANALYZER` in [`lib/BUILD.bazel`](../../lib/BUILD.bazel), and
+not: analysing one takes minutes, and the time goes on gtest. Here a finding is a warning rather
+than a failure, and it appears in the run whose compile produces it; on the firmware's own build,
+where the compiler is pinned, the same analyzer is a gate (`--features=analyze`, in
+`toolchain/BUILD.bazel`). Why, and what it cannot see: `HOST_ANALYZER` in
+[`lib/BUILD.bazel`](../../lib/BUILD.bazel), and
 [`docs/testing_architecture.md`](../docs/testing_architecture.md#known-gaps).
 
 ## How the driver is compiled for the host

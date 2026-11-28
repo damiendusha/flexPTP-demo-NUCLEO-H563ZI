@@ -573,7 +573,7 @@ What this exercise taught, each lesson of which changed the code:
 
 | Job | Asserts |
 |---|---|
-| **Build** (both firmwares × `dbg`, `opt`) | all four images compile and link, with **zero first-party warnings** (`-Werror`) |
+| **Build** (both firmwares × `dbg`, `opt`) | all four images compile and link, with **zero first-party warnings** (`-Werror`); then GCC's `-fanalyzer` over each image's first-party code, also as errors (`--features=analyze`) |
 | **Tests** | `bazel test //...`: layers 1–5, including building ST's OpenOCD from source — a clean clone can flash |
 | **Sanitizers** | the C/C++ tests again under AddressSanitizer, LeakSanitizer and UBSan (`--config=asan`), each fatal on its first report |
 | **Static analysis** | `cppcheck` over each firmware's own directory and over the shared `lib/`; GCC's `-fanalyzer` compiles the first-party host code inside **Tests**, as warnings |
@@ -595,14 +595,18 @@ accident.
   different instruction set. A green host run is *no evidence* about either — which is why the
   release image is verified on the board every time.
 - **Memory ordering is not modelled.** `__DSB`/`__DMB` are no-ops in the host shim.
-- **`-fanalyzer` reports; it does not gate.** It compiles the first-party host code — the NSD
-  units, the framer and link-state rules, the driver through `host_mac_drv`, the Ethernet model,
-  the FIFO and the CLI — deliberately without `-Werror` (a checker that fails the suite on a false
-  positive gets disabled), and not the GoogleTest files, which take minutes each and spend them in
-  gtest. Bazel prints a warning only from the compile that produces it, so a finding is in the log
-  of the push that introduces it and in none after. Clean today in fastbuild, `dbg` and `opt`. One
-  blind spot, measured on GCC 15.2: a NULL dereference is reported at offset 0 only — `p->first`
-  is caught, `p->later` is not, even unconditionally.
+- **`-fanalyzer` gates on the board's build, and only reports on the host's.** On the ARM build
+  (`--features=analyze`, the last step of each Build job) it covers every first-party file of
+  both images, as errors: the compiler is pinned, so a new diagnostic arrives only with a
+  toolchain bump. Less `-Wanalyzer-infinite-loop`, which would report every deliberate halt. On
+  the host it compiles the first-party units — the NSD units, the framer and link-state rules,
+  the driver through `host_mac_drv`, the Ethernet model, the FIFO and the CLI — as warnings,
+  because that compiler is the distro's, and not the GoogleTest files, which take minutes each
+  and spend them in gtest; Bazel prints such a warning only from the compile that produces it.
+  What each build finds depends on the optimisation level: a dereference inside
+  `if (p == NULL)` is reported at `-O2` and not at `-O0`. One blind spot, measured on GCC 15.2:
+  a NULL dereference is reported at offset 0 only — `p->first` is caught, `p->later` is not,
+  even unconditionally.
 - **cppcheck runs without the HAL or the kernels.** Their headers are fetched by Bazel and are not
   on disk in that job, so missing includes are suppressed and HAL and RTOS types are opaque to it.
   `lib/`'s host-only code — the shims, the Ethernet model, `mac_drv_uut.c` and the GoogleTest

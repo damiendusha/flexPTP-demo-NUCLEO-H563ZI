@@ -55,6 +55,15 @@ jobs:
             bazel-bin/projects/${{ matrix.project }}/${{ matrix.target }}.elf.map
             bazel-bin/projects/${{ matrix.project }}/${{ matrix.target }}.hex
 
+      # GCC's -fanalyzer over this image's first-party code, as errors -- phase 2 of
+      # docs/static_analysis_plan.md, and the only analysis of the files that are never compiled
+      # for the host. A switch (--features=analyze) that first-party targets pick up and vendored
+      # code never sees; see toolchain/BUILD.bazel. Its findings differ between -O0 and -O2,
+      # which is one more reason it runs in both configurations. Last, so the artifacts above are
+      # uploaded whatever it finds.
+      - name: Analyse with GCC -fanalyzer
+        run: bazel build --config=${{ matrix.config }} --features=analyze //projects/${{ matrix.project }}:${{ matrix.target }}
+
   test:
     name: Tests
     runs-on: ubuntu-latest

@@ -109,7 +109,10 @@ cc_library(
     ],
 )
 
-FIRST_PARTY = ["first_party_warnings"]
+FIRST_PARTY = [
+    "first_party_analysis",
+    "first_party_warnings",
+]
 
 TARGET_ONLY = ["//toolchain:stm32h563"]
 
