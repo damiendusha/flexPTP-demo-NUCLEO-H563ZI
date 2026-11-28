@@ -64,6 +64,9 @@ cc_test(
     ],
 )
 
+# GCC's -fanalyzer on the first-party C these two compile -- the FIFO and the CLI -- and not on
+# the GoogleTest files beside them, which take minutes to analyse and are mostly gtest. Not
+# -Werror, for the reason given at HOST_ANALYZER in //projects/flexptp_demo_stm32h563/lib.
 cc_test(
     name = "test_blocking_fifo",
     size = "medium",
@@ -71,6 +74,7 @@ cc_test(
         "test_blocking_fifo.cpp",
         "//projects/flexptp_demo_stm32h563/lib:blocking_io/blocking_fifo.c",
     ],
+    conlyopts = ["-fanalyzer"],
     copts = ["-Iprojects/flexptp_demo_stm32h563/lib/host"],
     deps = [
         ":host_cmsis_rtos",
@@ -87,6 +91,7 @@ cc_test(
         "test_cli.cpp",
         "//projects/flexptp_demo_stm32h563/lib:blocking_io/blocking_fifo.c",
     ],
+    conlyopts = ["-fanalyzer"],
     copts = [
         "-Iprojects/flexptp_demo_stm32h563/lib/host",
         "-Wno-unused-parameter",

@@ -569,7 +569,7 @@ What this exercise taught, each lesson of which changed the code:
 |---|---|
 | **Build** (both firmwares × `dbg`, `opt`) | all four images compile and link, with **zero first-party warnings** (`-Werror`) |
 | **Tests** | `bazel test //...`: layers 1–5, including building ST's OpenOCD from source — a clean clone can flash |
-| **Static analysis** | `cppcheck` over each firmware project's own directory |
+| **Static analysis** | `cppcheck` over each firmware's own directory and over the shared `lib/`; GCC's `-fanalyzer` compiles the first-party host code inside **Tests**, as warnings |
 | **Docs cross-references** | every relative link and in-document anchor in the Markdown resolves |
 
 **The board is not in CI.** Layers 6–8 are run by hand, by the procedures above, and their results
@@ -588,13 +588,19 @@ accident.
   different instruction set. A green host run is *no evidence* about either — which is why the
   release image is verified on the board every time.
 - **Memory ordering is not modelled.** `__DSB`/`__DMB` are no-ops in the host shim.
-- **`-fanalyzer` did not survive the Bazel migration.** The CMake host suite compiled the
-  first-party host targets with GCC's interprocedural analyser; the plan said to carry it over as a
-  non-`-Werror` copt ([bazel_migration.md §6](../../../../docs/bazel_migration.md#6-host-tests)),
-  and it was not. Restoring it is one copt on the `lib` host targets.
-- **cppcheck no longer reaches the shared code.** CI analyses each project's directory; the driver,
-  the NSD units, the CLI and the console moved to `//projects/flexptp_demo_stm32h563/lib` in phase 9
-  and are outside both scans.
+- **`-fanalyzer` reports; it does not gate.** It compiles the first-party host code — the NSD
+  units, the framer and link-state rules, the driver through `host_mac_drv`, the Ethernet model,
+  the FIFO and the CLI — deliberately without `-Werror` (a checker that fails the suite on a false
+  positive gets disabled), and not the GoogleTest files, which take minutes each and spend them in
+  gtest. Bazel prints a warning only from the compile that produces it, so a finding is in the log
+  of the push that introduces it and in none after. Clean today in fastbuild, `dbg` and `opt`. One
+  blind spot, measured on GCC 15.2: a NULL dereference is reported at offset 0 only — `p->first`
+  is caught, `p->later` is not, even unconditionally.
+- **cppcheck runs without the HAL or the kernels.** Their headers are fetched by Bazel and are not
+  on disk in that job, so missing includes are suppressed and HAL and RTOS types are opaque to it.
+  `lib/`'s host-only code — the shims, the Ethernet model, `mac_drv_uut.c` and the GoogleTest
+  files — is excluded: `--platform=unix32` models the target and misreads their 64-bit
+  `uintptr_t`. `-fanalyzer` covers that code instead.
 - **FreeRTOS's `threads` check is a permanent SKIP.** Its `osinfo` does not enumerate tasks, so the
   documented FreeRTOS task priorities are not asserted on the board.
 - **All three receive drop counters are instrumented and none has ever fired** under ordinary

@@ -146,12 +146,17 @@ void sysmem_heap_usage(uint32_t *pPeak, uint32_t *pSize)
   extern uint8_t _end;
   extern uint8_t __RAM_segment_used_end__;
 
+  /* As integers, for the reason _sbrk() hands sysmem_bounds_next() integers: _end and
+     __RAM_segment_used_end__ are two linker symbols, not one array, and subtracting pointers to
+     different objects is undefined in C however the addresses happen to line up. */
   if (pPeak != NULL)
   {
-    *pPeak = (__sbrk_heap_peak != NULL) ? (uint32_t)(__sbrk_heap_peak - &_end) : 0U;
+    *pPeak = (__sbrk_heap_peak != NULL)
+                 ? (uint32_t)((uintptr_t)__sbrk_heap_peak - (uintptr_t)&_end)
+                 : 0U;
   }
   if (pSize != NULL)
   {
-    *pSize = (uint32_t)(&__RAM_segment_used_end__ - &_end);
+    *pSize = (uint32_t)((uintptr_t)&__RAM_segment_used_end__ - (uintptr_t)&_end);
   }
 }

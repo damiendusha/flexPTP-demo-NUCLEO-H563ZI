@@ -74,6 +74,13 @@ class Rewrite(unittest.TestCase):
         self.assertFalse(any(a.endswith((".d", ".o")) for a in e["arguments"]))
         self.assertEqual(e["arguments"][-2:], ["-c", "projects/p/main.c"])
 
+    def test_the_analyzer_is_dropped_and_its_neighbours_kept(self):
+        # clang rejects -fanalyzer as an unknown argument; the host-only files carry it.
+        (e,) = entries(action(HOST, "projects/lib/eth/mac_drv_uut.c", "-fno-pie", "-fanalyzer", "-Wall"))
+        self.assertNotIn("-fanalyzer", e["arguments"])
+        self.assertIn("-fno-pie", e["arguments"])
+        self.assertIn("-Wall", e["arguments"])
+
 
 class OneEntryPerFile(unittest.TestCase):
     def test_board_command_wins_over_host_whatever_the_order(self):

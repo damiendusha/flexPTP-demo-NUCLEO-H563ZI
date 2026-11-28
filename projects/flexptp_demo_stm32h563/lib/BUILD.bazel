@@ -15,6 +15,23 @@ package(default_visibility = ["//visibility:public"])
 
 FIRST_PARTY = ["first_party_warnings"]
 
+# GCC's -fanalyzer -- interprocedural double-free, use-after-free, NULL dereference, leak and
+# uninitialised-read checking -- on the HOST build of first-party code (finding GI-03). The host
+# is the one place this code meets the system compiler, so it costs nothing extra to ask.
+#
+# Host only, and for a reason beyond speed: the units below are also compiled into both
+# firmwares, where first_party_warnings carries -Werror, and an analyzer false positive must not
+# be able to break a firmware build. On the host it stays a warning, deliberately -- a checker
+# that blocks the suite on a false positive is a checker somebody disables. Bazel prints it only
+# from the compile that produces it, so a new finding shows in the run that introduces it.
+#
+# Never on the GoogleTest files. Analysing one is 20 s to nearly 3 minutes -- spent in gtest and
+# the standard library, not in our code -- against under 2 s for any unit here.
+HOST_ANALYZER = select({
+    "//toolchain:is_cortex_m33": [],
+    "//conditions:default": ["-fanalyzer"],
+})
+
 # The flexPTP network-stack-driver logic, lifted out of the NSD so it could be tested without a
 # board, an RTOS or a network stack.
 cc_library(
@@ -34,6 +51,7 @@ cc_library(
         "ptp/ptp_ts_codec.h",
         "ptp/ptp_tx_registry.h",
     ],
+    copts = HOST_ANALYZER,
     features = FIRST_PARTY,
     includes = [
         ".",
@@ -93,6 +111,7 @@ cc_library(
     name = "eth_framer",
     srcs = ["eth/eth_framer.cpp"],
     hdrs = ["eth/eth_framer.h"],
+    copts = HOST_ANALYZER,
     features = FIRST_PARTY,
     includes = [
         ".",
@@ -104,6 +123,7 @@ cc_library(
     name = "eth_link_state",
     srcs = ["eth/eth_link_state.cpp"],
     hdrs = ["eth/eth_link_state.h"],
+    copts = HOST_ANALYZER,
     features = FIRST_PARTY,
     includes = [
         ".",
@@ -443,6 +463,7 @@ cc_library(
         "-Wno-pointer-to-int-cast",
         "-Wno-int-to-pointer-cast",
         "-fno-pie",
+        "-fanalyzer",
     ],
     defines = [
         "STM32H563xx",
@@ -470,7 +491,10 @@ cc_library(
     testonly = True,
     srcs = ["eth/eth_model.cpp"],
     hdrs = ["eth/eth_model.hpp"],
-    copts = ["-Iprojects/flexptp_demo_stm32h563/lib/host"],
+    copts = [
+        "-Iprojects/flexptp_demo_stm32h563/lib/host",
+        "-fanalyzer",
+    ],
     includes = ["eth"],
     linkstatic = True,
     deps = [":host_mac_drv"],

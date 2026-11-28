@@ -45,9 +45,13 @@ Specifically **not** reachable, and no amount of test writing changes it:
 - **Memory ordering.** `__DSB`/`__DMB` are no-ops in the host shim.
 - **Anything downstream of the timestamp capture**, the PHY, the clock tree, or the wire.
 
-Static analysis no longer rides along: the CMake suite compiled the first-party host targets with
-GCC's `-fanalyzer`, and the Bazel migration did not carry it over. That is a known gap, recorded
-in [`docs/testing_architecture.md`](../docs/testing_architecture.md#known-gaps).
+Static analysis rides along. The first-party code these targets compile — the NSD units, the
+framer and link-state rules, the driver through `host_mac_drv` and the Ethernet model in `lib`,
+the FIFO and the CLI here — is built with GCC's `-fanalyzer`. The GoogleTest files beside it are
+not: analysing one takes minutes, and the time goes on gtest. A finding is a warning rather than a
+failure, and it appears in the run whose compile produces it. Why, and what it cannot see:
+`HOST_ANALYZER` in [`lib/BUILD.bazel`](../../lib/BUILD.bazel), and
+[`docs/testing_architecture.md`](../docs/testing_architecture.md#known-gaps).
 
 ## How the driver is compiled for the host
 

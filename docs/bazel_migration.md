@@ -806,6 +806,12 @@ translated: only the ISR half of the rule ports across.
 `copts`. Keep it non-`-Werror`, for the reason already recorded: an analyzer that blocks the
 suite on a false positive is one somebody disables.
 
+**Not carried over by the migration, and restored after phase 9, as `copts`.** `HOST_ANALYZER`
+in [`lib/BUILD.bazel`](../projects/flexptp_demo_stm32h563/lib/BUILD.bazel) is a `select()`,
+because the units it covers are also compiled into both firmwares under `-Werror`; the two
+ThreadX tests that compile the FIFO and the CLI take it as `conlyopts`. The GoogleTest files stay
+out, as they did under CMake.
+
 ---
 
 ## 7. What does not translate cleanly
@@ -893,6 +899,12 @@ must be updated or bypassed — under Bazel that directory is not where the comp
 The static-analysis job passes `-I Inc -I Src -I Drivers -I Modules` and a fixed define list.
 Nothing about it depends on CMake, so it can stay a plain CI step over the source tree. Making
 it a Bazel `sh_test` would be tidier but gains little; not planned.
+
+**It stayed a plain CI step, and phase 9 broke it twice without a build failing.** The console's
+headers moved into `lib/io/` behind an `include_prefix`, a directory that exists only in Bazel's
+execroot, so every coloured `MSG()` became an `unknownMacro` error and both jobs went red; and the
+matrix, still over the projects, stopped reaching `lib/` at all. The job now recreates the prefix
+with a symlink and analyses `lib/` as a third tree. The reasoning is in `.github/workflows/ci.yml`.
 
 ### 7.6 OpenOCD and flashing
 

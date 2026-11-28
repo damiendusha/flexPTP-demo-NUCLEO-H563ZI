@@ -31,6 +31,11 @@ What this does:
 The dependency-file and output flags (-MD, -MF, -o) are dropped. They name files inside Bazel's
 output tree, and a tool that replays a command literally would overwrite them -- which Bazel
 notices, and answers with a rebuild.
+
+So is -fanalyzer, which the host-only first-party files carry (HOST_ANALYZER in
+projects/flexptp_demo_stm32h563/lib/BUILD.bazel). It only adds diagnostics and changes nothing
+about what the code means, and clang does not know it: left in, it is an "unknown argument"
+driver error on every one of those files.
 """
 import json
 import pathlib
@@ -55,7 +60,7 @@ DEFAULT_FLAGS = ["--config=dbg"]
 PATH_FLAGS = ("-I", "-iquote", "-isystem", "-idirafter", "-include", "-imacros")
 
 # Dropped, with the argument after them where they take one. See the module docstring.
-DROP = {"-MD": 0, "-MMD": 0, "-MF": 1, "-MT": 1, "-o": 1}
+DROP = {"-MD": 0, "-MMD": 0, "-MF": 1, "-MT": 1, "-o": 1, "-fanalyzer": 0}
 
 
 def absolute(path, execroot, output_base):

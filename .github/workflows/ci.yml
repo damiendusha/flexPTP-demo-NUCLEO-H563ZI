@@ -89,19 +89,59 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # Three trees: the two firmwares' own directories and the code they share. Since phase 9
+      # moved the driver, the PHY driver, the NSD units, the CLI, the console and the runtime into
+      # lib/, a matrix over the projects alone analysed none of it.
       matrix:
         project:
           - flexptp_demo_stm32h563/flexptp_threadx_netx_demo
           - flexptp_demo_stm32h563/flexptp_freertos_lwip_demo
+          - flexptp_demo_stm32h563/lib
+        include:
+          # lwip_port/sys_arch.c #errors unless the kernel's configuration is visible, and it only
+          # arrives through FreeRTOS.h -- which is in @freertos, fetched by Bazel, not on disk
+          # here. So the project's real FreeRTOSConfig.h is forced in, plus the one FreeRTOS.h
+          # default sys_arch.c tests and the config does not set. Without them the file is not
+          # analysed at all: cppcheck abandons a configuration at its first #error.
+          - project: flexptp_demo_stm32h563/flexptp_freertos_lwip_demo
+            extra: >-
+              --include=projects/flexptp_demo_stm32h563/flexptp_freertos_lwip_demo/FreeRTOSConfig.h
+              -DconfigSUPPORT_DYNAMIC_ALLOCATION=1
+          # What only ever runs on the build machine stays out: the Cortex-M33 shims, the Ethernet
+          # DMA model, the driver's host wrapper and the GoogleTest files. --platform=unix32 models
+          # the target, so it reads their 64-bit uintptr_t as 32 bits and reports each
+          # `addr >> 32` -- the checks that prove the MAP_32BIT arena works -- as undefined. They
+          # are compiled with -fanalyzer instead, which sees the host as it is.
+          - project: flexptp_demo_stm32h563/lib
+            extra: >-
+              -i projects/flexptp_demo_stm32h563/lib/host
+              -i projects/flexptp_demo_stm32h563/lib/eth/eth_model.cpp
+              -i projects/flexptp_demo_stm32h563/lib/eth/mac_drv_uut.c
+              -i 'projects/flexptp_demo_stm32h563/lib/**/*_test.cpp'
     steps:
       - uses: actions/checkout@v4
 
       - name: Install cppcheck
         run: sudo apt-get update && sudo apt-get install -y cppcheck
 
-      # Scoped to the project's own sources. Everything else in the tree is vendored at a pinned
-      # commit, and a finding in NetX Duo or the HAL is not this project's to fix -- the same
-      # reasoning as scoping -Werror to first-party targets.
+      # lib/io's headers are included as "standard_output/serial_io.h", a directory that exists
+      # only in Bazel's execroot: //projects/flexptp_demo_stm32h563/lib:io_headers sets
+      # include_prefix = "standard_output". Without it the include is silently skipped
+      # (missingInclude is suppressed, because the HAL and the kernels are not on disk here
+      # either), ANSI_COLOR_* go undefined, and every coloured MSG() is an unknownMacro error. That
+      # is how this job went red when phase 9 moved the console out of the projects.
+      - name: Recreate Bazel's include prefix
+        run: |
+          mkdir -p "$RUNNER_TEMP/include"
+          ln -s "$GITHUB_WORKSPACE/projects/flexptp_demo_stm32h563/lib/io" "$RUNNER_TEMP/include/standard_output"
+
+      # Scoped to first-party sources. Everything else in the tree is vendored at a pinned commit,
+      # and a finding in NetX Duo or the HAL is not this project's to fix -- the same reasoning as
+      # scoping -Werror to first-party targets. ARM's CMSIS headers are on the include path so the
+      # register layouts are real types, and suppressed by path for the same reason: cmsis_gcc.h's
+      # startup code compares linker symbols, which cppcheck reports and ARM is not going to change.
+      # __GNUC__ is the pinned arm-none-eabi-gcc's major: cmsis_compiler.h #errors without a
+      # compiler, and cmsis_gcc.h tests the version.
       - name: Analyse the first-party sources
         run: |
           cppcheck --version
@@ -111,12 +151,19 @@ jobs:
             --inline-suppr \
             --std=c11 \
             --platform=unix32 \
-            -DSTM32H563xx -DUSE_HAL_DRIVER -DCMSIS_OS2 -DPPS_SIMPLE \
-            -I projects/${{ matrix.project }} -I third_party \
+            -DSTM32H563xx -DUSE_HAL_DRIVER -DCMSIS_OS2 -DPPS_SIMPLE -D__GNUC__=15 \
+            -I projects/${{ matrix.project }} \
+            -I projects/flexptp_demo_stm32h563/lib \
+            -I "$RUNNER_TEMP/include" \
+            -I third_party/CMSIS/Include \
+            -I third_party/CMSIS/Device/ST/STM32H5xx/Include \
+            -I third_party/CMSIS/CMSIS_RTOS_V2 \
             --suppress=missingInclude \
             --suppress=missingIncludeSystem \
             --suppress=unusedFunction \
             --suppress=unmatchedSuppression \
+            '--suppress=*:third_party/*' \
+            ${{ matrix.extra }} \
             projects/${{ matrix.project }}/
 
   docs:

@@ -22,7 +22,9 @@ void report_build_id(void) {
     extern const uint8_t __build_id_note_end[];
 
     const uint8_t *p = __build_id_note_start;
-    const uint32_t bytes = (uint32_t)(__build_id_note_end - __build_id_note_start);
+    /* Two linker symbols are two objects as far as C is concerned, so their distance is taken
+       as integers: subtracting pointers to different objects is undefined. */
+    const uint32_t bytes = (uint32_t)((uintptr_t)__build_id_note_end - (uintptr_t)__build_id_note_start);
 
     if (bytes < 16U) {
         MSG("Build ID: <absent>\n");
