@@ -53,9 +53,9 @@ submodule, and not a working tree anyone can edit. Where behaviour had to change
 through a supported extension point or a compile definition rather than by editing vendored
 source, with two exceptions, both carried as patches that **the fetch applies**:
 
-> **flexPTP — ten patches**, each a fix filed upstream, or ready to be, and deleted from here as
-> its pull request merges: U1 (#20), U6 (#26), U8–U10 (#34–#36), U11–U14 (#37–#40) and U15, not
-> yet filed. What each fixes, how it was
+> **flexPTP — eleven patches**, each a fix filed upstream, or ready to be, and deleted from here as
+> its pull request merges: U1 (#20), U6 (#26), U8–U10 (#34–#36), U11–U14 (#37–#40), and U15 and U16,
+> not yet filed. What each fixes, how it was
 > verified, and the commands to regenerate them are in
 > [`patches/flexptp/README.md`](../../../../patches/flexptp/README.md); the review that found them
 > is [`docs/flexptp_upstream_review.md`](../../../../docs/flexptp_upstream_review.md).

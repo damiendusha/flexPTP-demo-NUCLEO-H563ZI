@@ -69,6 +69,50 @@ cc_test(
     ],
 )
 
+# ---- OS-less, with flexPTP's CLI hooks over a command table like the firmware's (U16) ----------
+
+cc_library(
+    name = "osless_cli_options",
+    testonly = True,
+    srcs = ["fake_cli.c"],
+    hdrs = [
+        "fake_cli.h",
+        "fake_port.h",
+        "osless/flexptp_options.h",
+        "osless_cli/flexptp_options.h",
+    ],
+    includes = [
+        ".",
+        "osless_cli",
+    ],
+    # cli.h for the types flexPTP's callbacks are compiled against in the firmware.
+    deps = ["//projects/flexptp_demo_stm32h563/lib:cli_textual"],
+)
+
+cc_library(
+    name = "flexptp_osless_cli",
+    testonly = True,
+    srcs = [
+        "fake_port.c",
+        "@flexptp//:core_srcs",
+        "@flexptp//:servo_kalman_srcs",
+    ],
+    copts = ["-w"],
+    deps = [
+        ":osless_cli_options",
+        "@flexptp//:headers",
+    ],
+)
+
+cc_test(
+    name = "cli_hooks_test",
+    srcs = ["cli_hooks_test.cpp"],
+    deps = [
+        ":flexptp_osless_cli",
+        "@googletest//:gtest_main",
+    ],
+)
+
 # ---- FreeRTOS: the binding the FreeRTOS + lwIP firmware uses, on the POSIX port (U11) ---------
 
 cc_library(

@@ -1,13 +1,13 @@
 # flexPTP upstream review — `RC1.0-11` to `RC1.0-26`
 
-> **Status, 2026-11-28.** Pinned at `fe4b071` (`RC1.0-26`), upstream head. Fifteen findings,
-> U1–U15: five merged upstream (U2–U5, U7); nine are filed (#20, #26, #34–#40) and U15 is drafted,
-> not yet filed; all ten are carried as [`//patches/flexptp`](../patches/flexptp/README.md) until
+> **Status, 2026-11-28.** Pinned at `fe4b071` (`RC1.0-26`), upstream head. Sixteen findings,
+> U1–U16: five merged upstream (U2–U5, U7); nine are filed (#20, #26, #34–#40) and U15 and U16 are
+> drafted, not yet filed; all eleven are carried as [`//patches/flexptp`](../patches/flexptp/README.md) until
 > they merge. The current
 > table is [`tools/upstream/README.md`](../tools/upstream/README.md). This document is the record
 > of how each was found and verified, in dated sections: §1–§5 the review of `RC1.0-17`
 > (September), §6 the move to `RC1.0-26`, §7 three more fixes and the final campaign, §8 U11–U14
-> and the release/debug verification, §9 U15.
+> and the release/debug verification, §9 U15 and U16.
 
 **§1–§5: the review of `RC1.0-17`.** Reviewed at pin `494e644a3218c5867ee7397c1e9c019667b664b1` (`RC1.0-17`, 2026-09-07), against the
 previous pin `76aaf67` (`RC1.0-11`). Six commits, 23 files, +600/−237.
@@ -808,7 +808,7 @@ now one command, `tools/hil/matrix.sh`, and the procedure is written down in
 [`testing_architecture.md`](../projects/flexptp_demo_stm32h563/flexptp_threadx_netx_demo/docs/testing_architecture.md).
 The board was left on the release ThreadX image.
 
-## 9. Update — U15, found by the sanitizers (2026-11-28)
+## 9. Update — U15, found by the sanitizers, and U16 (2026-11-28)
 
 The first run of the host suites under ASan and UBSan
 ([static_analysis_plan.md](static_analysis_plan.md)) put flexPTP's own engine through UBSan for
@@ -831,4 +831,21 @@ Host test: `byte_order_test`, three cases. Under UBSan they fail without the fix
 `notification_test` and `rx_validation_test`, and pass with it; in a plain build everything
 passes either way. The pull request is drafted and not yet filed:
 `tools/upstream/file_flexptp_prs.sh --dry-run --only u15` shows it.
+
+### U16: stopping flexPTP removes other modules' commands and leaves its own
+
+Found while fixing this project's own CLI, whose handles are positions in its table: removing a
+command moves every later one down. `ptp_remove_cli_commands()` passes `CLI_REMOVE_CMD` its loop
+index instead of the handle it kept, and so does the Kalman servo; the PID servo passes its
+handles, but first to last; and `ptp_deinit()` removed flexPTP's commands before the servo's,
+which were registered after them. Against a table with those semantics — flexPTP's 17 commands and
+the servo's 3, between an application command registered before them and one after — a stop left 8
+entries where 2 belong, the earlier application command gone, and a stop and a start made 27 where
+20 belong, 7 of them twice. With the fix (`0016`, branch `fix/u16-cli-remove-handles`): 2, and 20
+once each. Host test `cli_hooks_test`.
+
+Neither firmware reached this code: both leave `CLI_REMOVE_CMD` undefined. That is its own defect,
+in this project — every `flexptp stop` leaves flexPTP's commands registered, pointing into a
+stopped engine, and every `flexptp start` registers them again — and U16 is what makes defining
+it safe.
 

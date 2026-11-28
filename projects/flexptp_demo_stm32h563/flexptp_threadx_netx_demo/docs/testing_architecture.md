@@ -51,7 +51,7 @@ their host tests) · [`docs/flexptp_upstream_review.md`](../../../../docs/flexpt
 | 7 | **HIL scenarios** — `tools/hil/scenario.py`, 20 long scenarios: fix regressions, floods, malformed PTP, stacks, health | the board, the host's ptp4l units | as 6, plus the installed bench | ~55 min per image | manual |
 | 8 | **SWD inspection** — `tools/hil/swd.py`: heap, stacks, faults, the console thread, flexPTP's queues | the board, halted for milliseconds | ST-Link | seconds | inside 7, and by hand |
 
-Layers 1–5 are one command, `bazel test //...` — 26 targets, host and target in one graph, so
+Layers 1–5 are one command, `bazel test //...` — 27 targets, host and target in one graph, so
 there is no separate test root to configure. Layers 6–8 need the board.
 
 **The split is not a maturity ladder.** The board layers are not slower versions of the host
@@ -370,6 +370,7 @@ the engine is synchronous and a test can assert exactly what it did with each me
 | `rx_validation_test` | 13 | **U12, U13**: ten interference patterns — truncated, wrong-version, foreign and out-of-order messages — each placed before a Sync and between it and its Follow_Up, judged by completed cycles, Syncs accepted and clock steps; three controls. The two slave controls also guard **U1** |
 | `notification_test` | 2 | **U14**: the PTP task starved while heartbeats and a peer's Pdelay_Reqs arrive, then every later Pdelay_Req answered at once, with its own sequenceId |
 | `teardown_test` | 3 | **U11**, above |
+| `cli_hooks_test` | 2 | **U16**: with `CLI_REG_CMD` and `CLI_REMOVE_CMD` over a command table that behaves like the firmware's, a stop removes exactly flexPTP's commands, sparing the application's either side, and a restart registers each once |
 | `byte_order_test` | 3 | **U15**: timestamps round-tripped and checked byte for byte, with nanoseconds either side of 2^23 and a seconds value whose last wire byte has its top bit set. Undefined behaviour that GCC compiles correctly, so only UBSan fails it without the fix |
 
 Each fix's tests fail without it and pass with it, on the patch stack and on each PR branch alone
@@ -540,6 +541,7 @@ flexPTP fixes the mutation is the fix's absence, and the override recipe above r
 | Remove `0012` (**U12**) | the five `Engine.U12_*` tests fail |
 | Remove `0013` (**U13**) | the five `Engine.U13_*` tests fail |
 | Remove `0014` (**U14**) | `Peer.U14_AfterABurstEveryPdelayReqIsStillAnswered` fails: 0/10 answered on time |
+| Remove `0016` (**U16**) | both `CliHooks.U16_*` fail: a stop leaves 8 commands for 2, an earlier application command among the removed; a restart makes 27 for 20 |
 | Remove `0015` (**U15**) | under `--features=ubsan`, `byte_order_test`, `notification_test` and `rx_validation_test` fail at their first timestamp (`msg_utils.c:214` writing, `:246` reading); in a plain build nothing does, because GCC compiles the undefined shifts to the right bytes |
 | Remove `0001` (**U1**) | the two slave controls in `rx_validation_test` fail: the BMCA records a byte-reversed grandmaster |
 

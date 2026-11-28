@@ -20,4 +20,5 @@ exports_files([
     "0013-u13-slave-parent-only.patch",
     "0014-u14-notification-fifo-length.patch",
     "0015-u15-timestamp-unsigned-shifts.patch",
+    "0016-u16-cli-remove-handles.patch",
 ])

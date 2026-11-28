@@ -64,7 +64,7 @@ Every vendored tree is a git repository fetched by Bazel and pinned by commit in
 [`bazel/repositories.bzl`](../../../../bazel/repositories.bzl), which also says why each one comes
 from where it does. Since November 2026 every pin is its upstream head, each bump verified on
 hardware — see [`docs/flexptp_upstream_review.md`](../../../../docs/flexptp_upstream_review.md), §7.
-Two trees are patched, by the fetch: flexPTP (ten fixes, each filed upstream or ready to be) and embfmt (one);
+Two trees are patched, by the fetch: flexPTP (eleven fixes, each filed upstream or ready to be) and embfmt (one);
 see [`patches/`](../../../../patches/flexptp/README.md).
 
 One workaround from the first port is still live: flexPTP uses `__PRI64_PREFIX`, a glibc-internal

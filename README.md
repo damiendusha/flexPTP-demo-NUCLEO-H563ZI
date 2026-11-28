@@ -106,7 +106,7 @@ verification, are in
 bazel test //...
 ```
 
-26 targets in one invocation: the Ethernet descriptor rings and the flexPTP network-stack
+27 targets in one invocation: the Ethernet descriptor rings and the flexPTP network-stack
 driver's logic units; the console FIFO, the CLI and the RTOS context rules against real ThreadX
 and FreeRTOS kernels; flexPTP's own engine, patched as the firmware fetches it, against the
 defects the patches fix; the C++ rules asserted against the linked images; and the HIL tools'
@@ -394,7 +394,7 @@ bazel/              how each vendored tree is fetched and built: repositories.bz
                     commit and attaches the patches; one .BUILD file per tree
 docs/               repository-level documents: the Bazel migration, its decisions, the flexPTP review
 patches/
-  flexptp/          ten fixes, filed upstream or ready to be, applied by the fetch, deleted as each merges;
+  flexptp/          eleven fixes, filed upstream or ready to be, applied by the fetch, deleted as each merges;
     test/           and the host tests that run flexPTP's real engine against them
   embfmt/           one patch, four formatting defects
 projects/flexptp_demo_stm32h563/
@@ -434,8 +434,8 @@ The build carries patches to two of the vendored trees, kept in [`patches/`](pat
 **applied as part of fetching the dependency** — see [Get the sources](#get-the-sources) for why
 that matters:
 
-- **flexPTP, ten**, each a fix filed upstream, or ready to be, and deleted as its pull request
-  merges: U1 (#20), U6 (#26), U8–U10 (#34–#36), U11–U14 (#37–#40), and U15, not yet filed. What each fixes and how it was
+- **flexPTP, eleven**, each a fix filed upstream, or ready to be, and deleted as its pull request
+  merges: U1 (#20), U6 (#26), U8–U10 (#34–#36), U11–U14 (#37–#40), and U15 and U16, not yet filed. What each fixes and how it was
   verified is in [`patches/flexptp/README.md`](patches/flexptp/README.md), and the review that
   found them in [`docs/flexptp_upstream_review.md`](docs/flexptp_upstream_review.md). The first
   three this project carried — the servo NaN latch (F59), the IGMP extension point and the
@@ -541,7 +541,7 @@ marked, covering both:
 
 | Document | Contents |
 |---|---|
-| [`docs/flexptp_upstream_review.md`](docs/flexptp_upstream_review.md) | The flexPTP review, U1–U15: each finding, its fix and pull request, and every hardware campaign since, dated |
+| [`docs/flexptp_upstream_review.md`](docs/flexptp_upstream_review.md) | The flexPTP review, U1–U16: each finding, its fix and pull request, and every hardware campaign since, dated |
 | [`docs/bazel_decisions.md`](docs/bazel_decisions.md) | Why the build is what it is: D1–D18, with the experiments behind them |
 | [`docs/bazel_migration.md`](docs/bazel_migration.md) | The completed CMake → Bazel migration plan, phase by phase, and the two-firmware layout it arrived at |
 | [`tools/hil/README.md`](tools/hil/README.md) | The hardware harness: host setup, the checks, the scenarios, the fuzzer, the SWD tools |

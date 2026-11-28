@@ -1,0 +1,127 @@
+From 8eb25b46b21edfffb3f75cb952819971764a2458 Mon Sep 17 00:00:00 2001
+From: Damien Dusha <Damien Dusha>
+Date: Sat, 28 Nov 2026 20:20:14 +1000
+Subject: [PATCH] CLI: remove commands by their handles, last registered first
+
+ptp_register_cli_commands() keeps the handle CLI_REG_CMD returns for each
+command in sCmds[]. ptp_remove_cli_commands(), called by ptp_deinit()
+whenever flexPTP stops, passed CLI_REMOVE_CMD its loop index instead:
+CLI_REMOVE_CMD(i), not CLI_REMOVE_CMD(sCmds[i]). So it removed whatever
+sat at positions 0..CMD_N-1 of the application's command table -- other
+modules' commands as readily as flexPTP's -- and left flexPTP's own
+registered, pointing into a stopped engine.
+
+The Kalman servo's remove_cmd_commands() has the same defect: it passes
+CLI_REMOVE_CMD its loop index, not cmd_handles[i]. The PID servo passes
+the right handles, but first to last.
+
+With a CLI whose handles are positions in its table, as many small ones
+are, removing first to last is wrong even with the right handles:
+removing one moves every later command down a slot, so each later handle
+names the entry after its own. The same holds across modules: the Kalman servo registers its commands
+in ptp_common_init(), after ptp_init() has registered flexPTP's, so they
+must be removed first. ptp_deinit() removed flexPTP's first, which moved
+the servo's down and left its handles naming nothing; it now deinitialises
+the servo before it removes the commands.
+
+All three now pass the handles, last
+first, which is right for that kind of CLI and makes no difference to one
+with stable handles. (The PID servo is not built in the configuration
+measured below; its change is the same reordering.)
+
+Measured on the host against a command table with exactly those
+semantics -- flexPTP's 17 core commands and the Kalman servo's 3, between
+an application command registered before them and one after:
+
+                                        without          with
+    left after a stop                   8 (2 expected),  2: the two
+                                        the earlier      application
+                                        application      commands
+                                        command gone
+    after a stop and a start            27, 7 of them    20, each once
+                                        registered twice
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/flexptp/cli_cmds.c             | 8 ++++++--
+ src/flexptp/ptp_core.c             | 9 ++++++---
+ src/flexptp/servo/kalman_filter.c  | 5 +++--
+ src/flexptp/servo/pid_controller.c | 3 ++-
+ 4 files changed, 17 insertions(+), 8 deletions(-)
+
+diff --git a/src/flexptp/cli_cmds.c b/src/flexptp/cli_cmds.c
+index ffa6fc6..944cedf 100644
+--- a/src/flexptp/cli_cmds.c
++++ b/src/flexptp/cli_cmds.c
+@@ -386,8 +386,12 @@ void ptp_register_cli_commands() {
+ 
+ void ptp_remove_cli_commands() {
+ #ifdef CLI_REMOVE_CMD
+-    for (uint8_t i = 0; i < CMD_N; i++) {
+-        CLI_REMOVE_CMD(i);
++    // The handles CLI_REG_CMD returned, not the loop index: the index named positions 0..CMD_N-1
++    // of the application's whole command table, whoever's commands they were. Last first, because
++    // a CLI whose handles are positions moves every later command down when one is removed, and
++    // the handles registered first must still be right when their turn comes.
++    for (uint8_t i = CMD_N; i > 0; i--) {
++        CLI_REMOVE_CMD(sCmds[i - 1]);
+     }
+ #endif // CLI_REMOVE_CMD
+ }
+diff --git a/src/flexptp/ptp_core.c b/src/flexptp/ptp_core.c
+index c6fd24a..0f38c8b 100644
+--- a/src/flexptp/ptp_core.c
++++ b/src/flexptp/ptp_core.c
+@@ -99,15 +99,18 @@ void ptp_init(void) {
+ 
+ // deinit PTP module
+ void ptp_deinit() {
++    // deinitialize controller -- before the CLI commands go: the servo registers its own commands
++    // after ptp_init() has registered flexPTP's, so it removes them first. With a CLI whose handles
++    // are positions in its table, removing the earlier ones first would move the servo's down,
++    // and the handles it kept would name nothing.
++    PTP_SERVO_DEINIT();
++
+     /* ---- COMMON ----- */
+ #ifdef CLI_REG_CMD
+     // remove cli commands
+     ptp_remove_cli_commands();
+ #endif // CLI_REG_CMD
+ 
+-    // deinitialize controller
+-    PTP_SERVO_DEINIT();
+-
+     /* ----- SBMC ------ */
+     ptp_bmca_destroy();
+ 
+diff --git a/src/flexptp/servo/kalman_filter.c b/src/flexptp/servo/kalman_filter.c
+index 5c3e4d2..6b51bbc 100644
+--- a/src/flexptp/servo/kalman_filter.c
++++ b/src/flexptp/servo/kalman_filter.c
+@@ -232,8 +232,9 @@ static void register_cmd_commands() {
+ 
+ #ifdef CLI_REMOVE_CMD
+ static void remove_cmd_commands() {
+-    for (uint8_t i = 0; i < KF_CMDH_N; i++) {
+-        CLI_REMOVE_CMD(i);
++    // By handle, last first -- as ptp_remove_cli_commands() does, and for the same reasons.
++    for (uint8_t i = KF_CMDH_N; i > 0; i--) {
++        CLI_REMOVE_CMD(cmd_handles[i - 1]);
+     }
+ }
+ #endif
+diff --git a/src/flexptp/servo/pid_controller.c b/src/flexptp/servo/pid_controller.c
+index f336720..2c1c4fd 100644
+--- a/src/flexptp/servo/pid_controller.c
++++ b/src/flexptp/servo/pid_controller.c
+@@ -94,8 +94,9 @@ static void pid_ctrl_register_cli_commands() {
+ 
+ #ifdef CLI_REMOVE_CMD
+ static void pid_ctrl_remove_cli_commands() {
+-    CLI_REMOVE_CMD(sCliCmdIdx.params);
++    // Last registered first, as ptp_remove_cli_commands() does, and for the same reason.
+     CLI_REMOVE_CMD(sCliCmdIdx.internals);
++    CLI_REMOVE_CMD(sCliCmdIdx.params);
+ }
+ #endif
+ 
