@@ -574,7 +574,7 @@ def check_threads(board: Board, ctx: Context) -> CheckResult:
 
     The line format is `  <name> pri=<tx> (cmsis <n>) state=<s> runs=<r>`, and names contain
     spaces ("System Timer Thread", "eth ip") -- so the parse anchors on " pri=" rather than
-    treating the name as one token. An earlier version used \S+ and silently miscounted.
+    treating the name as one token. An earlier version used `\\S+` and silently miscounted.
     """
     out = board.cmd("osinfo", quiet=1.2, timeout=10)
     if "Threads:" not in out:
